@@ -18,7 +18,5 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-
-  #TODO 1: Insert assests
   assets:
     - assets/images/
