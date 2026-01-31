@@ -20,11 +20,10 @@ class AddAccountPage2 extends StatefulWidget {
 }
 
 class _AddAccountPage2State extends State<AddAccountPage2> {
-  late Map<String, List<Map<String, dynamic>>> bankData;
+  late List<dynamic> allBanksWithSections;
+  late List<dynamic> filteredBanksWithSections;
   bool isLoading = true;
   late TextEditingController _searchController;
-  String selectedBankType = 'Local';
-  List<Map<String, dynamic>> filteredBanks = [];
 
   @override
   void initState() {
@@ -35,10 +34,10 @@ class _AddAccountPage2State extends State<AddAccountPage2> {
 
   Future<void> _loadBankData() async {
     try {
-      final grouped = await BankService.getBanksByType();
+      final banks = await BankService.getBanksWithSections();
       setState(() {
-        bankData = grouped;
-        filteredBanks = grouped['Local'] ?? [];
+        allBanksWithSections = banks;
+        filteredBanksWithSections = banks;
         isLoading = false;
       });
     } catch (e) {
@@ -52,28 +51,36 @@ class _AddAccountPage2State extends State<AddAccountPage2> {
   void _filterBanks(String query) {
     setState(() {
       if (query.isEmpty) {
-        filteredBanks = bankData[selectedBankType] ?? [];
+        filteredBanksWithSections = allBanksWithSections;
       } else {
-        filteredBanks = (bankData[selectedBankType] ?? [])
-            .where((bank) =>
-                bank['bankName']
-                    .toString()
-                    .toLowerCase()
-                    .contains(query.toLowerCase()) ||
-                bank['bankId']
-                    .toString()
-                    .toLowerCase()
-                    .contains(query.toLowerCase()))
-            .toList();
-      }
-    });
-  }
+        final filtered = <dynamic>[];
+        String? currentSection;
 
-  void _changeBankType(String newType) {
-    setState(() {
-      selectedBankType = newType;
-      _searchController.clear();
-      filteredBanks = bankData[newType] ?? [];
+        for (var item in allBanksWithSections) {
+          if (item is Map && item['type'] == 'section') {
+            currentSection = item['title'];
+          } else if (item is Map<String, dynamic>) {
+            if (item['bankName'].toString().toLowerCase().contains(
+                  query.toLowerCase(),
+                ) ||
+                item['bankId'].toString().toLowerCase().contains(
+                  query.toLowerCase(),
+                )) {
+              // Add section header if it hasn't been added yet
+              if (currentSection != null &&
+                  (filtered.isEmpty ||
+                      filtered.last is! Map ||
+                      filtered.last['type'] != 'section' ||
+                      filtered.last['title'] != currentSection)) {
+                filtered.add({'type': 'section', 'title': currentSection});
+              }
+              filtered.add(item);
+            }
+          }
+        }
+
+        filteredBanksWithSections = filtered;
+      }
     });
   }
 
@@ -102,9 +109,9 @@ class _AddAccountPage2State extends State<AddAccountPage2> {
                         onTap: () => Navigator.pop(context),
                         child: const Icon(Icons.arrow_back, size: 28),
                       ),
-                      Text(
-                        selectedBankType,
-                        style: const TextStyle(
+                      const Text(
+                        'Select Bank',
+                        style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
                           color: Colors.black87,
@@ -132,8 +139,9 @@ class _AddAccountPage2State extends State<AddAccountPage2> {
                             decoration: const InputDecoration(
                               hintText: 'Search bank...',
                               border: InputBorder.none,
-                              contentPadding:
-                                  EdgeInsets.symmetric(vertical: 12),
+                              contentPadding: EdgeInsets.symmetric(
+                                vertical: 12,
+                              ),
                             ),
                             onChanged: _filterBanks,
                           ),
@@ -142,36 +150,9 @@ class _AddAccountPage2State extends State<AddAccountPage2> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  // Bank Type Tabs
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: ['Local', 'Islamic', 'Foreign']
-                          .map(
-                            (type) => Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 8.0),
-                              child: FilterChip(
-                                label: Text(type),
-                                selected: selectedBankType == type,
-                                onSelected: (_) => _changeBankType(type),
-                                backgroundColor: Colors.white,
-                                selectedColor: Colors.green[200],
-                                side: BorderSide(
-                                  color: selectedBankType == type
-                                      ? Colors.green
-                                      : Colors.grey[300]!,
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  // Bank List
+                  // Bank List (No Filter Tabs)
                   Expanded(
-                    child: filteredBanks.isEmpty
+                    child: filteredBanksWithSections.isEmpty
                         ? Center(
                             child: Text(
                               'No banks found',
@@ -182,20 +163,35 @@ class _AddAccountPage2State extends State<AddAccountPage2> {
                             ),
                           )
                         : ListView.builder(
-                            itemCount: filteredBanks.length + 1,
+                            itemCount: filteredBanksWithSections.length,
                             itemBuilder: (context, index) {
-                              if (index == filteredBanks.length) {
+                              final item = filteredBanksWithSections[index];
+
+                              // Section header
+                              if (item is Map && item['type'] == 'section') {
                                 return Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 16),
-                                  child: _buildCustomizeOption(),
+                                  padding: const EdgeInsets.only(
+                                    top: 16.0,
+                                    bottom: 8.0,
+                                  ),
+                                  child: Text(
+                                    item['title'],
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
                                 );
                               }
 
-                              final bank = filteredBanks[index];
-                              final iconUrl = BankIconHelper.getBankIconUrl(
-                                bank['bankIcon'],
-                              );
+                              // Bank item
+                              final bank = item as Map<String, dynamic>;
+                              final iconUrl = bank['isCustom'] == true
+                                  ? ''
+                                  : BankIconHelper.getBankIconUrl(
+                                      bank['bankIcon'],
+                                    );
 
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 12.0),
@@ -204,8 +200,7 @@ class _AddAccountPage2State extends State<AddAccountPage2> {
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (context) =>
-                                            AddAccountPage3(
+                                        builder: (context) => AddAccountPage3(
                                           accountType: widget.accountType,
                                           bankName: bank['bankName'],
                                           bankImage: bank['bankIcon'],
@@ -231,27 +226,38 @@ class _AddAccountPage2State extends State<AddAccountPage2> {
                                           height: 50,
                                           decoration: BoxDecoration(
                                             color: Colors.grey[100],
-                                            borderRadius:
-                                                BorderRadius.circular(8),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
                                           ),
-                                          child: iconUrl.isEmpty
+                                          child: bank['isCustom'] == true
                                               ? const Icon(
-                                                  Icons
-                                                      .account_balance_wallet,
+                                                  Icons.add,
                                                   size: 24,
+                                                  color: Colors.grey,
                                                 )
-                                              : Image.network(
-                                                  iconUrl,
-                                                  fit: BoxFit.contain,
-                                                  errorBuilder: (context,
-                                                      error, stackTrace) {
-                                                    return const Icon(
-                                                      Icons
-                                                          .account_balance_wallet,
-                                                      size: 24,
-                                                    );
-                                                  },
-                                                ),
+                                              : (iconUrl.isEmpty
+                                                    ? const Icon(
+                                                        Icons
+                                                            .account_balance_wallet,
+                                                        size: 24,
+                                                      )
+                                                    : Image.network(
+                                                        iconUrl,
+                                                        fit: BoxFit.contain,
+                                                        errorBuilder:
+                                                            (
+                                                              context,
+                                                              error,
+                                                              stackTrace,
+                                                            ) {
+                                                              return const Icon(
+                                                                Icons
+                                                                    .account_balance_wallet,
+                                                                size: 24,
+                                                              );
+                                                            },
+                                                      )),
                                         ),
                                         const SizedBox(width: 12),
                                         // Bank Name
@@ -263,8 +269,7 @@ class _AddAccountPage2State extends State<AddAccountPage2> {
                                               fontWeight: FontWeight.w600,
                                               color: Colors.black87,
                                             ),
-                                            overflow:
-                                                TextOverflow.ellipsis,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
                                         const Icon(
@@ -277,76 +282,12 @@ class _AddAccountPage2State extends State<AddAccountPage2> {
                                   ),
                                 ),
                               );
-                              },
-                            ),
+                            },
                           ),
-                          
-                  
+                  ),
                 ],
               ),
             ),
-    );
-  }
-
-  Widget _buildCustomizeOption() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16.0),
-      child: GestureDetector(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => AddAccountPage3(
-                accountType: widget.accountType,
-                bankName: 'Custom',
-                bankImage: '',
-                userId: widget.userId,
-              ),
-            ),
-          );
-        },
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[200]!),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.add,
-                  size: 24,
-                  color: Colors.grey,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'Add Custom Bank',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
-              const Icon(
-                Icons.arrow_forward_ios,
-                size: 16,
-                color: Colors.grey,
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

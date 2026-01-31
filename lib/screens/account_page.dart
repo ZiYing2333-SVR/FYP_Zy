@@ -78,8 +78,35 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Widget _buildIconImage(String imagePath) {
+    // For full URLs (custom uploads from Supabase S3)
+    if (imagePath.startsWith('http')) {
+      return Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        child: Image.network(
+          imagePath,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.account_balance_wallet, size: 20),
+            );
+          },
+        ),
+      );
+    }
     // For bank logos (AccountLogo/), use Supabase network URL
-    if (imagePath.startsWith('AccountLogo/')) {
+    else if (imagePath.startsWith('AccountLogo/')) {
       final supabaseUrl = BankIconHelper.getBankIconUrl(imagePath);
       return Container(
         width: 40,
@@ -105,7 +132,9 @@ class _AccountPageState extends State<AccountPage> {
           },
         ),
       );
-    } else if (imagePath.startsWith('assets/')) {
+    }
+    // For local assets
+    else if (imagePath.startsWith('assets/')) {
       final assetPath = imagePath.replaceFirst('assets/', '');
       return Container(
         width: 40,
@@ -132,29 +161,15 @@ class _AccountPageState extends State<AccountPage> {
         ),
       );
     } else {
+      // Default placeholder for unknown types
       return Container(
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Colors.grey[300],
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey[200]!),
         ),
-        child: Image.network(
-          imagePath,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.account_balance_wallet, size: 20),
-            );
-          },
-        ),
+        child: const Icon(Icons.account_balance_wallet, size: 20),
       );
     }
   }

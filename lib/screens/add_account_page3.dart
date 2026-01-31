@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/bank_icon_helper.dart';
-import 'dart:io';
+
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import 'account_page.dart';
@@ -204,14 +205,14 @@ class _CurrencySelectionPageState extends State<CurrencySelectionPage> {
 class AddAccountPage3 extends StatefulWidget {
   final String accountType;
   final String bankName;
-  final String bankImage;
+  final String? bankImage;
   final String? userId;
 
   const AddAccountPage3({
     super.key,
     required this.accountType,
     required this.bankName,
-    required this.bankImage,
+    this.bankImage,
     this.userId,
   });
 
@@ -227,7 +228,7 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
   String? _selectedCurrency;
   bool _countInAsset = true;
   bool _hideBalance = false;
-  File? _customIcon;
+  Uint8List? _customIconBytes;
   String? _uploadedIconPath;
   bool _isLoading = false;
   List<Map<String, dynamic>> _currencies = [];
@@ -241,7 +242,7 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
     _nameController = TextEditingController(text: widget.bankName);
     _descriptionController = TextEditingController();
     _balanceController = TextEditingController(text: '0');
-    _uploadedIconPath = widget.bankImage;
+    _uploadedIconPath = widget.bankImage ?? '';
     _loadCurrencies();
   }
 
@@ -354,7 +355,13 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
   }
 
   Future<void> _pickIcon() async {
-    if (widget.bankImage.isNotEmpty) {
+    // Check if this is a regular bank (not customize)
+    final isRegularBank =
+        widget.bankName != 'Add Custom Bank' &&
+        widget.bankImage != null &&
+        (widget.bankImage?.isNotEmpty ?? false);
+
+    if (isRegularBank) {
       // If bank is pre-selected, don't allow icon change
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -364,16 +371,51 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
       return;
     }
 
+    // For customize banks, allow image upload to Customization folder
     try {
       final XFile? pickedFile = await _imagePicker.pickImage(
         source: ImageSource.gallery,
         imageQuality: 80,
+        requestFullMetadata: true,
       );
 
       if (pickedFile != null) {
-        setState(() {
-          _customIcon = File(pickedFile.path);
-        });
+        // Validate file extension
+        final allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+        final fileName = pickedFile.name.toLowerCase();
+        final fileExtension = fileName.contains('.')
+            ? fileName.split('.').last
+            : '';
+
+        print('📸 Image file: $fileName, Extension: $fileExtension');
+
+        if (!allowedExtensions.contains(fileExtension)) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Please upload an image file (jpg, jpeg, png, gif, webp)',
+                ),
+              ),
+            );
+          }
+          return;
+        }
+
+        // Read bytes and store for preview - will upload when saving account
+        if (mounted) {
+          final bytes = await pickedFile.readAsBytes();
+          setState(() {
+            _customIconBytes = bytes;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Icon selected. Click Save to upload and create account.',
+              ),
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -384,26 +426,39 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
     }
   }
 
-  Future<String?> _uploadIconToSupabase(File iconFile) async {
+  Future<String?> _uploadIconToSupabase() async {
     try {
+      // Use stored bytes instead of File
+      if (_customIconBytes == null) {
+        print('❌ No icon bytes to upload');
+        return null;
+      }
+
       final fileName =
-          'icon_${const Uuid().v4()}_${DateTime.now().millisecondsSinceEpoch}.png';
-      final filePath = 'iconImage/$fileName';
+          'icon_${const Uuid().v4()}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      // Upload custom bank icons to Customization folder
+      final filePath = 'bank_icon/Customization/$fileName';
 
-      final bytes = await iconFile.readAsBytes();
+      print('📤 Uploading to Supabase: bucket=images, path=$filePath');
 
+      // Step 1: Upload image to Supabase Storage
       await Supabase.instance.client.storage
-          .from('profile_image')
+          .from('images')
           .uploadBinary(
             filePath,
-            bytes,
-            fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
+            _customIconBytes!,
+            fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
           );
 
-      // Construct public URL using the provided endpoint
+      // Step 2: Get public URL from storage using the correct format
+      // URL format: https://{projectId}.supabase.co/storage/v1/object/public/{bucket}/{path}
+      final projectId = 'drohtvfhklvqoeokopey';
       final publicUrl =
-          'https://drohtvfhklvqoeokopey.storage.supabase.co/storage/v1/object/public/profile_image/$filePath';
+          'https://$projectId.supabase.co/storage/v1/object/public/images/$filePath';
 
+      // Ensure the URL format is correct for public access
+      print('📍 Generated URL: $publicUrl');
+      print('✅ Custom icon uploaded successfully');
       return publicUrl;
     } catch (e) {
       if (mounted) {
@@ -411,6 +466,7 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
           context,
         ).showSnackBar(SnackBar(content: Text('Error uploading icon: $e')));
       }
+      print('❌ Upload error: $e');
       return null;
     }
   }
@@ -428,15 +484,27 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
     });
 
     try {
-      // If custom icon is selected, upload it
-      if (_customIcon != null && widget.bankImage.isEmpty) {
-        _uploadedIconPath = await _uploadIconToSupabase(_customIcon!);
+      // Check if this is a regular bank or custom bank
+      final isRegularBank =
+          widget.bankName != 'Add Custom Bank' &&
+          widget.bankImage != null &&
+          (widget.bankImage?.isNotEmpty ?? false);
+
+      // If custom bank and custom icon is selected, upload it to Customization folder
+      if (!isRegularBank && _customIconBytes != null) {
+        _uploadedIconPath = await _uploadIconToSupabase();
         if (_uploadedIconPath == null) {
           setState(() {
             _isLoading = false;
           });
           return;
         }
+      } else if (isRegularBank) {
+        // For regular banks, keep the original bank icon URL
+        _uploadedIconPath = widget.bankImage ?? '';
+      } else {
+        // For custom bank with no image selected
+        _uploadedIconPath = null;
       }
 
       // Get user ID from parameter
@@ -507,7 +575,7 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
 
   @override
   Widget build(BuildContext context) {
-    final isCustomAccount = widget.bankImage.isEmpty;
+    final isCustomAccount = widget.bankImage?.isEmpty ?? true;
 
     return Scaffold(
       backgroundColor: const Color(0xFFFEFFD3),
@@ -834,28 +902,12 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
   }
 
   Widget _buildIconDisplay() {
-    if (_customIcon != null) {
-      // Display custom picked icon
-      if (kIsWeb) {
-        // On web, show placeholder since we can't display File directly
-        return const Icon(Icons.image, color: Colors.grey, size: 32);
-      } else {
-        // On mobile, use Image.file
-        return Image.file(_customIcon!, fit: BoxFit.contain);
-      }
+    // Show preview of selected image bytes (before upload)
+    if (_customIconBytes != null) {
+      return Image.memory(_customIconBytes!, fit: BoxFit.contain);
     } else if (_uploadedIconPath != null && _uploadedIconPath!.isNotEmpty) {
       // Display bank logo or previously uploaded icon
-      if (_uploadedIconPath!.startsWith('AccountLogo/')) {
-        // Bank logo - use Supabase URL
-        final supabaseUrl = BankIconHelper.getBankIconUrl(_uploadedIconPath!);
-        return Image.network(
-          supabaseUrl,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) {
-            return const Icon(Icons.account_balance_wallet, color: Colors.grey);
-          },
-        );
-      } else if (_uploadedIconPath!.startsWith('http')) {
+      if (_uploadedIconPath!.startsWith('http')) {
         // Network URL
         return Image.network(
           _uploadedIconPath!,
@@ -865,9 +917,10 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
           },
         );
       } else {
-        // Asset path
-        return Image.asset(
-          _uploadedIconPath!,
+        // Bank logo - use Supabase URL
+        final supabaseUrl = BankIconHelper.getBankIconUrl(_uploadedIconPath!);
+        return Image.network(
+          supabaseUrl,
           fit: BoxFit.contain,
           errorBuilder: (context, error, stackTrace) {
             return const Icon(Icons.account_balance_wallet, color: Colors.grey);
@@ -875,12 +928,8 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
         );
       }
     } else {
-      // Placeholder
-      return const Icon(
-        Icons.add_photo_alternate,
-        color: Colors.grey,
-        size: 32,
-      );
+      // No icon selected
+      return const Icon(Icons.image, color: Colors.grey, size: 32);
     }
   }
 }
