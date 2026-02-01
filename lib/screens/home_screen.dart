@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'settings_screen.dart';
 import 'account_page.dart';
+import 'add_transaction.dart';
 
 class HomeScreen extends StatefulWidget {
   final String userId;
@@ -499,6 +500,25 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           }
         },
+      ),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 80),
+        child: FloatingActionButton(
+          backgroundColor: const Color(0xFF90EE90),
+          onPressed: () async {
+            final result = await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => AddTransaction(userId: _currentUserId!),
+              ),
+            );
+            // Refresh transactions if a new one was added
+            if (result == true) {
+              await _fetchTransactions();
+            }
+          },
+          child: const Icon(Icons.add, color: Colors.black, size: 30),
+        ),
       ),
     );
   }
