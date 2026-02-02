@@ -21,6 +21,7 @@ class _HomeScreenState extends State<HomeScreen> {
   double _expenseAmount = 0;
   List<Map<String, dynamic>> _transactions = [];
   bool _isLoading = true;
+  bool _showAmounts = true;
 
   // Ledger related
   List<Map<String, dynamic>> _ledgers = [];
@@ -82,7 +83,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final response = await supabase
           .from('Transaction')
-          .select()
+          .select('*, Category(name, icon), Account(accountName, iconImage)')
+          .eq('ledgerId', _selectedLedgerId ?? '')
           .gte('date', startOfMonth.toIso8601String())
           .lte('date', endOfMonth.toIso8601String())
           .order('date', ascending: false);
@@ -134,6 +136,277 @@ class _HomeScreenState extends State<HomeScreen> {
   String _getDayOfWeek(DateTime date) {
     final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return days[date.weekday - 1];
+  }
+
+  String _getMonthName(int month) {
+    final months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return months[month - 1];
+  }
+
+  IconData _getIconData(String iconName) {
+    final iconMap = {
+      'shopping_bag': Icons.shopping_bag,
+      'restaurant': Icons.restaurant,
+      'local_taxi': Icons.local_taxi,
+      'local_gas_station': Icons.local_gas_station,
+      'movie': Icons.movie,
+      'shopping_cart': Icons.shopping_cart,
+      'health_and_safety': Icons.health_and_safety,
+      'school': Icons.school,
+      'airplane': Icons.flight,
+      'home': Icons.home,
+      'phone': Icons.phone,
+      'electric_bolt': Icons.electric_bolt,
+      'water': Icons.water,
+      'sports_bar': Icons.sports_bar,
+      'entertainment': Icons.theaters,
+      'fitness_center': Icons.fitness_center,
+      'book': Icons.book,
+      'pets': Icons.pets,
+      'card_giftcard': Icons.card_giftcard,
+      'savings': Icons.savings,
+      'trending_up': Icons.trending_up,
+      'currency_pound': Icons.currency_pound,
+    };
+    return iconMap[iconName] ?? Icons.shopping_bag;
+  }
+
+  Widget _buildGroupedTransactionsList() {
+    // Group transactions by date
+    Map<String, List<Map<String, dynamic>>> groupedByDate = {};
+    for (var transaction in _transactions) {
+      final date = transaction['date'] != null
+          ? DateTime.parse(transaction['date'])
+          : DateTime.now();
+      final dateKey = '${date.year}-${date.month}-${date.day}';
+      if (!groupedByDate.containsKey(dateKey)) {
+        groupedByDate[dateKey] = [];
+      }
+      groupedByDate[dateKey]!.add(transaction);
+    }
+
+    // Sort dates in descending order
+    final sortedDates = groupedByDate.keys.toList()
+      ..sort((a, b) => b.compareTo(a));
+
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: sortedDates.length,
+      itemBuilder: (context, index) {
+        final dateKey = sortedDates[index];
+        final dateTransactions = groupedByDate[dateKey]!;
+        final date = DateTime.parse(dateTransactions[0]['date']);
+
+        // Calculate daily total
+        double dayTotal = 0;
+        String dayType = 'expense';
+        bool hasIncome = false;
+        for (var txn in dateTransactions) {
+          final amount = double.tryParse(txn['amount'].toString()) ?? 0;
+          final type = txn['type']?.toString().toLowerCase() ?? 'expense';
+          if (type == 'income') {
+            dayTotal += amount;
+            hasIncome = true;
+          } else {
+            dayTotal += amount;
+          }
+        }
+        if (hasIncome) dayType = 'income';
+
+        return Container(
+          margin: const EdgeInsets.only(top: 12, bottom: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF9E6),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFFFE5B4), width: 1),
+          ),
+          child: Column(
+            children: [
+              // Date Header
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFAE6),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(11),
+                    topRight: Radius.circular(11),
+                  ),
+                  border: Border(
+                    bottom: BorderSide(
+                      color: const Color(0xFFFFE5B4),
+                      width: 1,
+                    ),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '${_getDayOfWeek(date)}, ${date.day.toString().padLeft(2, '0')} ${_getMonthName(date.month)}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    Text(
+                      '${dayType == 'income' ? 'IN' : 'OUT'} RM${dayTotal.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: dayType == 'income'
+                            ? const Color(0xFF52C77A)
+                            : const Color(0xFFE74C3C),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Transaction Items
+              ...dateTransactions.asMap().entries.map((entry) {
+                final txnIndex = entry.key;
+                final transaction = entry.value;
+                final amount =
+                    double.tryParse(transaction['amount'].toString()) ?? 0;
+                final type =
+                    transaction['type']?.toString().toLowerCase() ?? 'expense';
+                final categoryData = transaction['Category'] ?? {};
+                final categoryName = categoryData['name'] ?? 'Category';
+                final categoryIcon = categoryData['icon'] ?? 'shopping_bag';
+                final accountData = transaction['Account'] ?? {};
+                final accountLogo = accountData['iconImage'] ?? '';
+                final note = transaction['note'] ?? '';
+                final isLastItem = txnIndex == dateTransactions.length - 1;
+
+                return Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          // Category Icon
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFC8A5D8),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Center(
+                              child: Icon(
+                                _getIconData(categoryIcon),
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          // Category Name and Note
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  categoryName,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                                if (note.isNotEmpty)
+                                  Text(
+                                    note,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFFBCBCBC),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                              ],
+                            ),
+                          ),
+                          // Amount
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                '${type == 'income' ? '+' : '-'}RM${amount.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: type == 'income'
+                                      ? const Color(0xFF52C77A)
+                                      : const Color(0xFFE74C3C),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(width: 8),
+                          // Account Logo
+                          if (accountLogo.isNotEmpty)
+                            Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Image.network(
+                                accountLogo,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey[300],
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: const Icon(
+                                      Icons.account_balance,
+                                      size: 16,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    // Divider between transactions (but not after last one)
+                    if (!isLastItem)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Divider(
+                          color: const Color(0xFFFFE5B4),
+                          height: 1,
+                          thickness: 1,
+                        ),
+                      ),
+                  ],
+                );
+              }).toList(),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -275,7 +548,19 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ],
                                 ),
                               ),
-                              const Icon(Icons.visibility, color: Colors.black),
+                              GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    _showAmounts = !_showAmounts;
+                                  });
+                                },
+                                child: Icon(
+                                  _showAmounts
+                                      ? Icons.visibility
+                                      : Icons.visibility_off,
+                                  color: Colors.black,
+                                ),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 16),
@@ -286,7 +571,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               Column(
                                 children: [
                                   Text(
-                                    'RM${_totalAmount.toStringAsFixed(2)}',
+                                    _showAmounts
+                                        ? 'RM${_totalAmount.toStringAsFixed(2)}'
+                                        : '****',
                                     style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.bold,
@@ -305,7 +592,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               Column(
                                 children: [
                                   Text(
-                                    'RM${_incomeAmount.toStringAsFixed(2)}',
+                                    _showAmounts
+                                        ? 'RM${_incomeAmount.toStringAsFixed(2)}'
+                                        : '****',
                                     style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.bold,
@@ -324,7 +613,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               Column(
                                 children: [
                                   Text(
-                                    'RM${_expenseAmount.toStringAsFixed(2)}',
+                                    _showAmounts
+                                        ? 'RM${_expenseAmount.toStringAsFixed(2)}'
+                                        : '****',
                                     style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.bold,
@@ -360,108 +651,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                           )
-                        : ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: _transactions.length,
-                            itemBuilder: (context, index) {
-                              final transaction = _transactions[index];
-                              final amount =
-                                  double.tryParse(
-                                    transaction['amount'].toString(),
-                                  ) ??
-                                  0;
-                              final type =
-                                  transaction['type']
-                                      ?.toString()
-                                      .toLowerCase() ??
-                                  'expense';
-                              final category =
-                                  transaction['category'] ?? 'Category';
-                              final note = transaction['note'] ?? '';
-                              final date = transaction['date'] != null
-                                  ? DateTime.parse(transaction['date'])
-                                  : DateTime.now();
-
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFF9E6),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: const Color(0xFFFFE5B4),
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 40,
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFC8A5D8),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Icon(
-                                        Icons.shopping_bag,
-                                        color: Colors.white,
-                                        size: 20,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            category,
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.black,
-                                            ),
-                                          ),
-                                          if (note.isNotEmpty)
-                                            Text(
-                                              note,
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                color: Color(0xFFBCBCBC),
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
-                                      children: [
-                                        Text(
-                                          '${type == 'income' ? '+' : '-'}RM${amount.toStringAsFixed(2)}',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.bold,
-                                            color: type == 'income'
-                                                ? const Color(0xFF52C77A)
-                                                : const Color(0xFFE74C3C),
-                                          ),
-                                        ),
-                                        Text(
-                                          _getDayOfWeek(date),
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            color: Color(0xFFBCBCBC),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
+                        : _buildGroupedTransactionsList(),
                   ],
                 ),
               ),
@@ -509,7 +699,10 @@ class _HomeScreenState extends State<HomeScreen> {
             final result = await Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => AddTransaction(userId: _currentUserId!),
+                builder: (context) => AddTransaction(
+                  userId: _currentUserId!,
+                  ledgerId: _selectedLedgerId,
+                ),
               ),
             );
             // Refresh transactions if a new one was added

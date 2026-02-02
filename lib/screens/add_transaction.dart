@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 
 class AddTransaction extends StatefulWidget {
   final String userId;
+  final String? ledgerId;
 
-  const AddTransaction({Key? key, required this.userId}) : super(key: key);
+  const AddTransaction({Key? key, required this.userId, this.ledgerId})
+    : super(key: key);
 
   @override
   State<AddTransaction> createState() => _AddTransactionState();
@@ -20,16 +24,24 @@ class _AddTransactionState extends State<AddTransaction> {
   String _selectedType = 'expense';
   DateTime _selectedDate = DateTime.now();
   final _noteController = TextEditingController();
+  final _accountController = TextEditingController();
+  XFile? _selectedImage;
+  List<Map<String, dynamic>> _accounts = [];
+  String? _selectedAccountId;
+  Map<String, dynamic>? _selectedAccount;
+  final ImagePicker _imagePicker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
     _fetchCategories();
+    _fetchAccounts();
   }
 
   @override
   void dispose() {
     _noteController.dispose();
+    _accountController.dispose();
     super.dispose();
   }
 
@@ -87,6 +99,73 @@ class _AddTransactionState extends State<AddTransaction> {
     }
   }
 
+  Future<void> _fetchAccounts() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('Account')
+          .select()
+          .eq('userId', widget.userId)
+          .order('accountId');
+
+      setState(() {
+        _accounts = List<Map<String, dynamic>>.from(response);
+        // Don't auto-select account
+      });
+    } catch (e) {
+      print('Error fetching accounts: $e');
+    }
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+      );
+      if (image != null) {
+        setState(() {
+          _selectedImage = image;
+        });
+      }
+    } catch (e) {
+      print('Error picking image: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error picking image: $e')));
+    }
+  }
+
+  Future<void> _scanImage() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+      );
+      if (image != null) {
+        setState(() {
+          _selectedImage = image;
+        });
+      }
+    } catch (e) {
+      print('Error scanning image: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error scanning image: $e')));
+    }
+  }
+
+  Future<void> _selectDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
+  }
+
   void _handleNumberInput(String value) {
     setState(() {
       if (value == 'C') {
@@ -123,6 +202,13 @@ class _AddTransactionState extends State<AddTransaction> {
       return;
     }
 
+    if (_selectedAccountId == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please select an account')));
+      return;
+    }
+
     if (_amountText == '0' || _amountText.isEmpty) {
       ScaffoldMessenger.of(
         context,
@@ -130,20 +216,164 @@ class _AddTransactionState extends State<AddTransaction> {
       return;
     }
 
-    try {
-      // Generate transaction ID
-      final transactionId =
-          'TXN${DateTime.now().millisecondsSinceEpoch}${widget.userId}';
+    // Show preview dialog
+    _showPreviewDialog();
+  }
 
+  Future<void> _showPreviewDialog() async {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Transaction Preview'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildPreviewItem('Type', _selectedType.toUpperCase()),
+                _buildPreviewItem('Category', _selectedCategory!['name'] ?? ''),
+                _buildPreviewItem(
+                  'Account',
+                  _selectedAccount!['accountName'] ?? '',
+                ),
+                _buildPreviewItem('Amount', 'RM${_amountText}'),
+                _buildPreviewItem(
+                  'Date',
+                  _selectedDate.toLocal().toString().split(' ')[0],
+                ),
+                if (_noteController.text.isNotEmpty)
+                  _buildPreviewItem('Note', _noteController.text),
+                if (_selectedImage != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Image:',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          height: 120,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.file(
+                              File(_selectedImage!.path),
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Center(
+                                  child: Icon(
+                                    Icons.image,
+                                    color: Colors.grey,
+                                    size: 40,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _confirmSaveTransaction();
+              },
+              child: const Text('Confirm'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildPreviewItem(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('$label:', style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(value),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmSaveTransaction() async {
+    try {
+      String? imageUrl;
+
+      // Upload image if selected
+      if (_selectedImage != null) {
+        final fileName = 'TXN${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final filePath = 'transaction_image/$fileName';
+
+        final file = File(_selectedImage!.path);
+
+        await Supabase.instance.client.storage
+            .from('images')
+            .upload(filePath, file);
+
+        imageUrl = Supabase.instance.client.storage
+            .from('images')
+            .getPublicUrl(filePath);
+      }
+
+      // Generate transaction ID: TRANS+userId+sequence
+      // Get the count of existing transactions for this user to generate sequence
+      final existingTransactions = await Supabase.instance.client
+          .from('Transaction')
+          .select('transactionId')
+          .like('transactionId', 'TRANS${widget.userId}%');
+
+      final sequenceNumber = existingTransactions.length + 1;
+      final formattedSequence = sequenceNumber.toString().padLeft(6, '0');
+      final transactionId = 'TRANS${widget.userId}$formattedSequence';
+
+      final amount = double.parse(_amountText);
+
+      // Save transaction to database
       await Supabase.instance.client.from('Transaction').insert({
         'transactionId': transactionId,
         'categoryId': _selectedCategory!['categoryId'],
-        'amount': double.parse(_amountText),
+        'accountId': _selectedAccountId,
+        'amount': amount,
         'date': _selectedDate.toIso8601String(),
         'note': _noteController.text,
         'type': _selectedType,
-        'userId': widget.userId,
+        'ledgerId': widget.ledgerId,
+        'image': imageUrl,
       });
+
+      // Update account balance based on transaction type
+      if (_selectedAccountId != null) {
+        final currentBalance = _selectedAccount?['balance'] ?? 0.0;
+        final newBalance = _selectedType == 'expense'
+            ? currentBalance - amount
+            : currentBalance + amount;
+
+        await Supabase.instance.client
+            .from('Account')
+            .update({'balance': newBalance})
+            .eq('accountId', _selectedAccountId ?? '');
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Transaction saved successfully')),
@@ -174,7 +404,7 @@ class _AddTransactionState extends State<AddTransaction> {
       ),
       body: Column(
         children: [
-          // Expense/Income Toggle (Top Center)
+          // Expense/Income Toggle (Top Center - Larger)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Row(
@@ -189,8 +419,8 @@ class _AddTransactionState extends State<AddTransaction> {
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
+                      horizontal: 24,
+                      vertical: 10,
                     ),
                     decoration: BoxDecoration(
                       color: _selectedType == 'expense'
@@ -203,12 +433,12 @@ class _AddTransactionState extends State<AddTransaction> {
                       style: TextStyle(
                         color: Colors.black,
                         fontWeight: FontWeight.bold,
-                        fontSize: 12,
+                        fontSize: 14,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 16),
                 GestureDetector(
                   onTap: () {
                     setState(() {
@@ -218,8 +448,8 @@ class _AddTransactionState extends State<AddTransaction> {
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
+                      horizontal: 24,
+                      vertical: 10,
                     ),
                     decoration: BoxDecoration(
                       color: _selectedType == 'income'
@@ -232,7 +462,7 @@ class _AddTransactionState extends State<AddTransaction> {
                       style: TextStyle(
                         color: Colors.black,
                         fontWeight: FontWeight.bold,
-                        fontSize: 12,
+                        fontSize: 14,
                       ),
                     ),
                   ),
@@ -338,17 +568,40 @@ class _AddTransactionState extends State<AddTransaction> {
                     ),
                   ),
           ),
-          // Amount Display and Keyboard Section (1/3 size at bottom)
+          // Icon Buttons Row (Notes, Account, Today, Image, Scanning)
+          Container(
+            color: const Color(0xFFFFF9E6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildNoteButton(),
+                  _buildAccountButton(),
+                  _buildDateButton(),
+                  _buildImageButton(),
+                  _buildIconButton(Icons.qr_code_scanner, 'Scanning', () {
+                    _scanImage();
+                  }),
+                ],
+              ),
+            ),
+          ),
+          // Amount Display and Compact Keyboard Section
           Container(
             color: const Color(0xFFB0E0E6),
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(8),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 // Amount Display
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 8,
+                    horizontal: 12,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFF90EE90),
                     borderRadius: BorderRadius.circular(12),
@@ -356,15 +609,15 @@ class _AddTransactionState extends State<AddTransaction> {
                   child: Text(
                     _amountText,
                     style: const TextStyle(
-                      fontSize: 32,
+                      fontSize: 28,
                       fontWeight: FontWeight.bold,
                       color: Colors.black,
                     ),
                     textAlign: TextAlign.center,
                   ),
                 ),
-                const SizedBox(height: 8),
-                // Numeric Keyboard (Fixed at bottom)
+                const SizedBox(height: 6),
+                // Compact Numeric Keyboard
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
@@ -377,10 +630,10 @@ class _AddTransactionState extends State<AddTransaction> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          _buildKeyboardButton('7'),
-                          _buildKeyboardButton('8'),
-                          _buildKeyboardButton('9'),
-                          _buildKeyboardButton('C'),
+                          _buildCompactKeyboardButton('7'),
+                          _buildCompactKeyboardButton('8'),
+                          _buildCompactKeyboardButton('9'),
+                          _buildCompactKeyboardButton('C'),
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -388,10 +641,10 @@ class _AddTransactionState extends State<AddTransaction> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          _buildKeyboardButton('4'),
-                          _buildKeyboardButton('5'),
-                          _buildKeyboardButton('6'),
-                          _buildKeyboardButton('*'),
+                          _buildCompactKeyboardButton('4'),
+                          _buildCompactKeyboardButton('5'),
+                          _buildCompactKeyboardButton('6'),
+                          _buildCompactKeyboardButton('*'),
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -399,10 +652,10 @@ class _AddTransactionState extends State<AddTransaction> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          _buildKeyboardButton('1'),
-                          _buildKeyboardButton('2'),
-                          _buildKeyboardButton('3'),
-                          _buildKeyboardButton('+'),
+                          _buildCompactKeyboardButton('1'),
+                          _buildCompactKeyboardButton('2'),
+                          _buildCompactKeyboardButton('3'),
+                          _buildCompactKeyboardButton('+'),
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -410,10 +663,10 @@ class _AddTransactionState extends State<AddTransaction> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          _buildKeyboardButton('0', flex: 2),
-                          _buildKeyboardButton('.'),
-                          _buildKeyboardButton('<'),
-                          _buildKeyboardButton('✓'),
+                          _buildCompactKeyboardButton('0', flex: 2),
+                          _buildCompactKeyboardButton('.'),
+                          _buildCompactKeyboardButton('<'),
+                          _buildCompactKeyboardButton('✓'),
                         ],
                       ),
                     ],
@@ -424,6 +677,427 @@ class _AddTransactionState extends State<AddTransaction> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildIconButton(IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3CD),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: Colors.black, size: 24),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                color: Colors.black,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoteButton() {
+    final hasNote = _noteController.text.isNotEmpty;
+    final displayText = hasNote
+        ? (_noteController.text.length > 15
+              ? '${_noteController.text.substring(0, 15)}...'
+              : _noteController.text)
+        : 'Notes';
+
+    return GestureDetector(
+      onTap: () {
+        _showNotesDialog();
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3CD),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Stack(
+                children: [
+                  Center(
+                    child: Icon(Icons.note, color: Colors.black, size: 24),
+                  ),
+                  if (_noteController.text.isNotEmpty)
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: Colors.green,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 4),
+            SizedBox(
+              width: 60,
+              child: Text(
+                displayText,
+                style: const TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.black,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDateButton() {
+    final isToday =
+        _selectedDate.year == DateTime.now().year &&
+        _selectedDate.month == DateTime.now().month &&
+        _selectedDate.day == DateTime.now().day;
+
+    return GestureDetector(
+      onTap: () {
+        _selectDate();
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3CD),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(
+                child: Icon(
+                  Icons.calendar_today,
+                  color: Colors.black,
+                  size: 24,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              isToday ? 'Today' : '${_selectedDate.day}/${_selectedDate.month}',
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                color: Colors.black,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImageButton() {
+    return GestureDetector(
+      onTap: () {
+        _pickImage();
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3CD),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: _selectedImage != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: Image.file(
+                        File(_selectedImage!.path),
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Icon(Icons.image, color: Colors.black);
+                        },
+                      ),
+                    )
+                  : Icon(Icons.image, color: Colors.black, size: 24),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Image',
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                color: Colors.black,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAccountButton() {
+    return GestureDetector(
+      onTap: () {
+        _showAccountDialog();
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3CD),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: _selectedAccount != null
+                  ? (_selectedAccount!['iconImage'] != null &&
+                            _selectedAccount!['iconImage'].toString().isNotEmpty
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: Image.network(
+                              _selectedAccount!['iconImage'],
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Icon(
+                                  Icons.account_balance_wallet,
+                                  color: Colors.black,
+                                );
+                              },
+                            ),
+                          )
+                        : Icon(
+                            Icons.account_balance_wallet,
+                            color: Colors.black,
+                          ))
+                  : Icon(Icons.account_balance_wallet, color: Colors.black),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _selectedAccount != null
+                  ? (_selectedAccount!['accountName'] ?? 'Account').split(
+                      ' ',
+                    )[0]
+                  : 'Account',
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                color: Colors.black,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactKeyboardButton(String label, {int flex = 1}) {
+    bool isSpecial =
+        label == 'C' ||
+        label == '<' ||
+        label == '✓' ||
+        label == '.' ||
+        label == '+' ||
+        label == '*';
+
+    return Expanded(
+      flex: flex,
+      child: GestureDetector(
+        onTap: () => _handleNumberInput(label),
+        child: Container(
+          height: 34,
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: Colors.grey[300] ?? Colors.grey,
+              width: 1,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: isSpecial && label != '✓'
+                    ? const Color(0xFF90EE90)
+                    : Colors.black,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showNotesDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Add Note'),
+          content: TextField(
+            controller: _noteController,
+            decoration: const InputDecoration(hintText: 'Enter your note'),
+            maxLines: 3,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showAccountDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Account'),
+          content: SingleChildScrollView(
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: _accounts.map((account) {
+                final isSelected = _selectedAccountId == account['accountId'];
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedAccountId = account['accountId'];
+                      _selectedAccount = account;
+                    });
+                    Navigator.pop(context);
+                  },
+                  child: Container(
+                    width: 140,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? const Color(0xFF90EE90)
+                          : Colors.white,
+                      border: Border.all(
+                        color: isSelected ? Colors.black : Colors.grey[300]!,
+                        width: isSelected ? 2 : 1,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Account Logo
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFB0E0E6),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child:
+                              account['iconImage'] != null &&
+                                  account['iconImage'].toString().isNotEmpty
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.network(
+                                    account['iconImage'],
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Icon(
+                                        Icons.account_balance_wallet,
+                                        color: Colors.grey[600],
+                                        size: 24,
+                                      );
+                                    },
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.account_balance_wallet,
+                                  color: Colors.grey[600],
+                                  size: 24,
+                                ),
+                        ),
+                        const SizedBox(height: 8),
+                        // Account Name
+                        Text(
+                          account['accountName'] ?? 'Unknown',
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        // Account Balance
+                        Text(
+                          'RM${account['balance']?.toString() ?? '0.00'}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -444,7 +1118,7 @@ class _AddTransactionState extends State<AddTransaction> {
           height: 35,
           margin: const EdgeInsets.symmetric(horizontal: 2),
           decoration: BoxDecoration(
-            color: isSpecial ? Colors.white : Colors.white,
+            color: Colors.white,
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
               color: Colors.grey[300] ?? Colors.grey,
