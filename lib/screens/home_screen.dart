@@ -3,6 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'settings_screen.dart';
 import 'account_page.dart';
 import 'add_transaction.dart';
+import 'transaction_detail_screen.dart';
+import 'savings_page.dart';
 
 class HomeScreen extends StatefulWidget {
   final String userId;
@@ -184,6 +186,47 @@ class _HomeScreenState extends State<HomeScreen> {
     return iconMap[iconName] ?? Icons.shopping_bag;
   }
 
+  Widget _buildCategoryImage(String? iconUrl) {
+    // If iconUrl is a URL (starts with http), display it as an image
+    if (iconUrl != null &&
+        iconUrl.isNotEmpty &&
+        (iconUrl.startsWith('http') || iconUrl.startsWith('/'))) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          iconUrl,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return Center(
+              child: Icon(Icons.shopping_bag, color: Colors.white, size: 20),
+            );
+          },
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Center(
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.5,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    }
+    // Otherwise, treat it as an icon name
+    return Center(
+      child: Icon(
+        _getIconData(iconUrl ?? 'shopping_bag'),
+        color: Colors.white,
+        size: 20,
+      ),
+    );
+  }
+
   Widget _buildGroupedTransactionsList() {
     // Group transactions by date
     Map<String, List<Map<String, dynamic>>> groupedByDate = {};
@@ -211,21 +254,18 @@ class _HomeScreenState extends State<HomeScreen> {
         final dateTransactions = groupedByDate[dateKey]!;
         final date = DateTime.parse(dateTransactions[0]['date']);
 
-        // Calculate daily total
-        double dayTotal = 0;
-        String dayType = 'expense';
-        bool hasIncome = false;
+        // Calculate daily income and expense separately
+        double dayIncome = 0;
+        double dayExpense = 0;
         for (var txn in dateTransactions) {
           final amount = double.tryParse(txn['amount'].toString()) ?? 0;
           final type = txn['type']?.toString().toLowerCase() ?? 'expense';
           if (type == 'income') {
-            dayTotal += amount;
-            hasIncome = true;
+            dayIncome += amount;
           } else {
-            dayTotal += amount;
+            dayExpense += amount;
           }
         }
-        if (hasIncome) dayType = 'income';
 
         return Container(
           margin: const EdgeInsets.only(top: 12, bottom: 12),
@@ -266,15 +306,30 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: Colors.black87,
                       ),
                     ),
-                    Text(
-                      '${dayType == 'income' ? 'IN' : 'OUT'} RM${dayTotal.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: dayType == 'income'
-                            ? const Color(0xFF52C77A)
-                            : const Color(0xFFE74C3C),
-                      ),
+                    Row(
+                      children: [
+                        if (dayIncome > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 16),
+                            child: Text(
+                              'IN RM${dayIncome.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF52C77A),
+                              ),
+                            ),
+                          ),
+                        if (dayExpense > 0)
+                          Text(
+                            'OUT RM${dayExpense.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFE74C3C),
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),
@@ -293,100 +348,156 @@ class _HomeScreenState extends State<HomeScreen> {
                 final accountData = transaction['Account'] ?? {};
                 final accountLogo = accountData['iconImage'] ?? '';
                 final note = transaction['note'] ?? '';
+                final isRefunded = transaction['refund'] == true;
                 final isLastItem = txnIndex == dateTransactions.length - 1;
 
                 return Column(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        children: [
-                          // Category Icon
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFC8A5D8),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Center(
-                              child: Icon(
-                                _getIconData(categoryIcon),
-                                color: Colors.white,
-                                size: 20,
-                              ),
+                    GestureDetector(
+                      onTap: () async {
+                        final transactionId =
+                            transaction['transactionId'] as String;
+                        print(
+                          'Opening transaction detail for ID: $transactionId',
+                        );
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => TransactionDetailScreen(
+                              transactionId: transactionId,
+                              userId: _currentUserId,
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          // Category Name and Note
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  categoryName,
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.black,
-                                  ),
-                                ),
-                                if (note.isNotEmpty)
+                        );
+                        // Refresh transactions if a transaction was deleted or refunded
+                        if (result == true) {
+                          _fetchTransactions();
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            // Category Icon
+                            Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFC8A5D8),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: _buildCategoryImage(categoryIcon),
+                            ),
+                            const SizedBox(width: 12),
+                            // Category Name and Note
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
                                   Text(
-                                    note,
+                                    categoryName,
                                     style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFFBCBCBC),
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black,
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (note.isNotEmpty)
+                                    Text(
+                                      note,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFFBCBCBC),
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Right side: Amount, Account Icon, and Refund Badge
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    // Amount
+                                    Text(
+                                      '${type == 'income' ? '+' : '-'}RM${amount.toStringAsFixed(2)}',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: type == 'income'
+                                            ? const Color(0xFF52C77A)
+                                            : const Color(0xFFE74C3C),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    // Account Icon in small circle
+                                    if (accountLogo.isNotEmpty)
+                                      Container(
+                                        width: 24,
+                                        height: 24,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: const Color(0xFFFFE5B4),
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: ClipOval(
+                                          child: Image.network(
+                                            accountLogo,
+                                            fit: BoxFit.cover,
+                                            errorBuilder:
+                                                (context, error, stackTrace) {
+                                                  return Container(
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.grey[300],
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    child: const Icon(
+                                                      Icons.account_balance,
+                                                      size: 12,
+                                                    ),
+                                                  );
+                                                },
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                // Refund Badge below amount and account icon
+                                if (isRefunded)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFE5B4),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Text(
+                                      'REFUNDED',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFFE74C3C),
+                                      ),
+                                    ),
                                   ),
                               ],
                             ),
-                          ),
-                          // Amount
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                '${type == 'income' ? '+' : '-'}RM${amount.toStringAsFixed(2)}',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: type == 'income'
-                                      ? const Color(0xFF52C77A)
-                                      : const Color(0xFFE74C3C),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(width: 8),
-                          // Account Logo
-                          if (accountLogo.isNotEmpty)
-                            Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Image.network(
-                                accountLogo,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey[300],
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: const Icon(
-                                      Icons.account_balance,
-                                      size: 16,
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                     // Divider between transactions (but not after last one)
@@ -663,7 +774,7 @@ class _HomeScreenState extends State<HomeScreen> {
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.receipt_long),
+            icon: Icon(Icons.account_balance_wallet),
             label: 'Account',
           ),
           BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
@@ -679,6 +790,13 @@ class _HomeScreenState extends State<HomeScreen> {
               context,
               MaterialPageRoute(
                 builder: (context) => AccountPage(userId: _currentUserId!),
+              ),
+            );
+          } else if (index == 3) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => SavingsPage(userId: _currentUserId!),
               ),
             );
           } else if (index == 4) {

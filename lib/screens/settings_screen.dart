@@ -10,6 +10,7 @@ import 'account_manager.dart';
 import 'currency_settings_page.dart';
 import 'account_page.dart';
 import 'category_manager.dart';
+import 'savings_page.dart';
 
 class SettingsScreen extends StatefulWidget {
   final String userId;
@@ -233,7 +234,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: _buildBottomNavigationBar(),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        backgroundColor: const Color(0xFFFEFFD3),
+        type: BottomNavigationBarType.fixed,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.account_balance_wallet),
+            label: 'Account',
+          ),
+          BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
+          BottomNavigationBarItem(icon: Icon(Icons.savings), label: 'Saving'),
+          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Setting'),
+        ],
+        onTap: (index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+          if (index == 0) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => HomeScreen(userId: widget.userId),
+              ),
+            );
+          } else if (index == 1) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => AccountPage(userId: widget.userId),
+              ),
+            );
+          } else if (index == 3) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => SavingsPage(userId: widget.userId),
+              ),
+            );
+          }
+        },
+      ),
     );
   }
 
@@ -291,113 +333,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Divider(color: Colors.green[400], height: 1, thickness: 1),
-    );
-  }
-
-  Widget _buildBottomNavigationBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFA5D6A7),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedIndex = 0;
-                  });
-                  if (_selectedIndex == 0) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => HomeScreen(userId: widget.userId),
-                      ),
-                    );
-                  }
-                },
-                child: _buildBottomNavItem(Icons.home, 'Home', false),
-              ),
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedIndex = 1;
-                  });
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => AccountPage(userId: widget.userId),
-                    ),
-                  );
-                },
-                child: _buildBottomNavItem(
-                  Icons.account_circle,
-                  'Account',
-                  false,
-                ),
-              ),
-              _buildBottomNavItem(Icons.pets, 'Pet', false),
-              _buildBottomNavItem(Icons.savings, 'Saving', false),
-              _buildBottomNavItem(Icons.settings, 'Settings', true),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBottomNavItem(
-    IconData icon,
-    String label,
-    bool hasNotification,
-  ) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Stack(
-          children: [
-            Icon(icon, size: 24, color: Colors.black87),
-            if (hasNotification)
-              Positioned(
-                right: -4,
-                top: -4,
-                child: Container(
-                  width: 18,
-                  height: 18,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFE53935),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Center(
-                    child: Text(
-                      '1',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 10,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: Colors.black87),
-        ),
-      ],
     );
   }
 }

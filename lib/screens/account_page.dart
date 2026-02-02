@@ -4,6 +4,8 @@ import '../utils/bank_icon_helper.dart';
 import 'home_screen.dart';
 import 'settings_screen.dart';
 import 'add_account_page1.dart';
+import 'account_detail_screen.dart';
+import 'savings_page.dart';
 
 class AccountPage extends StatefulWidget {
   final String userId;
@@ -375,6 +377,7 @@ class _AccountPageState extends State<AccountPage> {
                             child: Column(
                               children: [
                                 ...accounts.map((account) {
+                                  final accountId = account['accountId'] ?? '';
                                   final accountName =
                                       account['accountName'] ?? 'Unnamed';
                                   final balanceValue =
@@ -386,104 +389,119 @@ class _AccountPageState extends State<AccountPage> {
                                       account['notes'] ?? 'Description';
                                   final iconImage = account['iconImage'];
 
-                                  return Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 12,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      border: Border(
-                                        bottom: BorderSide(
-                                          color: Colors.grey.shade200,
-                                          width: 1,
+                                  return GestureDetector(
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              AccountDetailScreen(
+                                                accountId: accountId,
+                                                userId: widget.userId,
+                                              ),
+                                        ),
+                                      );
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 12,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        border: Border(
+                                          bottom: BorderSide(
+                                            color: Colors.grey.shade200,
+                                            width: 1,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Expanded(
-                                          child: Row(
-                                            children: [
-                                              if (iconImage != null &&
-                                                  iconImage.isNotEmpty)
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        right: 12.0,
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Expanded(
+                                            child: Row(
+                                              children: [
+                                                if (iconImage != null &&
+                                                    iconImage.isNotEmpty)
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          right: 12.0,
+                                                        ),
+                                                    child: _buildIconImage(
+                                                      iconImage,
+                                                    ),
+                                                  )
+                                                else
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          right: 12.0,
+                                                        ),
+                                                    child: Container(
+                                                      width: 40,
+                                                      height: 40,
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.grey[300],
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              8,
+                                                            ),
                                                       ),
-                                                  child: _buildIconImage(
-                                                    iconImage,
+                                                      child: const Icon(
+                                                        Icons
+                                                            .account_balance_wallet,
+                                                        size: 20,
+                                                      ),
+                                                    ),
                                                   ),
-                                                )
-                                              else
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        right: 12.0,
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        accountName,
+                                                        style: const TextStyle(
+                                                          fontSize: 14,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          color: Colors.black87,
+                                                        ),
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
                                                       ),
-                                                  child: Container(
-                                                    width: 40,
-                                                    height: 40,
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.grey[300],
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            8,
-                                                          ),
-                                                    ),
-                                                    child: const Icon(
-                                                      Icons
-                                                          .account_balance_wallet,
-                                                      size: 20,
-                                                    ),
+                                                      Text(
+                                                        notes,
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w400,
+                                                          color: Colors
+                                                              .grey
+                                                              .shade600,
+                                                        ),
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                      ),
+                                                    ],
                                                   ),
                                                 ),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      accountName,
-                                                      style: const TextStyle(
-                                                        fontSize: 14,
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.black87,
-                                                      ),
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                    ),
-                                                    Text(
-                                                      notes,
-                                                      style: TextStyle(
-                                                        fontSize: 12,
-                                                        fontWeight:
-                                                            FontWeight.w400,
-                                                        color: Colors
-                                                            .grey
-                                                            .shade600,
-                                                      ),
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
+                                              ],
+                                            ),
                                           ),
-                                        ),
-                                        Text(
-                                          _formatCurrency(balance),
-                                          style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.black87,
+                                          Text(
+                                            _formatCurrency(balance),
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.black87,
+                                            ),
                                           ),
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
                                   );
                                 }).toList(),
@@ -537,18 +555,34 @@ class _AccountPageState extends State<AccountPage> {
             ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedNavIndex,
-        selectedItemColor: Colors.black87,
-        unselectedItemColor: Colors.grey,
+        backgroundColor: const Color(0xFFFEFFD3),
+        type: BottomNavigationBarType.fixed,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.account_balance_wallet),
+            label: 'Account',
+          ),
+          BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
+          BottomNavigationBarItem(icon: Icon(Icons.savings), label: 'Saving'),
+          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Setting'),
+        ],
         onTap: (index) {
           setState(() {
             _selectedNavIndex = index;
           });
-
           if (index == 0) {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
                 builder: (context) => HomeScreen(userId: widget.userId),
+              ),
+            );
+          } else if (index == 3) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => SavingsPage(userId: widget.userId),
               ),
             );
           } else if (index == 4) {
@@ -560,16 +594,6 @@ class _AccountPageState extends State<AccountPage> {
             );
           }
         },
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.account_balance_wallet),
-            label: 'Account',
-          ),
-          BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
-          BottomNavigationBarItem(icon: Icon(Icons.savings), label: 'Saving'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Setting'),
-        ],
       ),
     );
   }
