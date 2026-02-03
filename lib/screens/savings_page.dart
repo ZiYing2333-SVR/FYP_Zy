@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'home_screen.dart';
 import 'account_page.dart';
 import 'settings_screen.dart';
+import 'create_saving_page.dart';
 
 class SavingsPage extends StatefulWidget {
   final String userId;
@@ -16,6 +17,7 @@ class SavingsPage extends StatefulWidget {
 
 class _SavingsPageState extends State<SavingsPage> {
   List<Map<String, dynamic>> _savingGoals = [];
+  Map<String, double> _accountBalances = {};
   bool _isLoading = true;
   int _selectedNavIndex = 3;
   bool _showBalance = true;
@@ -40,6 +42,12 @@ class _SavingsPageState extends State<SavingsPage> {
 
       setState(() {
         _savingGoals = List<Map<String, dynamic>>.from(response);
+      });
+
+      // Fetch account balances for destination accounts
+      await _fetchAccountBalances();
+
+      setState(() {
         _isLoading = false;
       });
     } catch (e) {
@@ -50,10 +58,38 @@ class _SavingsPageState extends State<SavingsPage> {
     }
   }
 
+  Future<void> _fetchAccountBalances() async {
+    try {
+      // Get all unique destination account IDs
+      final destAccountIds = _savingGoals
+          .map((goal) => goal['destAccountId'] as String)
+          .toSet();
+
+      if (destAccountIds.isEmpty) return;
+
+      for (final accountId in destAccountIds) {
+        final response = await Supabase.instance.client
+            .from('Account')
+            .select()
+            .eq('accountId', accountId)
+            .single();
+
+        setState(() {
+          _accountBalances[accountId] = (response['balance'] ?? 0).toDouble();
+        });
+      }
+    } catch (e) {
+      print('Error fetching account balances: $e');
+    }
+  }
+
   double _calculateTotalSaved() {
     double total = 0;
     for (final goal in _savingGoals) {
-      total += (goal['currentAmount'] ?? 0).toDouble();
+      final destAccountId = goal['destAccountId'] as String?;
+      if (destAccountId != null) {
+        total += _accountBalances[destAccountId] ?? 0.0;
+      }
     }
     return total;
   }
@@ -161,8 +197,18 @@ class _SavingsPageState extends State<SavingsPage> {
           Padding(
             padding: const EdgeInsets.only(right: 16),
             child: GestureDetector(
-              onTap: () {
-                // Add new saving goal
+              onTap: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        CreateSavingPage(userId: widget.userId),
+                  ),
+                );
+                // Refresh the data if a saving goal was created
+                if (result == true) {
+                  _fetchSavingGoals();
+                }
               },
               child: Container(
                 width: 40,
@@ -291,13 +337,17 @@ class _SavingsPageState extends State<SavingsPage> {
                                   final goalName = goal['name'] ?? 'Goal';
                                   final targetAmount =
                                       (goal['targetAmount'] ?? 0).toDouble();
-                                  final currentAmount =
-                                      (goal['currentAmount'] ?? 0).toDouble();
+                                  final destAccountId =
+                                      goal['destAccountId'] ?? '';
+                                  final destAccountBalance =
+                                      _accountBalances[destAccountId] ?? 0.0;
                                   final endDate = goal['endDate'];
                                   final goalId = goal['goalId'] ?? '';
 
                                   final progress = targetAmount > 0
-                                      ? (currentAmount / targetAmount * 100)
+                                      ? (destAccountBalance /
+                                                targetAmount *
+                                                100)
                                             .clamp(0, 100)
                                       : 0.0;
 
@@ -433,7 +483,7 @@ class _SavingsPageState extends State<SavingsPage> {
                                               children: [
                                                 Text(
                                                   _formatCurrency(
-                                                    currentAmount,
+                                                    destAccountBalance,
                                                   ),
                                                   style: const TextStyle(
                                                     fontSize: 12,
