@@ -11,6 +11,7 @@ import 'currency_settings_page.dart';
 import 'account_page.dart';
 import 'category_manager.dart';
 import 'savings_page.dart';
+import 'budget_page.dart';
 
 class SettingsScreen extends StatefulWidget {
   final String userId;
@@ -181,7 +182,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _buildDivider(),
                   _buildMenuItem('Report', 3),
                   _buildDivider(),
-                  _buildMenuItem('Budget', 4, hasNotification: true),
+                  _buildMenuItem(
+                    'Budget',
+                    4,
+                    hasNotification: true,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              BudgetPage(userId: widget.userId),
+                        ),
+                      );
+                    },
+                  ),
                   _buildDivider(),
                   _buildMenuItem('Saving', 5),
                   _buildDivider(),

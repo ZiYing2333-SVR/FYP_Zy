@@ -5,6 +5,7 @@ import 'home_screen.dart';
 import 'account_page.dart';
 import 'settings_screen.dart';
 import 'create_saving_page.dart';
+import 'saving_detail_page.dart';
 
 class SavingsPage extends StatefulWidget {
   final String userId;
@@ -46,6 +47,20 @@ class _SavingsPageState extends State<SavingsPage> {
 
       // Fetch account balances for destination accounts
       await _fetchAccountBalances();
+
+      // Check progress for each goal
+      for (final goal in _savingGoals) {
+        final destAccountId = goal['destAccountId'] as String?;
+        if (destAccountId != null) {
+          final balance = _accountBalances[destAccountId] ?? 0.0;
+          final targetAmount = (goal['targetAmount'] ?? 0).toDouble();
+          await _checkAndUpdateGoalProgress(
+            goal['goalId'],
+            targetAmount,
+            balance,
+          );
+        }
+      }
 
       setState(() {
         _isLoading = false;
@@ -97,10 +112,21 @@ class _SavingsPageState extends State<SavingsPage> {
   Map<String, List<Map<String, dynamic>>> _groupGoalsByStatus() {
     final grouped = <String, List<Map<String, dynamic>>>{};
 
+    // Separate finished (inactive status) and non-finished goals
+    final finished = <Map<String, dynamic>>[];
+    final active = <Map<String, dynamic>>[];
+
     for (final goal in _savingGoals) {
       final status = goal['status'] ?? 'active';
-      grouped.putIfAbsent(status, () => []).add(goal);
+      if (status == 'inactive') {
+        finished.add(goal);
+      } else {
+        active.add(goal);
+      }
     }
+
+    if (active.isNotEmpty) grouped['active'] = active;
+    if (finished.isNotEmpty) grouped['finished'] = finished;
 
     return grouped;
   }
@@ -170,6 +196,51 @@ class _SavingsPageState extends State<SavingsPage> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Error deleting goal: $e')));
+      }
+    }
+  }
+
+  Future<void> _updateGoalStatus(
+    String goalId,
+    String newStatus, {
+    bool? cycleStatus,
+  }) async {
+    try {
+      final updateData = <String, dynamic>{'status': newStatus};
+      if (cycleStatus != null) {
+        updateData['cycleStatus'] = cycleStatus;
+      }
+
+      await Supabase.instance.client
+          .from('SavingGoal')
+          .update(updateData)
+          .eq('goalId', goalId);
+
+      _fetchSavingGoals();
+    } catch (e) {
+      print('Error updating goal status: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error updating goal: $e')));
+      }
+    }
+  }
+
+  Future<void> _checkAndUpdateGoalProgress(
+    String goalId,
+    double targetAmount,
+    double currentAmount,
+  ) async {
+    // If current amount reaches or exceeds target and status is not inactive
+    if (currentAmount >= targetAmount) {
+      final goal = _savingGoals.firstWhere(
+        (g) => g['goalId'] == goalId,
+        orElse: () => {},
+      );
+
+      if (goal.isNotEmpty && goal['status'] != 'inactive') {
+        await _updateGoalStatus(goalId, 'inactive', cycleStatus: false);
       }
     }
   }
@@ -298,226 +369,248 @@ class _SavingsPageState extends State<SavingsPage> {
                       final status = entry.key;
                       final goals = entry.value;
                       final statusLabel = status == 'active'
-                          ? 'Active'
-                          : 'Done';
+                          ? 'Active Savings'
+                          : 'Finished Savings';
 
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Status Header
                           Padding(
-                            padding: const EdgeInsets.only(bottom: 12.0),
+                            padding: const EdgeInsets.only(
+                              bottom: 12.0,
+                              top: 12.0,
+                            ),
                             child: Text(
                               statusLabel,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black54,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: status == 'active'
+                                    ? Colors.blue.shade700
+                                    : Colors.grey.shade700,
                               ),
                             ),
                           ),
-                          // Goals Container
-                          Container(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFF9E6),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: Colors.grey.shade200,
-                                width: 1,
+                          // Individual Goal Cards
+                          ...goals.asMap().entries.map((goalEntry) {
+                            final goal = goalEntry.value;
+                            final goalName = goal['name'] ?? 'Goal';
+                            final targetAmount = (goal['targetAmount'] ?? 0)
+                                .toDouble();
+                            final destAccountId = goal['destAccountId'] ?? '';
+                            final destAccountBalance =
+                                _accountBalances[destAccountId] ?? 0.0;
+                            final endDate = goal['endDate'];
+                            final goalId = goal['goalId'] ?? '';
+
+                            final progress = targetAmount > 0
+                                ? (destAccountBalance / targetAmount * 100)
+                                      .clamp(0, 100)
+                                : 0.0;
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              decoration: BoxDecoration(
+                                color: status == 'active'
+                                    ? const Color(0xFFFFF9E6)
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: status == 'active'
+                                      ? Colors.grey.shade200
+                                      : Colors.grey.shade300,
+                                  width: 1,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
-                            ),
-                            child: Column(
-                              children: [
-                                ...goals.asMap().entries.map((goalEntry) {
-                                  final goalIndex = goalEntry.key;
-                                  final goal = goalEntry.value;
-                                  final isLastGoal =
-                                      goalIndex == goals.length - 1;
-
-                                  final goalName = goal['name'] ?? 'Goal';
-                                  final targetAmount =
-                                      (goal['targetAmount'] ?? 0).toDouble();
-                                  final destAccountId =
-                                      goal['destAccountId'] ?? '';
-                                  final destAccountBalance =
-                                      _accountBalances[destAccountId] ?? 0.0;
-                                  final endDate = goal['endDate'];
-                                  final goalId = goal['goalId'] ?? '';
-
-                                  final progress = targetAmount > 0
-                                      ? (destAccountBalance /
-                                                targetAmount *
-                                                100)
-                                            .clamp(0, 100)
-                                      : 0.0;
-
-                                  return Column(
+                              child: GestureDetector(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => SavingDetailPage(
+                                        goalId: goalId,
+                                        userId: widget.userId,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 16,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 12,
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            // Goal Header Row
-                                            Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .spaceBetween,
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    goalName,
-                                                    style: const TextStyle(
-                                                      fontSize: 14,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.black87,
-                                                    ),
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
+                                      // Goal Header Row
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              goalName,
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.black87,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          GestureDetector(
+                                            onTap: () {
+                                              showDialog(
+                                                context: context,
+                                                builder: (context) => AlertDialog(
+                                                  title: const Text(
+                                                    'Delete Goal',
                                                   ),
-                                                ),
-                                                GestureDetector(
-                                                  onTap: () {
-                                                    showDialog(
-                                                      context: context,
-                                                      builder: (context) => AlertDialog(
-                                                        title: const Text(
-                                                          'Delete Goal',
-                                                        ),
-                                                        content: const Text(
-                                                          'Are you sure you want to delete this goal?',
-                                                        ),
-                                                        actions: [
-                                                          TextButton(
-                                                            onPressed: () =>
-                                                                Navigator.pop(
-                                                                  context,
-                                                                ),
-                                                            child: const Text(
-                                                              'Cancel',
-                                                            ),
+                                                  content: const Text(
+                                                    'Are you sure you want to delete this goal?',
+                                                  ),
+                                                  actions: [
+                                                    TextButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                            context,
                                                           ),
-                                                          TextButton(
-                                                            onPressed: () {
-                                                              _deleteSavingGoal(
-                                                                goalId,
-                                                              );
-                                                              Navigator.pop(
-                                                                context,
-                                                              );
-                                                            },
-                                                            child: const Text(
-                                                              'Delete',
-                                                              style: TextStyle(
-                                                                color:
-                                                                    Colors.red,
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        ],
+                                                      child: const Text(
+                                                        'Cancel',
                                                       ),
-                                                    );
-                                                  },
-                                                  child: Container(
-                                                    padding:
-                                                        const EdgeInsets.all(4),
-                                                    child: const Icon(
-                                                      Icons.delete,
-                                                      color: Colors.red,
-                                                      size: 20,
                                                     ),
-                                                  ),
+                                                    TextButton(
+                                                      onPressed: () {
+                                                        _deleteSavingGoal(
+                                                          goalId,
+                                                        );
+                                                        Navigator.pop(context);
+                                                      },
+                                                      child: const Text(
+                                                        'Delete',
+                                                        style: TextStyle(
+                                                          color: Colors.red,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 8),
-                                            // End Date and Goal Amount
-                                            Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .spaceBetween,
-                                              children: [
-                                                Text(
-                                                  _getEndDateText(endDate),
-                                                  style: const TextStyle(
-                                                    fontSize: 12,
-                                                    color: Color(0xFFBCBCBC),
-                                                  ),
-                                                ),
-                                                Text(
-                                                  'Goal ${_formatCurrency(targetAmount)}',
-                                                  style: const TextStyle(
-                                                    fontSize: 12,
-                                                    color: Color(0xFFBCBCBC),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 8),
-                                            // Progress Bar
-                                            ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(4),
-                                              child: LinearProgressIndicator(
-                                                value: progress / 100,
-                                                minHeight: 6,
-                                                backgroundColor:
-                                                    Colors.grey[300],
-                                                valueColor:
-                                                    AlwaysStoppedAnimation<
-                                                      Color
-                                                    >(Colors.green.shade300),
+                                              );
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.all(4),
+                                              child: const Icon(
+                                                Icons.delete,
+                                                color: Colors.red,
+                                                size: 20,
                                               ),
                                             ),
-                                            const SizedBox(height: 8),
-                                            // Current Amount and Progress Percentage
-                                            Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .spaceBetween,
-                                              children: [
-                                                Text(
-                                                  _formatCurrency(
-                                                    destAccountBalance,
-                                                  ),
-                                                  style: const TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Colors.black87,
-                                                  ),
-                                                ),
-                                                Text(
-                                                  '${progress.toStringAsFixed(1)}%',
-                                                  style: const TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Colors.green,
-                                                  ),
-                                                ),
-                                              ],
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      // End Date and Goal Amount
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            _getEndDateText(endDate),
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Color(0xFFBCBCBC),
                                             ),
-                                          ],
+                                          ),
+                                          Text(
+                                            'Goal ${_formatCurrency(targetAmount)}',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Color(0xFFBCBCBC),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 12),
+                                      // Progress Bar
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: LinearProgressIndicator(
+                                          value: progress / 100,
+                                          minHeight: 8,
+                                          backgroundColor: Colors.grey[300],
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                Colors.green.shade400,
+                                              ),
                                         ),
                                       ),
-                                      // Divider
-                                      if (!isLastGoal)
-                                        Divider(
-                                          color: Colors.grey.shade200,
-                                          height: 1,
-                                          thickness: 1,
-                                        ),
+                                      const SizedBox(height: 12),
+                                      // Current Amount and Progress Percentage
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Saved',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                              ),
+                                              Text(
+                                                _formatCurrency(
+                                                  destAccountBalance,
+                                                ),
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Colors.black87,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.end,
+                                            children: [
+                                              Text(
+                                                'Progress',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                              ),
+                                              Text(
+                                                '${progress.toStringAsFixed(1)}%',
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Colors.green,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
                                     ],
-                                  );
-                                }).toList(),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 24),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
                         ],
                       );
                     }).toList(),
