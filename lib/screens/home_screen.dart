@@ -24,6 +24,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _transactions = [];
   bool _isLoading = true;
   bool _showAmounts = true;
+  bool _hasBudgetAlert = false;
 
   // Ledger related
   List<Map<String, dynamic>> _ledgers = [];
@@ -36,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _currentUserId = widget.userId;
     _fetchLedgers();
+    _checkBudgetAlerts();
   }
 
   Future<void> _fetchLedgers() async {
@@ -132,6 +134,108 @@ class _HomeScreenState extends State<HomeScreen> {
         _selectedDate = picked;
       });
       _fetchTransactions();
+    }
+  }
+
+  Future<void> _checkBudgetAlerts() async {
+    try {
+      final budgets = await Supabase.instance.client
+          .from('Budget')
+          .select()
+          .eq('userId', _currentUserId ?? widget.userId);
+
+      bool hasAlert = false;
+
+      // Check each budget for >= 80% usage
+      for (var budget in budgets) {
+        final double usagePercentage = await _calculateBudgetUsage(budget);
+        if (usagePercentage >= 80) {
+          hasAlert = true;
+          break;
+        }
+      }
+
+      setState(() {
+        _hasBudgetAlert = hasAlert;
+      });
+    } catch (e) {
+      print('Error checking budget alerts: $e');
+    }
+  }
+
+  Future<double> _calculateBudgetUsage(Map<String, dynamic> budget) async {
+    try {
+      final budgetType = budget['type'] ?? '';
+      final budgetAmount = (budget['amount'] ?? 0).toDouble();
+      final cycleType = (budget['cycleType'] ?? 'month').toLowerCase();
+
+      if (budgetAmount <= 0) return 0;
+
+      // Calculate date range based on cycle type
+      final now = DateTime.now();
+      final DateTime startDate;
+
+      switch (cycleType) {
+        case 'day':
+          startDate = DateTime(now.year, now.month, now.day);
+          break;
+        case 'week':
+          startDate = now.subtract(Duration(days: now.weekday - 1));
+          break;
+        case 'month':
+          startDate = DateTime(now.year, now.month, 1);
+          break;
+        case 'year':
+          startDate = DateTime(now.year, 1, 1);
+          break;
+        default:
+          startDate = DateTime(now.year, now.month, 1);
+      }
+
+      // Fetch transactions based on budget type
+      List<dynamic> transactions = [];
+
+      if (budgetType == 'account') {
+        final accountId = budget['accountId'];
+        if (accountId != null) {
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('accountId', accountId)
+              .gte('date', startDate.toIso8601String());
+        }
+      } else if (budgetType == 'category') {
+        final categoryId = budget['categoryId'];
+        if (categoryId != null) {
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('categoryId', categoryId)
+              .eq('type', 'expense')
+              .gte('date', startDate.toIso8601String());
+        }
+      } else if (budgetType == 'ledger') {
+        final ledgerId = budget['ledgerId'];
+        if (ledgerId != null) {
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('ledgerId', ledgerId)
+              .eq('type', 'expense')
+              .gte('date', startDate.toIso8601String());
+        }
+      }
+
+      // Sum up transaction amounts
+      double totalSpent = 0;
+      for (var transaction in transactions) {
+        totalSpent += ((transaction['amount'] ?? 0) as num).toDouble();
+      }
+
+      return (totalSpent / budgetAmount) * 100;
+    } catch (e) {
+      print('Error calculating budget usage: $e');
+      return 0;
     }
   }
 
@@ -767,47 +871,84 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        backgroundColor: const Color(0xFFFEFFD3),
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.account_balance_wallet),
-            label: 'Account',
+      bottomNavigationBar: Stack(
+        children: [
+          BottomNavigationBar(
+            currentIndex: _selectedIndex,
+            backgroundColor: const Color(0xFFFEFFD3),
+            type: BottomNavigationBarType.fixed,
+            items: const [
+              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.account_balance_wallet),
+                label: 'Account',
+              ),
+              BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.savings),
+                label: 'Saving',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.settings),
+                label: 'Setting',
+              ),
+            ],
+            onTap: (index) {
+              setState(() {
+                _selectedIndex = index;
+              });
+              if (index == 1) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AccountPage(userId: _currentUserId!),
+                  ),
+                );
+              } else if (index == 3) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => SavingsPage(userId: _currentUserId!),
+                  ),
+                );
+              } else if (index == 4) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        SettingsScreen(userId: _currentUserId!),
+                  ),
+                ).then((_) {
+                  _checkBudgetAlerts();
+                });
+              }
+            },
           ),
-          BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
-          BottomNavigationBarItem(icon: Icon(Icons.savings), label: 'Saving'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Setting'),
+          // Alert badge on Settings icon
+          if (_hasBudgetAlert)
+            Positioned(
+              right: 12,
+              top: 8,
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE53935),
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(
+                  child: Text(
+                    '!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
-        onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-          if (index == 1) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => AccountPage(userId: _currentUserId!),
-              ),
-            );
-          } else if (index == 3) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => SavingsPage(userId: _currentUserId!),
-              ),
-            );
-          } else if (index == 4) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => SettingsScreen(userId: _currentUserId!),
-              ),
-            );
-          }
-        },
       ),
       floatingActionButton: Padding(
         padding: const EdgeInsets.only(bottom: 80),

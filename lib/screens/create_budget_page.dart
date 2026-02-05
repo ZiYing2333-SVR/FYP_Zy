@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'create_budget_page_2.dart';
 
 class CreateBudgetPage extends StatefulWidget {
   final String userId;
@@ -11,14 +12,6 @@ class CreateBudgetPage extends StatefulWidget {
 }
 
 class _CreateBudgetPageState extends State<CreateBudgetPage> {
-  String? _selectedLedgerId;
-  String? _selectedCategoryId;
-  String? _selectedAccountId;
-
-  String? _selectedLedgerName;
-  String? _selectedCategoryName;
-  String? _selectedAccountName;
-
   Future<void> _selectLedger() async {
     final result = await Navigator.push(
       context,
@@ -26,17 +19,25 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> {
         builder: (context) => _SelectionPage(
           title: 'Select Ledger',
           tableName: 'Ledger',
-          displayField: 'ledgerName',
+          displayField: 'name',
           userId: widget.userId,
         ),
       ),
     );
 
     if (result != null) {
-      setState(() {
-        _selectedLedgerId = result['id'];
-        _selectedLedgerName = result['name'];
-      });
+      // Navigate to page 2 with ledger selected
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CreateBudgetPage2(
+            userId: widget.userId,
+            ledgerId: result['id'],
+            categoryId: null,
+            accountId: null,
+          ),
+        ),
+      );
     }
   }
 
@@ -47,17 +48,25 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> {
         builder: (context) => _SelectionPage(
           title: 'Select Category',
           tableName: 'Category',
-          displayField: 'categoryName',
+          displayField: 'name',
           userId: widget.userId,
         ),
       ),
     );
 
     if (result != null) {
-      setState(() {
-        _selectedCategoryId = result['id'];
-        _selectedCategoryName = result['name'];
-      });
+      // Navigate to page 2 with category selected
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CreateBudgetPage2(
+            userId: widget.userId,
+            ledgerId: null,
+            categoryId: result['id'],
+            accountId: null,
+          ),
+        ),
+      );
     }
   }
 
@@ -75,10 +84,18 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> {
     );
 
     if (result != null) {
-      setState(() {
-        _selectedAccountId = result['id'];
-        _selectedAccountName = result['name'];
-      });
+      // Navigate to page 2 with account selected
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CreateBudgetPage2(
+            userId: widget.userId,
+            ledgerId: null,
+            categoryId: null,
+            accountId: result['id'],
+          ),
+        ),
+      );
     }
   }
 
@@ -102,66 +119,16 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> {
           ),
         ),
         centerTitle: true,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: GestureDetector(
-              onTap: () {
-                // Validate selections
-                if (_selectedLedgerId == null ||
-                    _selectedCategoryId == null ||
-                    _selectedAccountId == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Please select Ledger, Category, and Account',
-                      ),
-                    ),
-                  );
-                  return;
-                }
-
-                // Navigate to next step or create budget
-                Navigator.pop(context, {
-                  'ledgerId': _selectedLedgerId,
-                  'categoryId': _selectedCategoryId,
-                  'accountId': _selectedAccountId,
-                });
-              },
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: Colors.green.shade200,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.add, color: Colors.green, size: 24),
-              ),
-            ),
-          ),
-        ],
       ),
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
         child: Column(
           children: [
-            _buildSelectionButton(
-              title: 'Ledger',
-              selected: _selectedLedgerName,
-              onTap: _selectLedger,
-            ),
+            _buildSelectionButton(title: 'Ledger', onTap: _selectLedger),
             const SizedBox(height: 16),
-            _buildSelectionButton(
-              title: 'Category',
-              selected: _selectedCategoryName,
-              onTap: _selectCategory,
-            ),
+            _buildSelectionButton(title: 'Category', onTap: _selectCategory),
             const SizedBox(height: 16),
-            _buildSelectionButton(
-              title: 'Account',
-              selected: _selectedAccountName,
-              onTap: _selectAccount,
-            ),
+            _buildSelectionButton(title: 'Account', onTap: _selectAccount),
           ],
         ),
       ),
@@ -170,7 +137,6 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> {
 
   Widget _buildSelectionButton({
     required String title,
-    required String? selected,
     required VoidCallback onTap,
   }) {
     return GestureDetector(
@@ -202,14 +168,6 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> {
                     color: Colors.black87,
                   ),
                 ),
-                if (selected != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      selected,
-                      style: TextStyle(fontSize: 12, color: Colors.black54),
-                    ),
-                  ),
               ],
             ),
             Container(
@@ -276,10 +234,18 @@ class _SelectionPageState extends State<_SelectionPage> {
             .select()
             .eq('userId', widget.userId);
       } else if (widget.tableName == 'Category') {
-        response = await Supabase.instance.client
+        // Fetch both default categories (UID0000) and user-specific categories
+        final defaultCategories = await Supabase.instance.client
+            .from('Category')
+            .select()
+            .or('userId.eq.UID0000,userId.is.null');
+
+        final userCategories = await Supabase.instance.client
             .from('Category')
             .select()
             .eq('userId', widget.userId);
+
+        response = [...defaultCategories, ...userCategories];
       }
 
       setState(() {
@@ -356,6 +322,14 @@ class _SelectionPageState extends State<_SelectionPage> {
                 final itemId = item[idField];
                 final itemName = item[widget.displayField] ?? 'Unknown';
 
+                // Get icon based on table type
+                String? iconPath;
+                if (widget.tableName == 'Account') {
+                  iconPath = item['iconImage'];
+                } else if (widget.tableName == 'Category') {
+                  iconPath = item['icon'];
+                }
+
                 return GestureDetector(
                   onTap: () {
                     Navigator.pop(context, {'id': itemId, 'name': itemName});
@@ -380,6 +354,24 @@ class _SelectionPageState extends State<_SelectionPage> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
+                        // Icon display
+                        if (iconPath != null && iconPath.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 12),
+                            child: Image.network(
+                              iconPath,
+                              width: 32,
+                              height: 32,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Icon(
+                                  Icons.image_not_supported,
+                                  size: 32,
+                                  color: Colors.grey.shade400,
+                                );
+                              },
+                            ),
+                          ),
                         Expanded(
                           child: Text(
                             itemName,
