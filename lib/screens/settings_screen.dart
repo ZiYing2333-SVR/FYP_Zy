@@ -12,6 +12,7 @@ import 'account_page.dart';
 import 'category_manager.dart';
 import 'savings_page.dart';
 import 'budget_page.dart';
+import 'report_page.dart';
 
 class SettingsScreen extends StatefulWidget {
   final String userId;
@@ -284,7 +285,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     },
                   ),
                   _buildDivider(),
-                  _buildMenuItem('Report', 3),
+                  _buildMenuItem(
+                    'Report',
+                    3,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              ReportPage(userId: widget.userId),
+                        ),
+                      );
+                    },
+                  ),
                   _buildDivider(),
                   _buildMenuItem(
                     'Budget',
