@@ -217,14 +217,27 @@ class _EditAccountPageState extends State<EditAccountPage> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFFFFF9E6),
-        title: const Text('Delete Account'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.all(24),
+        title: const Text(
+          'Delete Account',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFFF39C12),
+          ),
+        ),
         content: Text(
           'Are you sure you want to delete "${_nameController.text}"?',
+          style: const TextStyle(color: Color(0xFF666666)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Color(0xFFF39C12)),
+            ),
           ),
           TextButton(
             onPressed: () async {
@@ -269,21 +282,34 @@ class _EditAccountPageState extends State<EditAccountPage> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFFFFF9E6),
-        title: const Text('Discard Changes'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.all(24),
+        title: const Text(
+          'Discard Changes',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFFF39C12),
+          ),
+        ),
         content: const Text(
           'You have unsaved changes. Do you want to discard them?',
+          style: TextStyle(color: Color(0xFF666666)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('No'),
+            child: const Text('No', style: TextStyle(color: Color(0xFFF39C12))),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               Navigator.pop(context);
             },
-            child: const Text('Yes', style: TextStyle(color: Colors.red)),
+            child: const Text(
+              'Yes',
+              style: TextStyle(color: Color(0xFF666666)),
+            ),
           ),
         ],
       ),

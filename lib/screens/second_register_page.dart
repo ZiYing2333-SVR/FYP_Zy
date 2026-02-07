@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'login_screen.dart';
 
 class SecondRegisterPage extends StatefulWidget {
   final String email;
@@ -23,8 +24,11 @@ class _SecondRegisterPageState extends State<SecondRegisterPage> {
       final supabase = Supabase.instance.client;
 
       // Fetch all users and sort to find the latest userId
-      final response =
-          await supabase.from('User').select('userId').order('userId', ascending: false).limit(1);
+      final response = await supabase
+          .from('User')
+          .select('userId')
+          .order('userId', ascending: false)
+          .limit(1);
 
       int nextNumber = 1;
 
@@ -88,23 +92,93 @@ class _SecondRegisterPageState extends State<SecondRegisterPage> {
 
         if (!mounted) return;
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Registration successful! Please login.'),
-            backgroundColor: Color(0xFF52C77A),
-          ),
-        );
-
-        // Navigate back to login screen
-        Future.delayed(const Duration(seconds: 1), () {
-          if (mounted) {
-            Navigator.pushNamedAndRemoveUntil(
-              context,
-              '/',
-              (route) => false,
+        // Show success dialog with theme colors
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              backgroundColor: const Color(0xFFFFF9E6),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF9E6),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Success icon
+                    Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFFA7E399),
+                      ),
+                      child: const Icon(
+                        Icons.check,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Success title
+                    const Text(
+                      'Registration Successful!',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFF39C12),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Success message
+                    const Text(
+                      'Your account has been created successfully. Please log in to continue.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14, color: Color(0xFF666666)),
+                    ),
+                    const SizedBox(height: 24),
+                    // Log in now button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context); // Close dialog
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const LoginScreen(),
+                            ),
+                            (route) => false,
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFA7E399),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        child: const Text('Log In Now'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             );
-          }
-        });
+          },
+        );
       } on PostgrestException catch (error) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -192,10 +266,7 @@ class _SecondRegisterPageState extends State<SecondRegisterPage> {
                 decoration: BoxDecoration(
                   color: const Color(0xFFFFF9E6),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: const Color(0xFFFFE5B4),
-                    width: 2,
-                  ),
+                  border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
                 ),
                 child: Form(
                   key: _formKey,
@@ -325,9 +396,14 @@ class _SecondRegisterPageState extends State<SecondRegisterPage> {
                           ),
                         ),
                         validator: (value) {
+                          // First check if confirm password fulfills requirements
                           if (value?.isEmpty ?? true) {
                             return 'Please confirm your password';
                           }
+                          if (value!.length < 6) {
+                            return 'Password must be at least 6 characters';
+                          }
+                          // Then check if passwords match
                           if (value != _passwordController.text) {
                             return 'Passwords do not match';
                           }
@@ -351,8 +427,9 @@ class _SecondRegisterPageState extends State<SecondRegisterPage> {
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
                             ),
-                            disabledBackgroundColor:
-                                const Color(0xFFD3F8D3), // Light green when disabled
+                            disabledBackgroundColor: const Color(
+                              0xFFD3F8D3,
+                            ), // Light green when disabled
                           ),
                           child: _isLoading
                               ? const SizedBox(

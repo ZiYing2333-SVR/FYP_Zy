@@ -631,6 +631,7 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFFFEFFD3),
         elevation: 0,
+        automaticallyImplyLeading: false,
         title: Row(
           children: [
             // Ledger Dropdown

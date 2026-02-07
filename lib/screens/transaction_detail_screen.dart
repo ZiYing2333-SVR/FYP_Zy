@@ -145,20 +145,34 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Transaction'),
+        backgroundColor: const Color(0xFFFFF9E6),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.all(24),
+        title: const Text(
+          'Delete Transaction',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFFF39C12),
+          ),
+        ),
         content: const Text(
           'Are you sure you want to delete this transaction? The amount will be returned to the account.',
+          style: TextStyle(color: Color(0xFF666666)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Color(0xFFF39C12)),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: const Text(
               'Delete',
-              style: TextStyle(color: Color(0xFFE74C3C)),
+              style: TextStyle(color: Color(0xFF666666)),
             ),
           ),
         ],

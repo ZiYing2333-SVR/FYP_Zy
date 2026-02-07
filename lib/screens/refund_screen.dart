@@ -26,20 +26,34 @@ class _RefundScreenState extends State<RefundScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Confirm Refund'),
+        backgroundColor: const Color(0xFFFFF9E6),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.all(24),
+        title: const Text(
+          'Confirm Refund',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFFF39C12),
+          ),
+        ),
         content: Text(
           'Are you sure you want to refund RM${widget.amount.toStringAsFixed(2)} to ${widget.accountName}?',
+          style: const TextStyle(color: Color(0xFF666666)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Color(0xFFF39C12)),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: const Text(
               'Confirm',
-              style: TextStyle(color: Color(0xFF52C77A)),
+              style: TextStyle(color: Color(0xFFA7E399)),
             ),
           ),
         ],

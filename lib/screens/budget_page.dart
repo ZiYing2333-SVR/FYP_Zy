@@ -465,11 +465,36 @@ class _BudgetPageState extends State<BudgetPage> {
                                                 showDialog(
                                                   context: context,
                                                   builder: (context) => AlertDialog(
+                                                    backgroundColor:
+                                                        const Color(0xFFFFF9E6),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            20,
+                                                          ),
+                                                    ),
+                                                    contentPadding:
+                                                        const EdgeInsets.all(
+                                                          24,
+                                                        ),
                                                     title: const Text(
                                                       'Delete Budget',
+                                                      style: TextStyle(
+                                                        fontSize: 20,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: Color(
+                                                          0xFFF39C12,
+                                                        ),
+                                                      ),
                                                     ),
                                                     content: const Text(
                                                       'Are you sure you want to delete this budget?',
+                                                      style: TextStyle(
+                                                        color: Color(
+                                                          0xFF666666,
+                                                        ),
+                                                      ),
                                                     ),
                                                     actions: [
                                                       TextButton(
@@ -479,6 +504,11 @@ class _BudgetPageState extends State<BudgetPage> {
                                                             ),
                                                         child: const Text(
                                                           'Cancel',
+                                                          style: TextStyle(
+                                                            color: Color(
+                                                              0xFFF39C12,
+                                                            ),
+                                                          ),
                                                         ),
                                                       ),
                                                       TextButton(
@@ -493,7 +523,9 @@ class _BudgetPageState extends State<BudgetPage> {
                                                         child: const Text(
                                                           'Delete',
                                                           style: TextStyle(
-                                                            color: Colors.red,
+                                                            color: Color(
+                                                              0xFF666666,
+                                                            ),
                                                           ),
                                                         ),
                                                       ),

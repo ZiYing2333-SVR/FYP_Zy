@@ -225,7 +225,19 @@ class _AddTransactionState extends State<AddTransaction> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Transaction Preview'),
+          backgroundColor: const Color(0xFFFFF9E6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          contentPadding: const EdgeInsets.all(24),
+          title: const Text(
+            'Transaction Preview',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFFF39C12),
+            ),
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -978,20 +990,41 @@ class _AddTransactionState extends State<AddTransaction> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Add Note'),
+          backgroundColor: const Color(0xFFFFF9E6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          contentPadding: const EdgeInsets.all(24),
+          title: const Text(
+            'Add Note',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFFF39C12),
+            ),
+          ),
           content: TextField(
             controller: _noteController,
-            decoration: const InputDecoration(hintText: 'Enter your note'),
+            decoration: const InputDecoration(
+              hintText: 'Enter your note',
+              hintStyle: TextStyle(color: Color(0xFF666666)),
+            ),
             maxLines: 3,
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Color(0xFFF39C12)),
+              ),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Save'),
+              child: const Text(
+                'Save',
+                style: TextStyle(color: Color(0xFFA7E399)),
+              ),
             ),
           ],
         );
@@ -1004,7 +1037,19 @@ class _AddTransactionState extends State<AddTransaction> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Account'),
+          backgroundColor: const Color(0xFFFFF9E6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          contentPadding: const EdgeInsets.all(24),
+          title: const Text(
+            'Account',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFFF39C12),
+            ),
+          ),
           content: SingleChildScrollView(
             child: Wrap(
               spacing: 12,
@@ -1024,10 +1069,12 @@ class _AddTransactionState extends State<AddTransaction> {
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: isSelected
-                          ? const Color(0xFF90EE90)
+                          ? const Color(0xFFA7E399)
                           : Colors.white,
                       border: Border.all(
-                        color: isSelected ? Colors.black : Colors.grey[300]!,
+                        color: isSelected
+                            ? const Color(0xFFF39C12)
+                            : Colors.grey[300]!,
                         width: isSelected ? 2 : 1,
                       ),
                       borderRadius: BorderRadius.circular(12),
