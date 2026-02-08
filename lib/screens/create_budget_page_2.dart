@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:uuid/uuid.dart';
 
 class CreateBudgetPage2 extends StatefulWidget {
   final String userId;
@@ -45,6 +44,39 @@ class _CreateBudgetPage2State extends State<CreateBudgetPage2> {
     return 'unknown';
   }
 
+  Future<String> _generateBudgetId() async {
+    try {
+      final supabase = Supabase.instance.client;
+
+      // Fetch all budgets for this user and sort to find the latest budgetId
+      final response = await supabase
+          .from('Budget')
+          .select('budgetId')
+          .eq('userId', widget.userId)
+          .order('budgetId', ascending: false)
+          .limit(1);
+
+      int nextNumber = 1;
+
+      if (response.isNotEmpty && response[0]['budgetId'] != null) {
+        final lastBudgetId = response[0]['budgetId'] as String;
+        // Extract number from budgetId (e.g., "BUD{userId}0001" -> 1)
+        final numberString = lastBudgetId.replaceAll('BUD${widget.userId}', '');
+        try {
+          nextNumber = int.parse(numberString) + 1;
+        } catch (e) {
+          nextNumber = 1;
+        }
+      }
+
+      // Generate new budgetId with zero-padding (e.g., "BUD{userId}0001", "BUD{userId}0002")
+      return 'BUD${widget.userId}${nextNumber.toString().padLeft(4, '0')}';
+    } catch (error) {
+      // If error occurs, start from 0001
+      return 'BUD${widget.userId}0001';
+    }
+  }
+
   Future<void> _saveBudget() async {
     // Validate input
     if (_budgetAmountController.text.isEmpty) {
@@ -57,7 +89,7 @@ class _CreateBudgetPage2State extends State<CreateBudgetPage2> {
     setState(() => _isSaving = true);
 
     try {
-      final budgetId = const Uuid().v4();
+      final budgetId = await _generateBudgetId();
       final budgetType = _determineBudgetType();
 
       await Supabase.instance.client.from('Budget').insert({
@@ -74,10 +106,90 @@ class _CreateBudgetPage2State extends State<CreateBudgetPage2> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Budget created successfully')),
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              backgroundColor: const Color(0xFFFFF9E6),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF9E6),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Success icon
+                    Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFFA7E399),
+                      ),
+                      child: const Icon(
+                        Icons.check,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Success title
+                    const Text(
+                      'Budget Created Successfully!',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFF39C12),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Success message
+                    const Text(
+                      'Your budget has been created successfully.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14, color: Color(0xFF666666)),
+                    ),
+                    const SizedBox(height: 24),
+                    // Continue button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context); // Close dialog
+                          Navigator.pop(
+                            context,
+                            true,
+                          ); // Go back to budget page
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFA7E399),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        child: const Text('Done'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
-        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
