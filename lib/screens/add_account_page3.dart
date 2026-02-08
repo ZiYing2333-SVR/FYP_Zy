@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import 'account_page.dart';
+import 'account_manager.dart';
 
 class CurrencySelectionPage extends StatefulWidget {
   final List<Map<String, dynamic>> currencies;
@@ -49,13 +50,10 @@ class _CurrencySelectionPageState extends State<CurrencySelectionPage> {
         _filteredCurrencies = widget.currencies
             .where(
               (currency) =>
-                  currency['currencyId'].toString().toLowerCase().contains(
-                    query.toLowerCase(),
-                  ) ||
                   currency['name'].toString().toLowerCase().contains(
                     query.toLowerCase(),
                   ) ||
-                  currency['country'].toString().toLowerCase().contains(
+                  (currency['code'] ?? '').toString().toLowerCase().contains(
                     query.toLowerCase(),
                   ),
             )
@@ -174,7 +172,7 @@ class _CurrencySelectionPageState extends State<CurrencySelectionPage> {
                                     ),
                                   ),
                                   Text(
-                                    currency['country'] ?? '',
+                                    currency['code'] ?? '',
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: Colors.grey.shade600,
@@ -226,6 +224,7 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
   late TextEditingController _balanceController;
 
   String? _selectedCurrency;
+  String? _defaultCurrency;
   bool _countInAsset = true;
   bool _hideBalance = false;
   Uint8List? _customIconBytes;
@@ -251,7 +250,7 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
       // Fetch all currencies from the Currency table
       final currenciesData = await Supabase.instance.client
           .from('Currency')
-          .select();
+          .select('currencyId, name, code, symbol');
 
       // Fetch user's default currency from UserCurrency table
       String? defaultCurrency;
@@ -273,9 +272,10 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
       setState(() {
         _currencies = List<Map<String, dynamic>>.from(currenciesData);
         // Set default to user's currency or first currency in list
-        _selectedCurrency =
+        _defaultCurrency =
             defaultCurrency ??
             (_currencies.isNotEmpty ? _currencies[0]['currencyId'] : 'MYR');
+        _selectedCurrency = _defaultCurrency;
         _isCurrenciesLoading = false;
       });
     } catch (e) {
@@ -326,6 +326,35 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
       print('Error generating account ID: $e');
       return 'ACC${DateTime.now().millisecondsSinceEpoch}';
     }
+  }
+
+  String _getCurrencyCode(String? currencyId) {
+    if (currencyId == null) return 'Select Currency';
+    try {
+      final currency = _currencies.firstWhere(
+        (c) => c['currencyId'] == currencyId,
+      );
+      return currency['code'] ?? currencyId;
+    } catch (e) {
+      return currencyId;
+    }
+  }
+
+  String _getCurrencySymbol(String? currencyId) {
+    if (currencyId == null) return '';
+    try {
+      final currency = _currencies.firstWhere(
+        (c) => c['currencyId'] == currencyId,
+      );
+      return currency['symbol'] ?? currency['code'] ?? currencyId;
+    } catch (e) {
+      return '';
+    }
+  }
+
+  String _getBalancePrefix() {
+    // Always show the symbol
+    return _getCurrencySymbol(_selectedCurrency);
   }
 
   void _openCurrencySelection() {
@@ -545,17 +574,94 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Account created successfully'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-
-        // Navigate to Account Page
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => AccountPage(userId: userId)),
-          (route) => route.isFirst,
+        // Show success dialog
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              backgroundColor: const Color(0xFFFFF9E6),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF9E6),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Success icon
+                    Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFFA7E399),
+                      ),
+                      child: const Icon(
+                        Icons.check,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Success title
+                    const Text(
+                      'Account Created Successfully!',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFF39C12),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Success message
+                    const Text(
+                      'Your new account has been created successfully. Your account list will now be displayed.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14, color: Color(0xFF666666)),
+                    ),
+                    const SizedBox(height: 24),
+                    // Continue button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context); // Close dialog
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  AccountManager(userId: userId),
+                            ),
+                            (route) => false,
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFA7E399),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        child: const Text('View My Accounts'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       }
     } catch (e) {
@@ -747,7 +853,7 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
                           : Row(
                               children: [
                                 Text(
-                                  _selectedCurrency ?? 'Select Currency',
+                                  _getCurrencyCode(_selectedCurrency),
                                   style: const TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w500,
@@ -797,8 +903,8 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
-                        decoration: const InputDecoration(
-                          prefix: Text('RM'),
+                        decoration: InputDecoration(
+                          prefix: Text(_getBalancePrefix()),
                           border: InputBorder.none,
                           isDense: true,
                           contentPadding: EdgeInsets.zero,

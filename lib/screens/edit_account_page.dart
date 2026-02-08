@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/bank_icon_helper.dart';
 import 'dart:io';
+import 'dart:typed_data';
+import 'account_manager.dart';
 
 class EditAccountPage extends StatefulWidget {
   final Map<String, dynamic> account;
@@ -27,6 +30,7 @@ class _EditAccountPageState extends State<EditAccountPage> {
   bool _countInAsset = true;
   bool _hideBalance = false;
   File? _customIcon;
+  Uint8List? _customIconBytes;
   String? _uploadedIconPath;
   bool _isLoading = false;
   List<Map<String, dynamic>> _currencies = [];
@@ -64,7 +68,7 @@ class _EditAccountPageState extends State<EditAccountPage> {
     try {
       final currenciesData = await Supabase.instance.client
           .from('Currency')
-          .select();
+          .select('currencyId, name, code, symbol');
 
       setState(() {
         _currencies = List<Map<String, dynamic>>.from(currenciesData);
@@ -86,6 +90,30 @@ class _EditAccountPageState extends State<EditAccountPage> {
     super.dispose();
   }
 
+  String _getCurrencyCode(String? currencyId) {
+    if (currencyId == null) return 'Select';
+    try {
+      final currency = _currencies.firstWhere(
+        (c) => c['currencyId'] == currencyId,
+      );
+      return currency['code'] ?? currencyId;
+    } catch (e) {
+      return currencyId;
+    }
+  }
+
+  String _getCurrencySymbol(String? currencyId) {
+    if (currencyId == null) return '';
+    try {
+      final currency = _currencies.firstWhere(
+        (c) => c['currencyId'] == currencyId,
+      );
+      return currency['symbol'] ?? currency['code'] ?? currencyId;
+    } catch (e) {
+      return '';
+    }
+  }
+
   bool _hasChanges() {
     return _nameController.text != (_originalAccount['accountName'] ?? '') ||
         _descriptionController.text != (_originalAccount['notes'] ?? '') ||
@@ -94,7 +122,7 @@ class _EditAccountPageState extends State<EditAccountPage> {
         _selectedCurrency != _originalAccount['currencyId'] ||
         _countInAsset != (_originalAccount['assetStatus'] ?? true) ||
         _hideBalance != (_originalAccount['hideBalanceStatus'] ?? false) ||
-        _customIcon != null;
+        _customIconBytes != null;
   }
 
   Future<void> _pickIcon() async {
@@ -105,8 +133,12 @@ class _EditAccountPageState extends State<EditAccountPage> {
       );
 
       if (pickedFile != null) {
+        final bytes = await pickedFile.readAsBytes();
         setState(() {
-          _customIcon = File(pickedFile.path);
+          if (!kIsWeb) {
+            _customIcon = File(pickedFile.path);
+          }
+          _customIconBytes = bytes;
         });
       }
     } catch (e) {
@@ -118,23 +150,23 @@ class _EditAccountPageState extends State<EditAccountPage> {
     }
   }
 
-  Future<String?> _uploadIconToSupabase(File iconFile) async {
+  Future<String?> _uploadIconToSupabase(Uint8List iconBytes) async {
     try {
-      final fileName = 'icon_${DateTime.now().millisecondsSinceEpoch}.png';
-      final filePath = 'iconImage/$fileName';
-
-      final bytes = await iconFile.readAsBytes();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'icon_${widget.userId}_$timestamp.jpg';
+      final filePath = 'bank_icon/Customization/$fileName';
 
       await Supabase.instance.client.storage
-          .from('profile_image')
+          .from('images')
           .uploadBinary(
             filePath,
-            bytes,
+            iconBytes,
             fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
           );
 
-      final publicUrl =
-          'https://drohtvfhklvqoeokopey.storage.supabase.co/storage/v1/object/public/profile_image/$filePath';
+      final publicUrl = Supabase.instance.client.storage
+          .from('images')
+          .getPublicUrl(filePath);
 
       return publicUrl;
     } catch (e) {
@@ -144,6 +176,24 @@ class _EditAccountPageState extends State<EditAccountPage> {
         ).showSnackBar(SnackBar(content: Text('Error uploading icon: $e')));
       }
       return null;
+    }
+  }
+
+  Future<void> _deleteOldIcon(String iconUrl) async {
+    try {
+      // Extract the path from the URL
+      final uri = Uri.parse(iconUrl);
+      final pathSegments = uri.pathSegments;
+      final pathIndex = pathSegments.indexOf('images');
+      if (pathIndex != -1) {
+        final filePath = pathSegments.sublist(pathIndex + 1).join('/');
+        await Supabase.instance.client.storage.from('images').remove([
+          filePath,
+        ]);
+      }
+    } catch (e) {
+      print('Error deleting old icon: $e');
+      // Don't throw, as this is not critical
     }
   }
 
@@ -162,8 +212,14 @@ class _EditAccountPageState extends State<EditAccountPage> {
     try {
       String? iconPath = _uploadedIconPath;
 
-      if (_customIcon != null) {
-        iconPath = await _uploadIconToSupabase(_customIcon!);
+      if (_customIconBytes != null) {
+        // Delete old icon if exists
+        if (_uploadedIconPath != null && _uploadedIconPath!.isNotEmpty) {
+          await _deleteOldIcon(_uploadedIconPath!);
+        }
+
+        // Upload new icon
+        iconPath = await _uploadIconToSupabase(_customIconBytes!);
         if (iconPath == null) {
           setState(() {
             _isLoading = false;
@@ -188,14 +244,94 @@ class _EditAccountPageState extends State<EditAccountPage> {
           .eq('accountId', widget.account['accountId']);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Account updated successfully'),
-            duration: Duration(seconds: 2),
-          ),
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              backgroundColor: const Color(0xFFFFF9E6),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF9E6),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Success icon
+                    Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFFA7E399),
+                      ),
+                      child: const Icon(
+                        Icons.check,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Success title
+                    const Text(
+                      'Account Updated Successfully!',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFF39C12),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Success message
+                    const Text(
+                      'Your account has been updated successfully.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14, color: Color(0xFF666666)),
+                    ),
+                    const SizedBox(height: 24),
+                    // Continue button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context); // Close dialog
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  AccountManager(userId: widget.userId),
+                            ),
+                            (route) => false,
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFA7E399),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        child: const Text('View Account Manager'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
-
-        Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
@@ -215,60 +351,134 @@ class _EditAccountPageState extends State<EditAccountPage> {
   Future<void> _deleteAccount() async {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFFFFF9E6),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        contentPadding: const EdgeInsets.all(24),
-        title: const Text(
-          'Delete Account',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFFF39C12),
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
           ),
-        ),
-        content: Text(
-          'Are you sure you want to delete "${_nameController.text}"?',
-          style: const TextStyle(color: Color(0xFF666666)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: Color(0xFFF39C12)),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Warning icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFFF9800),
+                  ),
+                  child: const Icon(
+                    Icons.warning,
+                    color: Colors.white,
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Delete title
+                const Text(
+                  'Delete Account',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFF39C12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Delete message
+                Text(
+                  'Are you sure you want to delete "${_nameController.text}"? This action cannot be undone.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF666666),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Action buttons
+                Row(
+                  children: [
+                    // Cancel button
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey[300],
+                          foregroundColor: Colors.black87,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Delete button
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          try {
+                            await Supabase.instance.client
+                                .from('Account')
+                                .delete()
+                                .eq('accountId', widget.account['accountId']);
+
+                            if (mounted) {
+                              Navigator.pushAndRemoveUntil(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      AccountManager(userId: widget.userId),
+                                ),
+                                (route) => false,
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Error deleting account: $e'),
+                                ),
+                              );
+                            }
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF6B6B),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        child: const Text('Delete'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              try {
-                await Supabase.instance.client
-                    .from('Account')
-                    .delete()
-                    .eq('accountId', widget.account['accountId']);
-
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Account deleted successfully'),
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-                  Navigator.pop(context, true);
-                }
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error deleting account: $e')),
-                  );
-                }
-              }
-            },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -477,15 +687,15 @@ class _EditAccountPageState extends State<EditAccountPage> {
                             ),
                             GestureDetector(
                               onTap: _pickIcon,
-                              child: _customIcon != null
+                              child: _customIconBytes != null
                                   ? Container(
                                       width: 50,
                                       height: 50,
                                       decoration: BoxDecoration(
                                         borderRadius: BorderRadius.circular(8),
                                       ),
-                                      child: Image.file(
-                                        _customIcon!,
+                                      child: Image.memory(
+                                        _customIconBytes!,
                                         fit: BoxFit.contain,
                                       ),
                                     )
@@ -621,7 +831,7 @@ class _EditAccountPageState extends State<EditAccountPage> {
                                 ),
                               ),
                               Text(
-                                _selectedCurrency ?? 'Select',
+                                _getCurrencyCode(_selectedCurrency),
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
@@ -665,7 +875,10 @@ class _EditAccountPageState extends State<EditAccountPage> {
                                       decimal: true,
                                       signed: false,
                                     ),
-                                decoration: const InputDecoration(
+                                decoration: InputDecoration(
+                                  prefix: Text(
+                                    _getCurrencySymbol(_selectedCurrency),
+                                  ),
                                   border: InputBorder.none,
                                   isDense: true,
                                   contentPadding: EdgeInsets.zero,
@@ -856,10 +1069,10 @@ class _CurrencySelectionPageState extends State<CurrencySelectionPage> {
         _filteredCurrencies = widget.currencies
             .where(
               (currency) =>
-                  currency['currencyId'].toString().toLowerCase().contains(
+                  currency['name'].toString().toLowerCase().contains(
                     query.toLowerCase(),
                   ) ||
-                  currency['name'].toString().toLowerCase().contains(
+                  (currency['code'] ?? '').toString().toLowerCase().contains(
                     query.toLowerCase(),
                   ),
             )
@@ -936,12 +1149,24 @@ class _CurrencySelectionPageState extends State<CurrencySelectionPage> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          currency['name'],
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              currency['name'],
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              currency['code'] ?? '',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
                         ),
                         if (isSelected)
                           const Icon(Icons.check_circle, color: Colors.green),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'create_category.dart';
+import 'edit_category.dart';
 
 class CategoryManager extends StatefulWidget {
   final String userId;
@@ -14,8 +15,10 @@ class CategoryManager extends StatefulWidget {
 class _CategoryManagerState extends State<CategoryManager>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  List<Map<String, dynamic>> expenseCategories = [];
-  List<Map<String, dynamic>> incomeCategories = [];
+  List<Map<String, dynamic>> defaultExpenseCategories = [];
+  List<Map<String, dynamic>> userExpenseCategories = [];
+  List<Map<String, dynamic>> defaultIncomeCategories = [];
+  List<Map<String, dynamic>> userIncomeCategories = [];
   bool _isLoading = true;
 
   @override
@@ -66,14 +69,18 @@ class _CategoryManagerState extends State<CategoryManager>
           .order('categoryId');
 
       setState(() {
-        expenseCategories = <Map<String, dynamic>>[
-          ...List<Map<String, dynamic>>.from(defaultExpenseResponse as List),
-          ...List<Map<String, dynamic>>.from(userExpenseResponse as List),
-        ];
-        incomeCategories = <Map<String, dynamic>>[
-          ...List<Map<String, dynamic>>.from(defaultIncomeResponse as List),
-          ...List<Map<String, dynamic>>.from(userIncomeResponse as List),
-        ];
+        defaultExpenseCategories = List<Map<String, dynamic>>.from(
+          defaultExpenseResponse as List,
+        );
+        userExpenseCategories = List<Map<String, dynamic>>.from(
+          userExpenseResponse as List,
+        );
+        defaultIncomeCategories = List<Map<String, dynamic>>.from(
+          defaultIncomeResponse as List,
+        );
+        userIncomeCategories = List<Map<String, dynamic>>.from(
+          userIncomeResponse as List,
+        );
         _isLoading = false;
       });
     } catch (e) {
@@ -108,17 +115,22 @@ class _CategoryManagerState extends State<CategoryManager>
       ),
       body: Column(
         children: [
-          // Tab Bar
+          // Tab Bar with pill-style indicator
           Container(
-            margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            margin: EdgeInsets.symmetric(
+              horizontal: MediaQuery.of(context).size.width < 400 ? 12 : 24,
+              vertical: MediaQuery.of(context).size.width < 400 ? 12 : 16,
+            ),
             decoration: BoxDecoration(
               color: const Color(0xFFE8E8E8),
               borderRadius: BorderRadius.circular(20),
             ),
             child: TabBar(
               controller: _tabController,
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
               indicator: BoxDecoration(
-                color: const Color(0xFF90EE90),
+                color: const Color(0xFFA7E399),
                 borderRadius: BorderRadius.circular(20),
               ),
               labelColor: Colors.black,
@@ -147,44 +159,63 @@ class _CategoryManagerState extends State<CategoryManager>
                     controller: _tabController,
                     children: [
                       // Expense Tab
-                      _buildCategoryGrid(expenseCategories),
+                      _buildCategorySection(
+                        defaultExpenseCategories,
+                        userExpenseCategories,
+                      ),
                       // Income Tab
-                      _buildCategoryGrid(incomeCategories),
+                      _buildCategorySection(
+                        defaultIncomeCategories,
+                        userIncomeCategories,
+                      ),
                     ],
                   ),
           ),
+          // Add Category Button
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                onPressed: () async {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          CreateCategory(userId: widget.userId),
+                    ),
+                  );
+                  // Refresh categories if a new one was created
+                  if (result == true) {
+                    await _fetchCategories();
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFA7E399),
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                child: const Text('Add Category'),
+              ),
+            ),
+          ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFFFFD700),
-        onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => CreateCategory(userId: widget.userId),
-            ),
-          );
-          // Refresh categories if a new one was created
-          if (result == true) {
-            await _fetchCategories();
-          }
-        },
-        child: const Text(
-          'Add\nCategory',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
-            fontSize: 12,
-          ),
-        ),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 
-  Widget _buildCategoryGrid(List<Map<String, dynamic>> categories) {
-    if (categories.isEmpty) {
+  Widget _buildCategorySection(
+    List<Map<String, dynamic>> defaultCategories,
+    List<Map<String, dynamic>> userCategories,
+  ) {
+    if (defaultCategories.isEmpty && userCategories.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -200,40 +231,107 @@ class _CategoryManagerState extends State<CategoryManager>
       );
     }
 
-    return GridView.builder(
-      padding: const EdgeInsets.all(24),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 24,
-        childAspectRatio: 0.90,
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Default Categories Section
+          if (defaultCategories.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+              child: Text(
+                'Default Categories',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[700],
+                ),
+              ),
+            ),
+            _buildCategoryGrid(defaultCategories),
+          ],
+          // User Categories Section
+          if (userCategories.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+              child: Text(
+                'My Categories',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[700],
+                ),
+              ),
+            ),
+            _buildCategoryGrid(userCategories),
+          ],
+        ],
       ),
-      itemCount: categories.length,
-      itemBuilder: (context, index) {
-        final category = categories[index];
-        return _buildCategoryItem(category);
-      },
+    );
+  }
+
+  Widget _buildCategoryGrid(List<Map<String, dynamic>> categories) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final crossAxisCount = screenWidth < 400 ? 2 : 3;
+    final crossAxisSpacing = screenWidth < 400 ? 12.0 : 16.0;
+    final mainAxisSpacing = screenWidth < 400 ? 16.0 : 24.0;
+    final childAspectRatio = screenWidth < 400 ? 0.85 : 0.90;
+    final padding = screenWidth < 400 ? 16.0 : 24.0;
+
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: padding / 2),
+      child: GridView.builder(
+        padding: EdgeInsets.all(padding / 2),
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          crossAxisSpacing: crossAxisSpacing,
+          mainAxisSpacing: mainAxisSpacing,
+          childAspectRatio: childAspectRatio,
+        ),
+        itemCount: categories.length,
+        itemBuilder: (context, index) {
+          final category = categories[index];
+          return _buildCategoryItem(category);
+        },
+      ),
     );
   }
 
   Widget _buildCategoryItem(Map<String, dynamic> category) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final iconSize = screenWidth < 400 ? 55.0 : 70.0;
+    final textWidth = screenWidth < 400 ? 65.0 : 80.0;
+
     return GestureDetector(
       onTap: () {
-        // TODO: Handle category tap - could open edit/delete options
-        ScaffoldMessenger.of(
+        Navigator.push(
           context,
-        ).showSnackBar(SnackBar(content: Text('${category['name']} tapped')));
+          MaterialPageRoute(
+            builder: (context) => EditCategory(
+              categoryId: category['categoryId'],
+              category: category,
+              userId: widget.userId,
+            ),
+          ),
+        ).then((refreshNeeded) {
+          // If the edit was successful, refresh categories
+          if (refreshNeeded == true) {
+            _fetchCategories();
+          }
+        });
       },
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 2),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
             // Category Icon Container
             Container(
-              width: 70,
-              height: 70,
+              width: iconSize,
+              height: iconSize,
               decoration: BoxDecoration(
                 color: const Color(0xFFB0E0E6),
                 borderRadius: BorderRadius.circular(12),
@@ -248,18 +346,22 @@ class _CategoryManagerState extends State<CategoryManager>
                           return Icon(
                             Icons.category,
                             color: Colors.grey[600],
-                            size: 40,
+                            size: iconSize * 0.5,
                           );
                         },
                       ),
                     )
-                  : Icon(Icons.category, color: Colors.grey[600], size: 40),
+                  : Icon(
+                      Icons.category,
+                      color: Colors.grey[600],
+                      size: iconSize * 0.5,
+                    ),
             ),
             const SizedBox(height: 8),
             // Category Name
             SizedBox(
               height: 40,
-              width: 80,
+              width: textWidth,
               child: Text(
                 category['name'] ?? 'Unknown',
                 textAlign: TextAlign.center,

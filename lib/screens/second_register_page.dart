@@ -90,6 +90,12 @@ class _SecondRegisterPageState extends State<SecondRegisterPage> {
           'name': 'Ledger',
         });
 
+        // Assign default currency (CUR070) to the new user
+        await supabase.from('UserCurrency').insert({
+          'userId': userId,
+          'currencyId': 'CUR070',
+        });
+
         if (!mounted) return;
 
         // Show success dialog with theme colors
@@ -130,6 +136,7 @@ class _SecondRegisterPageState extends State<SecondRegisterPage> {
                     // Success title
                     const Text(
                       'Registration Successful!',
+                      textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
