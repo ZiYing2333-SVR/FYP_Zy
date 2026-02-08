@@ -5,6 +5,7 @@ import 'account_page.dart';
 import 'savings_page.dart';
 import 'settings_screen.dart';
 import 'create_budget_page.dart';
+import 'edit_budget_page.dart';
 
 class BudgetPage extends StatefulWidget {
   final String userId;
@@ -450,87 +451,207 @@ class _BudgetPageState extends State<BudgetPage> {
                                             ),
                                           // Menu Button
                                           PopupMenuButton<String>(
-                                            onSelected: (value) {
+                                            onSelected: (value) async {
                                               if (value == 'edit') {
-                                                ScaffoldMessenger.of(
-                                                  context,
-                                                ).showSnackBar(
-                                                  const SnackBar(
-                                                    content: Text(
-                                                      'Edit budget feature coming soon',
-                                                    ),
-                                                  ),
-                                                );
+                                                final result =
+                                                    await Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (context) =>
+                                                            EditBudgetPage(
+                                                              budget: budget,
+                                                              userId:
+                                                                  widget.userId,
+                                                            ),
+                                                      ),
+                                                    );
+                                                if (result == true) {
+                                                  _fetchBudgets();
+                                                }
                                               } else if (value == 'delete') {
                                                 showDialog(
                                                   context: context,
-                                                  builder: (context) => AlertDialog(
-                                                    backgroundColor:
-                                                        const Color(0xFFFFF9E6),
-                                                    shape: RoundedRectangleBorder(
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            20,
+                                                  barrierDismissible: false,
+                                                  builder: (BuildContext context) {
+                                                    return Dialog(
+                                                      shape: RoundedRectangleBorder(
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              20,
+                                                            ),
+                                                      ),
+                                                      backgroundColor:
+                                                          const Color(
+                                                            0xFFFFF9E6,
                                                           ),
-                                                    ),
-                                                    contentPadding:
-                                                        const EdgeInsets.all(
-                                                          24,
-                                                        ),
-                                                    title: const Text(
-                                                      'Delete Budget',
-                                                      style: TextStyle(
-                                                        fontSize: 20,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        color: Color(
-                                                          0xFFF39C12,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    content: const Text(
-                                                      'Are you sure you want to delete this budget?',
-                                                      style: TextStyle(
-                                                        color: Color(
-                                                          0xFF666666,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    actions: [
-                                                      TextButton(
-                                                        onPressed: () =>
-                                                            Navigator.pop(
-                                                              context,
+                                                      child: Container(
+                                                        padding:
+                                                            const EdgeInsets.all(
+                                                              24,
                                                             ),
-                                                        child: const Text(
-                                                          'Cancel',
-                                                          style: TextStyle(
-                                                            color: Color(
-                                                              0xFFF39C12,
+                                                        decoration: BoxDecoration(
+                                                          color: const Color(
+                                                            0xFFFFF9E6,
+                                                          ),
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                20,
+                                                              ),
+                                                          border: Border.all(
+                                                            color: const Color(
+                                                              0xFFFFE5B4,
                                                             ),
+                                                            width: 2,
                                                           ),
                                                         ),
-                                                      ),
-                                                      TextButton(
-                                                        onPressed: () {
-                                                          _deleteBudget(
-                                                            budgetId,
-                                                          );
-                                                          Navigator.pop(
-                                                            context,
-                                                          );
-                                                        },
-                                                        child: const Text(
-                                                          'Delete',
-                                                          style: TextStyle(
-                                                            color: Color(
-                                                              0xFF666666,
+                                                        child: Column(
+                                                          mainAxisSize:
+                                                              MainAxisSize.min,
+                                                          children: [
+                                                            // Warning icon
+                                                            Container(
+                                                              width: 60,
+                                                              height: 60,
+                                                              decoration:
+                                                                  BoxDecoration(
+                                                                    shape: BoxShape
+                                                                        .circle,
+                                                                    color: Colors
+                                                                        .red
+                                                                        .shade200,
+                                                                  ),
+                                                              child: Icon(
+                                                                Icons
+                                                                    .warning_rounded,
+                                                                color: Colors
+                                                                    .red
+                                                                    .shade600,
+                                                                size: 32,
+                                                              ),
                                                             ),
-                                                          ),
+                                                            const SizedBox(
+                                                              height: 20,
+                                                            ),
+                                                            // Title
+                                                            const Text(
+                                                              'Delete Budget?',
+                                                              textAlign:
+                                                                  TextAlign
+                                                                      .center,
+                                                              style: TextStyle(
+                                                                fontSize: 20,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                                color: Color(
+                                                                  0xFFF39C12,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                            const SizedBox(
+                                                              height: 12,
+                                                            ),
+                                                            // Message
+                                                            const Text(
+                                                              'Are you sure you want to delete this budget? This action cannot be undone.',
+                                                              textAlign:
+                                                                  TextAlign
+                                                                      .center,
+                                                              style: TextStyle(
+                                                                fontSize: 14,
+                                                                color: Color(
+                                                                  0xFF666666,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                            const SizedBox(
+                                                              height: 24,
+                                                            ),
+                                                            // Buttons
+                                                            Row(
+                                                              children: [
+                                                                // Cancel button
+                                                                Expanded(
+                                                                  child: SizedBox(
+                                                                    height: 48,
+                                                                    child: ElevatedButton(
+                                                                      onPressed: () {
+                                                                        Navigator.pop(
+                                                                          context,
+                                                                        );
+                                                                      },
+                                                                      style: ElevatedButton.styleFrom(
+                                                                        backgroundColor:
+                                                                            const Color(
+                                                                              0xFFE8E8E8,
+                                                                            ),
+                                                                        foregroundColor:
+                                                                            Colors.black87,
+                                                                        shape: RoundedRectangleBorder(
+                                                                          borderRadius: BorderRadius.circular(
+                                                                            10,
+                                                                          ),
+                                                                        ),
+                                                                        textStyle: const TextStyle(
+                                                                          fontSize:
+                                                                              16,
+                                                                          fontWeight:
+                                                                              FontWeight.w600,
+                                                                        ),
+                                                                      ),
+                                                                      child: const Text(
+                                                                        'Cancel',
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                                const SizedBox(
+                                                                  width: 12,
+                                                                ),
+                                                                // Delete button
+                                                                Expanded(
+                                                                  child: SizedBox(
+                                                                    height: 48,
+                                                                    child: ElevatedButton(
+                                                                      onPressed: () {
+                                                                        _deleteBudget(
+                                                                          budgetId,
+                                                                        );
+                                                                        Navigator.pop(
+                                                                          context,
+                                                                        );
+                                                                      },
+                                                                      style: ElevatedButton.styleFrom(
+                                                                        backgroundColor: Colors
+                                                                            .red
+                                                                            .shade400,
+                                                                        foregroundColor:
+                                                                            Colors.white,
+                                                                        shape: RoundedRectangleBorder(
+                                                                          borderRadius: BorderRadius.circular(
+                                                                            10,
+                                                                          ),
+                                                                        ),
+                                                                        textStyle: const TextStyle(
+                                                                          fontSize:
+                                                                              16,
+                                                                          fontWeight:
+                                                                              FontWeight.w600,
+                                                                        ),
+                                                                      ),
+                                                                      child: const Text(
+                                                                        'Delete',
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                          ],
                                                         ),
                                                       ),
-                                                    ],
-                                                  ),
+                                                    );
+                                                  },
                                                 );
                                               }
                                             },

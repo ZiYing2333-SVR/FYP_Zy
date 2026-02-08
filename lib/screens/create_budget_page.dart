@@ -27,7 +27,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> {
 
     if (result != null) {
       // Navigate to page 2 with ledger selected
-      Navigator.push(
+      final budgetCreated = await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => CreateBudgetPage2(
@@ -38,6 +38,11 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> {
           ),
         ),
       );
+
+      // If budget was created successfully, go back to budget page
+      if (budgetCreated == true && mounted) {
+        Navigator.pop(context, true);
+      }
     }
   }
 
@@ -56,7 +61,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> {
 
     if (result != null) {
       // Navigate to page 2 with category selected
-      Navigator.push(
+      final budgetCreated = await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => CreateBudgetPage2(
@@ -67,6 +72,11 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> {
           ),
         ),
       );
+
+      // If budget was created successfully, go back to budget page
+      if (budgetCreated == true && mounted) {
+        Navigator.pop(context, true);
+      }
     }
   }
 
@@ -85,7 +95,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> {
 
     if (result != null) {
       // Navigate to page 2 with account selected
-      Navigator.push(
+      final budgetCreated = await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => CreateBudgetPage2(
@@ -96,6 +106,11 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> {
           ),
         ),
       );
+
+      // If budget was created successfully, go back to budget page
+      if (budgetCreated == true && mounted) {
+        Navigator.pop(context, true);
+      }
     }
   }
 
