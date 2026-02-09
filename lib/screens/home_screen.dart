@@ -5,6 +5,7 @@ import 'account_page.dart';
 import 'add_transaction.dart';
 import 'transaction_detail_screen.dart';
 import 'savings_page.dart';
+import 'ai_features_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final String userId;
@@ -872,88 +873,141 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-      bottomNavigationBar: Stack(
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          BottomNavigationBar(
-            currentIndex: _selectedIndex,
-            backgroundColor: const Color(0xFFFEFFD3),
-            type: BottomNavigationBarType.fixed,
-            items: const [
-              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.account_balance_wallet),
-                label: 'Account',
-              ),
-              BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.savings),
-                label: 'Saving',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.settings),
-                label: 'Setting',
-              ),
-            ],
-            onTap: (index) {
-              setState(() {
-                _selectedIndex = index;
-              });
-              if (index == 1) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => AccountPage(userId: _currentUserId!),
-                  ),
-                );
-              } else if (index == 3) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SavingsPage(userId: _currentUserId!),
-                  ),
-                );
-              } else if (index == 4) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) =>
-                        SettingsScreen(userId: _currentUserId!),
-                  ),
-                ).then((_) {
-                  _checkBudgetAlerts();
-                });
-              }
-            },
-          ),
-          // Alert badge on Settings icon
-          if (_hasBudgetAlert)
-            Positioned(
-              right: 12,
-              top: 8,
-              child: Container(
-                width: 20,
-                height: 20,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFE53935),
-                  shape: BoxShape.circle,
+          // AI Feature Button
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: FloatingActionButton(
+                backgroundColor: const Color(0xFF90EE90),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Center(
-                  child: Text(
-                    '!',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AIFeaturesScreen(
+                        userId: _currentUserId!,
+                        ledgerId: _selectedLedgerId,
+                      ),
                     ),
-                  ),
+                  );
+                },
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(width: 12),
+                    Icon(Icons.smart_toy, color: Colors.black, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'AI Features',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                  ],
                 ),
               ),
             ),
+          ),
+          // Bottom Navigation Bar
+          Stack(
+            children: [
+              BottomNavigationBar(
+                currentIndex: _selectedIndex,
+                backgroundColor: const Color(0xFFFEFFD3),
+                type: BottomNavigationBarType.fixed,
+                items: const [
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.home),
+                    label: 'Home',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.account_balance_wallet),
+                    label: 'Account',
+                  ),
+                  BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.savings),
+                    label: 'Saving',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.settings),
+                    label: 'Setting',
+                  ),
+                ],
+                onTap: (index) {
+                  setState(() {
+                    _selectedIndex = index;
+                  });
+                  if (index == 1) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            AccountPage(userId: _currentUserId!),
+                      ),
+                    );
+                  } else if (index == 3) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            SavingsPage(userId: _currentUserId!),
+                      ),
+                    );
+                  } else if (index == 4) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            SettingsScreen(userId: _currentUserId!),
+                      ),
+                    ).then((_) {
+                      _checkBudgetAlerts();
+                    });
+                  }
+                },
+              ),
+              // Alert badge on Settings icon
+              if (_hasBudgetAlert)
+                Positioned(
+                  right: 12,
+                  top: 8,
+                  child: Container(
+                    width: 20,
+                    height: 20,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFE53935),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Center(
+                      child: Text(
+                        '!',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ],
       ),
       floatingActionButton: Padding(
         padding: const EdgeInsets.only(bottom: 80),
         child: FloatingActionButton(
+          heroTag: 'add_transaction_fab',
           backgroundColor: const Color(0xFF90EE90),
           onPressed: () async {
             final result = await Navigator.push(
