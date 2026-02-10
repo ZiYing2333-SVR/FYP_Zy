@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/bank_icon_helper.dart';
+import '../services/budget_forecast_service.dart';
 import 'home_screen.dart';
 import 'settings_screen.dart';
 import 'add_account_page1.dart';
@@ -73,11 +74,20 @@ class _AccountPageState extends State<AccountPage> {
           .eq('userId', widget.userId);
 
       bool hasAlert = false;
+      final forecastService = BudgetForecastService();
 
-      // Check each budget for >= 80% usage
+      // Check each budget for high risk using forecast-based logic
       for (var budget in budgets) {
-        final double usagePercentage = await _calculateBudgetUsage(budget);
-        if (usagePercentage >= 80) {
+        final isHighRisk = await forecastService.checkHighRiskAlert(
+          widget.userId,
+          budget['budgetId'],
+          (budget['amount'] ?? 0).toDouble(),
+          budget['accountId'],
+          budget['categoryId'],
+          budget['ledgerId'],
+        );
+
+        if (isHighRisk) {
           hasAlert = true;
           break;
         }
@@ -88,82 +98,6 @@ class _AccountPageState extends State<AccountPage> {
       });
     } catch (e) {
       print('Error checking budget alerts: $e');
-    }
-  }
-
-  Future<double> _calculateBudgetUsage(Map<String, dynamic> budget) async {
-    try {
-      final budgetType = budget['type'] ?? '';
-      final budgetAmount = (budget['amount'] ?? 0).toDouble();
-      final cycleType = (budget['cycleType'] ?? 'month').toLowerCase();
-
-      if (budgetAmount <= 0) return 0;
-
-      // Calculate date range based on cycle type
-      final now = DateTime.now();
-      final DateTime startDate;
-
-      switch (cycleType) {
-        case 'day':
-          startDate = DateTime(now.year, now.month, now.day);
-          break;
-        case 'week':
-          startDate = now.subtract(Duration(days: now.weekday - 1));
-          break;
-        case 'month':
-          startDate = DateTime(now.year, now.month, 1);
-          break;
-        case 'year':
-          startDate = DateTime(now.year, 1, 1);
-          break;
-        default:
-          startDate = DateTime(now.year, now.month, 1);
-      }
-
-      // Fetch transactions based on budget type
-      List<dynamic> transactions = [];
-
-      if (budgetType == 'account') {
-        final accountId = budget['accountId'];
-        if (accountId != null) {
-          transactions = await Supabase.instance.client
-              .from('Transaction')
-              .select()
-              .eq('accountId', accountId)
-              .gte('date', startDate.toIso8601String());
-        }
-      } else if (budgetType == 'category') {
-        final categoryId = budget['categoryId'];
-        if (categoryId != null) {
-          transactions = await Supabase.instance.client
-              .from('Transaction')
-              .select()
-              .eq('categoryId', categoryId)
-              .eq('type', 'expense')
-              .gte('date', startDate.toIso8601String());
-        }
-      } else if (budgetType == 'ledger') {
-        final ledgerId = budget['ledgerId'];
-        if (ledgerId != null) {
-          transactions = await Supabase.instance.client
-              .from('Transaction')
-              .select()
-              .eq('ledgerId', ledgerId)
-              .eq('type', 'expense')
-              .gte('date', startDate.toIso8601String());
-        }
-      }
-
-      // Sum up transaction amounts
-      double totalSpent = 0;
-      for (var transaction in transactions) {
-        totalSpent += ((transaction['amount'] ?? 0) as num).toDouble();
-      }
-
-      return (totalSpent / budgetAmount) * 100;
-    } catch (e) {
-      print('Error calculating budget usage: $e');
-      return 0;
     }
   }
 

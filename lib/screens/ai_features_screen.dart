@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'auto_expense_categorization_screen.dart';
+import 'budget_forecasting_screen.dart';
+import '../services/budget_forecast_service.dart';
 
 class AIFeaturesScreen extends StatelessWidget {
   final String userId;
@@ -56,49 +59,8 @@ class AIFeaturesScreen extends StatelessWidget {
               },
             ),
             const SizedBox(height: 12),
-            // Budget Forecasting with Badge
-            Stack(
-              children: [
-                _buildFeatureButton(
-                  context,
-                  title: 'Budget Forecasting',
-                  icon: Icons.trending_up,
-                  onTap: () {
-                    // Navigate to Budget Forecasting screen
-                    print('Budget Forecasting tapped');
-                  },
-                ),
-                // Red badge
-                Positioned(
-                  top: 8,
-                  right: 16,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFE53935),
-                      shape: BoxShape.circle,
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 20,
-                      minHeight: 20,
-                    ),
-                    child: const Center(
-                      child: Text(
-                        '1',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            // Budget Forecasting with High-Risk Alert Badge
+            _buildBudgetForecastingButton(context),
             const SizedBox(height: 12),
             // Savings Goal Assistant
             _buildFeatureButton(
@@ -114,6 +76,95 @@ class AIFeaturesScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildBudgetForecastingButton(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: _checkBudgetAlerts(),
+      builder: (context, snapshot) {
+        final hasAlert = snapshot.data ?? false;
+
+        return Stack(
+          children: [
+            _buildFeatureButton(
+              context,
+              title: 'Budget Forecasting',
+              icon: Icons.trending_up,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => BudgetForecastingScreen(
+                      userId: userId,
+                      ledgerId: ledgerId,
+                    ),
+                  ),
+                );
+              },
+            ),
+            // Show red badge only when there's high risk alert
+            if (hasAlert)
+              Positioned(
+                top: 8,
+                right: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFE53935),
+                    shape: BoxShape.circle,
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: 20,
+                    minHeight: 20,
+                  ),
+                  child: const Center(
+                    child: Icon(
+                      Icons.warning_rounded,
+                      color: Colors.white,
+                      size: 12,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<bool> _checkBudgetAlerts() async {
+    try {
+      final budgets = await Supabase.instance.client
+          .from('Budget')
+          .select()
+          .eq('userId', userId);
+
+      final forecastService = BudgetForecastService();
+
+      // Check each budget for high risk
+      for (var budget in budgets) {
+        final isHighRisk = await forecastService.checkHighRiskAlert(
+          userId,
+          budget['budgetId'],
+          (budget['amount'] ?? 0).toDouble(),
+          budget['accountId'],
+          budget['categoryId'],
+          budget['ledgerId'],
+        );
+
+        if (isHighRisk) {
+          return true; // Found at least one high-risk budget
+        }
+      }
+
+      return false; // No high-risk budgets
+    } catch (e) {
+      print('Error checking budget alerts: $e');
+      return false;
+    }
   }
 
   Widget _buildFeatureButton(

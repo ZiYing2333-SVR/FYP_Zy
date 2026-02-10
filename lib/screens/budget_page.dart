@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/budget_forecast_service.dart';
 import 'home_screen.dart';
 import 'account_page.dart';
 import 'savings_page.dart';
@@ -25,6 +26,10 @@ class _BudgetPageState extends State<BudgetPage> {
   void initState() {
     super.initState();
     _fetchBudgets();
+    // Check for high-risk alerts after a short delay to ensure UI is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAndShowHighRiskAlert();
+    });
   }
 
   Future<void> _fetchBudgets() async {
@@ -183,6 +188,109 @@ class _BudgetPageState extends State<BudgetPage> {
 
   String _formatCurrency(double value) {
     return 'RM${value.toStringAsFixed(2)}';
+  }
+
+  Future<void> _checkAndShowHighRiskAlert() async {
+    try {
+      if (_budgets.isEmpty) return;
+
+      final forecastService = BudgetForecastService();
+      bool hasHighRisk = false;
+
+      // Check each budget for high risk
+      for (var budget in _budgets) {
+        final isHighRisk = await forecastService.checkHighRiskAlert(
+          widget.userId,
+          budget['budgetId'],
+          (budget['amount'] ?? 0).toDouble(),
+          budget['accountId'],
+          budget['categoryId'],
+          budget['ledgerId'],
+        );
+
+        if (isHighRisk) {
+          hasHighRisk = true;
+          break;
+        }
+      }
+
+      // Show alert dialog if high risk is detected
+      if (hasHighRisk && mounted) {
+        _showHighRiskAlertDialog();
+      }
+    } catch (e) {
+      print('Error checking high-risk alerts: $e');
+    }
+  }
+
+  void _showHighRiskAlertDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Title
+                const Text(
+                  'Budget Exceed Risk is High',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+
+                // Message
+                const Text(
+                  'Current financial projections indicate a strong likelihood of budget exceedance without immediate intervention.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.black87,
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+
+                // OK Button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.grey[400],
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      'OK',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _deleteBudget(String budgetId) async {
