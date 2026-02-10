@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'auto_expense_categorization_screen.dart';
 import 'budget_forecasting_screen.dart';
+import 'saving_goal_assistant_screen.dart';
 import '../services/budget_forecast_service.dart';
 
 class AIFeaturesScreen extends StatelessWidget {
@@ -68,8 +69,13 @@ class AIFeaturesScreen extends StatelessWidget {
               title: 'Savings Goal Assistant',
               icon: Icons.savings,
               onTap: () {
-                // Navigate to Savings Goal Assistant screen
-                print('Savings Goal Assistant tapped');
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        SavingGoalAssistantScreen(userId: userId),
+                  ),
+                );
               },
             ),
           ],

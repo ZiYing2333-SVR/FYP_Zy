@@ -878,13 +878,19 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           // AI Feature Button
           Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: FloatingActionButton(
-                backgroundColor: const Color(0xFF90EE90),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF90EE90),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 onPressed: () {
                   Navigator.push(
@@ -898,9 +904,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 },
                 child: const Row(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    SizedBox(width: 12),
                     Icon(Icons.smart_toy, color: Colors.black, size: 20),
                     SizedBox(width: 8),
                     Text(
@@ -911,7 +916,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         fontSize: 12,
                       ),
                     ),
-                    SizedBox(width: 12),
                   ],
                 ),
               ),

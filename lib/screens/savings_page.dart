@@ -6,6 +6,7 @@ import 'account_page.dart';
 import 'settings_screen.dart';
 import 'create_saving_page.dart';
 import 'saving_detail_page.dart';
+import 'saving_goal_assistant_screen.dart';
 
 class SavingsPage extends StatefulWidget {
   final String userId;
@@ -370,6 +371,37 @@ class _SavingsPageState extends State<SavingsPage> {
         centerTitle: false,
         actions: [
           Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: GestureDetector(
+              onTap: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        SavingGoalAssistantScreen(userId: widget.userId),
+                  ),
+                );
+                // Refresh the data if a saving goal was created
+                if (result == true) {
+                  _fetchSavingGoals();
+                }
+              },
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade200,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.auto_awesome,
+                  color: Colors.blue,
+                  size: 24,
+                ),
+              ),
+            ),
+          ),
+          Padding(
             padding: const EdgeInsets.only(right: 16),
             child: GestureDetector(
               onTap: () async {
@@ -465,6 +497,58 @@ class _SavingsPageState extends State<SavingsPage> {
                             ),
                           ),
                         ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    // AI Features Button
+                    GestureDetector(
+                      onTap: () async {
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => SavingGoalAssistantScreen(
+                              userId: widget.userId,
+                            ),
+                          ),
+                        );
+                        // Refresh the data if a saving goal was created
+                        if (result == true) {
+                          _fetchSavingGoals();
+                        }
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.purple.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.purple.shade300,
+                            width: 2,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.auto_awesome,
+                              color: Colors.purple.shade700,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'AI Features',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.purple.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -576,22 +660,31 @@ class _SavingsPageState extends State<SavingsPage> {
                                               showDialog(
                                                 context: context,
                                                 builder: (context) => AlertDialog(
-                                                  backgroundColor: const Color(0xFFFFF9E6),
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius: BorderRadius.circular(20),
+                                                  backgroundColor: const Color(
+                                                    0xFFFFF9E6,
                                                   ),
-                                                  contentPadding: const EdgeInsets.all(24),
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          20,
+                                                        ),
+                                                  ),
+                                                  contentPadding:
+                                                      const EdgeInsets.all(24),
                                                   title: const Text(
                                                     'Delete Goal',
                                                     style: TextStyle(
                                                       fontSize: 20,
-                                                      fontWeight: FontWeight.bold,
+                                                      fontWeight:
+                                                          FontWeight.bold,
                                                       color: Color(0xFFF39C12),
                                                     ),
                                                   ),
                                                   content: const Text(
                                                     'Are you sure you want to delete this goal?',
-                                                    style: TextStyle(color: Color(0xFF666666)),
+                                                    style: TextStyle(
+                                                      color: Color(0xFF666666),
+                                                    ),
                                                   ),
                                                   actions: [
                                                     TextButton(
@@ -601,7 +694,11 @@ class _SavingsPageState extends State<SavingsPage> {
                                                           ),
                                                       child: const Text(
                                                         'Cancel',
-                                                        style: TextStyle(color: Color(0xFFF39C12)),
+                                                        style: TextStyle(
+                                                          color: Color(
+                                                            0xFFF39C12,
+                                                          ),
+                                                        ),
                                                       ),
                                                     ),
                                                     TextButton(
@@ -614,7 +711,9 @@ class _SavingsPageState extends State<SavingsPage> {
                                                       child: const Text(
                                                         'Delete',
                                                         style: TextStyle(
-                                                          color: Color(0xFF666666),
+                                                          color: Color(
+                                                            0xFF666666,
+                                                          ),
                                                         ),
                                                       ),
                                                     ),

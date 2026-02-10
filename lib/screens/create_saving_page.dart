@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'free_saving_page.dart';
 import 'circle_saving_page.dart';
+import 'saving_goal_assistant_screen.dart';
 
 class CreateSavingPage extends StatefulWidget {
   final String userId;
@@ -43,6 +44,15 @@ class _CreateSavingPageState extends State<CreateSavingPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 20),
+            const Text(
+              'Choose a Saving Method',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 16),
             ..._savingTypes.map(
               (type) => Padding(
                 padding: const EdgeInsets.only(bottom: 16),
@@ -85,6 +95,93 @@ class _CreateSavingPageState extends State<CreateSavingPage> {
                       ],
                     ),
                   ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // AI Features Divider
+            Row(
+              children: [
+                Expanded(
+                  child: Container(height: 1, color: Colors.grey.shade300),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    'or',
+                    style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                  ),
+                ),
+                Expanded(
+                  child: Container(height: 1, color: Colors.grey.shade300),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // AI Features Button
+            GestureDetector(
+              onTap: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        SavingGoalAssistantScreen(userId: widget.userId),
+                  ),
+                );
+                // If a goal was created successfully, pop back to savings_page with result
+                if (result == true && mounted) {
+                  Navigator.pop(context, true);
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 16,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.purple.shade300, width: 2),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.auto_awesome,
+                          color: Colors.purple.shade700,
+                          size: 24,
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'AI Savings Goal Assistant',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.purple.shade700,
+                              ),
+                            ),
+                            Text(
+                              'Get personalized suggestions',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.purple.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    Icon(
+                      Icons.arrow_forward_ios,
+                      color: Colors.purple.shade700,
+                      size: 20,
+                    ),
+                  ],
                 ),
               ),
             ),
