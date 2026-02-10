@@ -58,6 +58,10 @@ class _AccountPageState extends State<AccountPage> {
   double _calculateTotalBalance() {
     double total = 0.0;
     for (var account in _accounts) {
+      // Only include in asset if assetStatus is true
+      final assetStatus = account['assetStatus'] ?? true;
+      if (!assetStatus) continue;
+
       final balance = account['balance'];
       if (balance != null) {
         total += (balance is int) ? balance.toDouble() : (balance as double);
@@ -104,6 +108,10 @@ class _AccountPageState extends State<AccountPage> {
   Map<String, double> _calculateCategoryBalance() {
     Map<String, double> categoryBalances = {};
     for (var account in _accounts) {
+      // Only include in asset if assetStatus is true
+      final assetStatus = account['assetStatus'] ?? true;
+      if (!assetStatus) continue;
+
       final type = account['accountType'] ?? 'Other';
       final balance = account['balance'];
       double balanceValue = 0.0;
@@ -426,6 +434,8 @@ class _AccountPageState extends State<AccountPage> {
                                   final notes =
                                       account['notes'] ?? 'Description';
                                   final iconImage = account['iconImage'];
+                                  final hideBalanceStatus =
+                                      account['hideBalanceStatus'] ?? false;
 
                                   return GestureDetector(
                                     onTap: () {
@@ -531,7 +541,9 @@ class _AccountPageState extends State<AccountPage> {
                                             ),
                                           ),
                                           Text(
-                                            _formatCurrency(balance),
+                                            hideBalanceStatus
+                                                ? '*****'
+                                                : _formatCurrency(balance),
                                             style: const TextStyle(
                                               fontSize: 14,
                                               fontWeight: FontWeight.w600,

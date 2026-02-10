@@ -19,6 +19,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   DateTime _selectedDate = DateTime.now();
+  DateTime _calendarDate = DateTime.now(); // For calendar view
+  DateTime? _selectedCalendarDay; // For selected day in calendar view
   double _totalAmount = 0;
   double _incomeAmount = 0;
   double _expenseAmount = 0;
@@ -26,6 +28,13 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLoading = true;
   bool _showAmounts = true;
   bool _hasBudgetAlert = false;
+  bool _isCalendarView = false; // Track view mode
+  String _calendarFilter = 'Total'; // Calendar filter: Total, Income, Expenses
+  Map<String, double> _dailyBalances = {}; // Daily balances for calendar
+  Map<String, double> _dailyIncome = {}; // Daily income for calendar
+  Map<String, double> _dailyExpense = {}; // Daily expenses for calendar
+  List<Map<String, dynamic>> _selectedDayTransactions =
+      []; // Transactions for selected calendar day
 
   // Ledger related
   List<Map<String, dynamic>> _ledgers = [];
@@ -123,17 +132,246 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _showDatePicker() async {
-    final DateTime? picked = await showDatePicker(
+  void _showMonthYearPicker() async {
+    // Show a custom month/year picker using a dialog
+    showDialog(
       context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (context) {
+        int selectedMonth = _selectedDate.month;
+        int selectedYear = _selectedDate.year;
+        return AlertDialog(
+          title: const Text('Select Month and Year'),
+          content: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Year Selector
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back_ios),
+                          onPressed: () {
+                            setState(() {
+                              selectedYear--;
+                            });
+                          },
+                        ),
+                        Text(
+                          selectedYear.toString(),
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.arrow_forward_ios),
+                          onPressed: () {
+                            setState(() {
+                              selectedYear++;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    // Month Grid
+                    GridView.builder(
+                      shrinkWrap: true,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            childAspectRatio: 2,
+                          ),
+                      itemCount: 12,
+                      itemBuilder: (context, index) {
+                        final month = index + 1;
+                        final isSelected = month == selectedMonth;
+                        return GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              selectedMonth = month;
+                            });
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? const Color(0xFFA7E399)
+                                  : Colors.grey[200],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Center(
+                              child: Text(
+                                _getMonthName(month),
+                                style: TextStyle(
+                                  fontWeight: isSelected
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : Colors.black,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _selectedDate = DateTime(selectedYear, selectedMonth, 1);
+                  if (_isCalendarView) {
+                    _calendarDate = DateTime(selectedYear, selectedMonth, 1);
+                    _selectedCalendarDay = null;
+                    _selectedDayTransactions = [];
+                  }
+                });
+                if (_isCalendarView) {
+                  _calculateDailyBalances();
+                } else {
+                  _fetchTransactions();
+                }
+                Navigator.pop(context);
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
     );
-    if (picked != null && picked != _selectedDate) {
+  }
+
+  Future<void> _calculateDailyBalances() async {
+    try {
+      final startOfMonth = DateTime(_calendarDate.year, _calendarDate.month, 1);
+      final endOfMonth = DateTime(
+        _calendarDate.year,
+        _calendarDate.month + 1,
+        0,
+      );
+
+      final supabase = Supabase.instance.client;
+
+      // Fetch transactions with category and account data for display
+      final listResponse = await supabase
+          .from('Transaction')
+          .select('*, Category(name, icon), Account(accountName, iconImage)')
+          .eq('ledgerId', _selectedLedgerId ?? '')
+          .gte('date', startOfMonth.toIso8601String())
+          .lte('date', endOfMonth.toIso8601String())
+          .order('date', ascending: false);
+
+      // Fetch all transactions for daily balance calculation
+      final response = await supabase
+          .from('Transaction')
+          .select()
+          .eq('ledgerId', _selectedLedgerId ?? '')
+          .gte('date', startOfMonth.toIso8601String())
+          .lte('date', endOfMonth.toIso8601String());
+
+      Map<String, double> dailyBalances = {};
+      Map<String, double> dailyIncome = {};
+      Map<String, double> dailyExpense = {};
+
+      for (var transaction in response) {
+        final date = transaction['date'] != null
+            ? DateTime.parse(transaction['date'])
+            : DateTime.now();
+        final dateKey =
+            '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+        final amount = double.tryParse(transaction['amount'].toString()) ?? 0;
+        final type = transaction['type']?.toString().toLowerCase() ?? 'expense';
+
+        if (type == 'income') {
+          dailyIncome[dateKey] = (dailyIncome[dateKey] ?? 0) + amount;
+          dailyBalances[dateKey] = (dailyBalances[dateKey] ?? 0) + amount;
+        } else {
+          dailyExpense[dateKey] = (dailyExpense[dateKey] ?? 0) + amount;
+          dailyBalances[dateKey] = (dailyBalances[dateKey] ?? 0) - amount;
+        }
+      }
+
       setState(() {
-        _selectedDate = picked;
+        _dailyBalances = dailyBalances;
+        _dailyIncome = dailyIncome;
+        _dailyExpense = dailyExpense;
+        _transactions = List<Map<String, dynamic>>.from(listResponse);
       });
+    } catch (e) {
+      print('Error calculating daily balances: $e');
+    }
+  }
+
+  Future<void> _loadSelectedDayTransactions(DateTime day) async {
+    try {
+      final supabase = Supabase.instance.client;
+      final startOfDay = DateTime(day.year, day.month, day.day);
+      final endOfDay = DateTime(day.year, day.month, day.day, 23, 59, 59);
+
+      final response = await supabase
+          .from('Transaction')
+          .select('*, Category(name, icon), Account(accountName, iconImage)')
+          .eq('ledgerId', _selectedLedgerId ?? '')
+          .gte('date', startOfDay.toIso8601String())
+          .lte('date', endOfDay.toIso8601String())
+          .order('date', ascending: false);
+
+      setState(() {
+        _selectedDayTransactions = List<Map<String, dynamic>>.from(response);
+        _selectedCalendarDay = day;
+      });
+    } catch (e) {
+      print('Error loading day transactions: $e');
+    }
+  }
+
+  void _previousMonth() {
+    setState(() {
+      final prevDate = DateTime(_selectedDate.year, _selectedDate.month - 1, 1);
+      _selectedDate = prevDate;
+      if (_isCalendarView) {
+        _calendarDate = prevDate;
+        _selectedCalendarDay = null;
+        _selectedDayTransactions = [];
+      }
+    });
+    if (_isCalendarView) {
+      _calculateDailyBalances();
+    } else {
+      _fetchTransactions();
+    }
+  }
+
+  void _nextMonth() {
+    setState(() {
+      final nextDate = DateTime(_selectedDate.year, _selectedDate.month + 1, 1);
+      _selectedDate = nextDate;
+      if (_isCalendarView) {
+        _calendarDate = nextDate;
+        _selectedCalendarDay = null;
+        _selectedDayTransactions = [];
+      }
+    });
+    if (_isCalendarView) {
+      _calculateDailyBalances();
+    } else {
       _fetchTransactions();
     }
   }
@@ -328,6 +566,535 @@ class _HomeScreenState extends State<HomeScreen> {
         _getIconData(iconUrl ?? 'shopping_bag'),
         color: Colors.white,
         size: 20,
+      ),
+    );
+  }
+
+  Widget _buildCalendarView() {
+    final firstDayOfMonth = DateTime(
+      _calendarDate.year,
+      _calendarDate.month,
+      1,
+    );
+    final lastDayOfMonth = DateTime(
+      _calendarDate.year,
+      _calendarDate.month + 1,
+      0,
+    );
+    final daysInMonth = lastDayOfMonth.day;
+    final firstWeekday = firstDayOfMonth.weekday;
+
+    final dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    return Column(
+      children: [
+        // Month Navigation and Calendar
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+          ),
+          child: Column(
+            children: [
+              // Month Header with Navigation
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  GestureDetector(
+                    onTap: _previousMonth,
+                    child: const Icon(Icons.arrow_back_ios, size: 20),
+                  ),
+                  GestureDetector(
+                    onTap: _showMonthYearPicker,
+                    child: Row(
+                      children: [
+                        Text(
+                          '${_getMonthName(_calendarDate.month)} ${_calendarDate.year}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.arrow_drop_down, color: Colors.black),
+                      ],
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: _nextMonth,
+                    child: const Icon(Icons.arrow_forward_ios, size: 20),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Day Labels
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: dayLabels
+                    .asMap()
+                    .entries
+                    .map(
+                      (entry) => SizedBox(
+                        width: 40,
+                        child: Center(
+                          child: Text(
+                            entry.value,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: entry.key == 0 || entry.key == 6
+                                  ? const Color(0xFFE74C3C)
+                                  : const Color(0xFFBCBCBC),
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 8),
+              // Calendar Grid
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 7,
+                  childAspectRatio: 1.1,
+                  mainAxisSpacing: 4,
+                  crossAxisSpacing: 4,
+                ),
+                itemCount: daysInMonth + (firstWeekday),
+                itemBuilder: (context, index) {
+                  if (index < firstWeekday) {
+                    return const SizedBox();
+                  }
+
+                  final day = index - firstWeekday + 1;
+                  final dateKey =
+                      '${_calendarDate.year}-${_calendarDate.month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+
+                  // Get value based on filter
+                  double displayValue = 0;
+                  if (_calendarFilter == 'Total') {
+                    displayValue = _dailyBalances[dateKey] ?? 0;
+                  } else if (_calendarFilter == 'Income') {
+                    displayValue = _dailyIncome[dateKey] ?? 0;
+                  } else if (_calendarFilter == 'Expenses') {
+                    displayValue = _dailyExpense[dateKey] ?? 0;
+                  }
+
+                  final isSelected =
+                      _selectedCalendarDay?.day == day &&
+                      _selectedCalendarDay?.month == _calendarDate.month &&
+                      _selectedCalendarDay?.year == _calendarDate.year;
+
+                  return GestureDetector(
+                    onTap: () {
+                      final selectedDay = DateTime(
+                        _calendarDate.year,
+                        _calendarDate.month,
+                        day,
+                      );
+                      // Toggle: if already selected, deselect and show all month
+                      if (isSelected) {
+                        setState(() {
+                          _selectedCalendarDay = null;
+                          _selectedDayTransactions = [];
+                        });
+                      } else {
+                        _loadSelectedDayTransactions(selectedDay);
+                      }
+                    },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? const Color(0xFFA7E399)
+                            : const Color(0xFFF5F5F5),
+                        borderRadius: BorderRadius.circular(6),
+                        border: isSelected
+                            ? Border.all(color: Colors.green, width: 2)
+                            : Border.all(color: Colors.grey[300]!, width: 1),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            day.toString(),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: isSelected ? Colors.white : Colors.black,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          // Display value with proper formatting
+                          if (displayValue != 0)
+                            SizedBox(
+                              height: 16,
+                              child: Text(
+                                displayValue >= 0
+                                    ? '${displayValue.toStringAsFixed(0)}'
+                                    : '${displayValue.toStringAsFixed(0)}',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                  color: _calendarFilter == 'Expenses'
+                                      ? const Color(
+                                          0xFFE74C3C,
+                                        ) // Always red for expenses
+                                      : _calendarFilter == 'Income'
+                                      ? const Color(
+                                          0xFF52C77A,
+                                        ) // Always green for income
+                                      : displayValue <
+                                            0 // For Total: red if negative, green if positive
+                                      ? const Color(0xFFE74C3C)
+                                      : const Color(0xFF52C77A),
+                                ),
+                              ),
+                            )
+                          else
+                            const SizedBox(height: 16),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              // Filter Tabs
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey[400]!, width: 1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: ['Expenses', 'Income', 'Total'].map((filter) {
+                    final isSelected = _calendarFilter == filter;
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _calendarFilter = filter;
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0xFFE198B0)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          filter,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: isSelected ? Colors.white : Colors.grey[400],
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Transactions - Show all month if no day selected, or selected day if chosen
+        if (_transactions.isEmpty)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'No transactions for this month',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+            ),
+          )
+        else if (_selectedCalendarDay == null)
+          _buildGroupedTransactionsList()
+        else if (_selectedDayTransactions.isNotEmpty)
+          _buildSelectedDayTransactionsList()
+        else
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'No transactions for this day',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSelectedDayTransactionsList() {
+    final date = _selectedCalendarDay!;
+
+    // Calculate daily income and expense
+    double dayIncome = 0;
+    double dayExpense = 0;
+    for (var txn in _selectedDayTransactions) {
+      final amount = double.tryParse(txn['amount'].toString()) ?? 0;
+      final type = txn['type']?.toString().toLowerCase() ?? 'expense';
+      if (type == 'income') {
+        dayIncome += amount;
+      } else {
+        dayExpense += amount;
+      }
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12, bottom: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF9E6),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFFE5B4), width: 1),
+      ),
+      child: Column(
+        children: [
+          // Date Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFAE6),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(11),
+                topRight: Radius.circular(11),
+              ),
+              border: Border(
+                bottom: BorderSide(color: const Color(0xFFFFE5B4), width: 1),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '${_getDayOfWeek(date)}, ${date.day.toString().padLeft(2, '0')} ${_getMonthName(date.month)}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                Row(
+                  children: [
+                    if (dayIncome > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 16),
+                        child: Text(
+                          'IN RM${dayIncome.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF52C77A),
+                          ),
+                        ),
+                      ),
+                    if (dayExpense > 0)
+                      Text(
+                        'OUT RM${dayExpense.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFE74C3C),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // Transaction Items
+          ..._selectedDayTransactions.asMap().entries.map((entry) {
+            final txnIndex = entry.key;
+            final transaction = entry.value;
+            final amount =
+                double.tryParse(transaction['amount'].toString()) ?? 0;
+            final type =
+                transaction['type']?.toString().toLowerCase() ?? 'expense';
+            final categoryData = transaction['Category'] ?? {};
+            final categoryName = categoryData['name'] ?? 'Category';
+            final categoryIcon = categoryData['icon'] ?? 'shopping_bag';
+            final accountData = transaction['Account'] ?? {};
+            final accountLogo = accountData['iconImage'] ?? '';
+            final note = transaction['note'] ?? '';
+            final isRefunded = transaction['refund'] == true;
+            final isLastItem = txnIndex == _selectedDayTransactions.length - 1;
+
+            return Column(
+              children: [
+                GestureDetector(
+                  onTap: () async {
+                    final transactionId =
+                        transaction['transactionId'] as String;
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => TransactionDetailScreen(
+                          transactionId: transactionId,
+                          userId: _currentUserId,
+                        ),
+                      ),
+                    );
+                    if (result == true) {
+                      _calculateDailyBalances();
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Category Icon
+                        Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFC8A5D8),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: _buildCategoryImage(categoryIcon),
+                        ),
+                        const SizedBox(width: 12),
+                        // Category Name and Note
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                categoryName,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black,
+                                ),
+                              ),
+                              if (note.isNotEmpty)
+                                Text(
+                                  note,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFFBCBCBC),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Right side: Amount, Account Icon, and Refund Badge
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Amount
+                                Text(
+                                  '${type == 'income' ? '+' : '-'}RM${amount.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: type == 'income'
+                                        ? const Color(0xFF52C77A)
+                                        : const Color(0xFFE74C3C),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                // Account Icon in small circle
+                                if (accountLogo.isNotEmpty)
+                                  Container(
+                                    width: 24,
+                                    height: 24,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: const Color(0xFFFFE5B4),
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: ClipOval(
+                                      child: Image.network(
+                                        accountLogo,
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) {
+                                              return Container(
+                                                decoration: BoxDecoration(
+                                                  color: Colors.grey[300],
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.account_balance,
+                                                  size: 12,
+                                                ),
+                                              );
+                                            },
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            // Refund Badge below amount and account icon
+                            if (isRefunded)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFE5B4),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'REFUNDED',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFFE74C3C),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Divider between transactions (but not after last one)
+                if (!isLastItem)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Divider(
+                      color: const Color(0xFFFFE5B4),
+                      height: 1,
+                      thickness: 1,
+                    ),
+                  ),
+              ],
+            );
+          }).toList(),
+        ],
       ),
     );
   }
@@ -686,26 +1453,80 @@ class _HomeScreenState extends State<HomeScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
             const Spacer(),
+            // View Mode Toggle Button in AppBar
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.grey[400]!, width: 1),
               ),
               child: Row(
                 children: [
-                  const Icon(
-                    Icons.info_outline,
-                    color: Color(0xFF52C77A),
-                    size: 18,
+                  GestureDetector(
+                    onTap: () {
+                      if (_isCalendarView) {
+                        setState(() {
+                          _isCalendarView = false;
+                          _selectedDate = _calendarDate;
+                        });
+                        _fetchTransactions();
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: !_isCalendarView
+                            ? Colors.white
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        'List',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: !_isCalendarView
+                              ? Colors.black
+                              : Colors.grey[600],
+                        ),
+                      ),
+                    ),
                   ),
-                  const SizedBox(width: 4),
-                  const Text(
-                    'Details',
-                    style: TextStyle(
-                      color: Color(0xFF52C77A),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                  GestureDetector(
+                    onTap: () {
+                      if (!_isCalendarView) {
+                        setState(() {
+                          _isCalendarView = true;
+                          _selectedCalendarDay = null;
+                          _calendarDate = _selectedDate;
+                        });
+                        _calculateDailyBalances();
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _isCalendarView
+                            ? Colors.white
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        'Calendar',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _isCalendarView
+                              ? Colors.black
+                              : Colors.grey[600],
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -728,147 +1549,158 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Date and Summary Card
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: const Color(0xFFFFE5B4),
-                          width: 2,
+                    // Date and Summary Card - Only in List View
+                    if (!_isCalendarView)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: const Color(0xFFFFE5B4),
+                            width: 2,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            // Date Row - Only in List View
+                            if (!_isCalendarView)
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  GestureDetector(
+                                    onTap: _previousMonth,
+                                    child: const Icon(
+                                      Icons.arrow_back_ios,
+                                      size: 20,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                  GestureDetector(
+                                    onTap: _showMonthYearPicker,
+                                    child: Row(
+                                      children: [
+                                        Text(
+                                          '${_selectedDate.month} / ${_selectedDate.year}',
+                                          style: const TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.black,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        const Icon(
+                                          Icons.arrow_drop_down,
+                                          color: Colors.black,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  GestureDetector(
+                                    onTap: _nextMonth,
+                                    child: const Icon(
+                                      Icons.arrow_forward_ios,
+                                      size: 20,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            const SizedBox(height: 16),
+                            // Summary Stats (only show in list view)
+                            if (!_isCalendarView)
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceEvenly,
+                                children: [
+                                  Column(
+                                    children: [
+                                      Text(
+                                        _showAmounts
+                                            ? 'RM${_totalAmount.toStringAsFixed(2)}'
+                                            : '****',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                                      const Text(
+                                        'Total',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFFBCBCBC),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  Column(
+                                    children: [
+                                      Text(
+                                        _showAmounts
+                                            ? 'RM${_incomeAmount.toStringAsFixed(2)}'
+                                            : '****',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF52C77A),
+                                        ),
+                                      ),
+                                      const Text(
+                                        'Income',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFFBCBCBC),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  Column(
+                                    children: [
+                                      Text(
+                                        _showAmounts
+                                            ? 'RM${_expenseAmount.toStringAsFixed(2)}'
+                                            : '****',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFFE74C3C),
+                                        ),
+                                      ),
+                                      const Text(
+                                        'Expense',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFFBCBCBC),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                          ],
                         ),
                       ),
-                      child: Column(
-                        children: [
-                          // Date Picker Row
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              GestureDetector(
-                                onTap: _showDatePicker,
-                                child: Row(
-                                  children: [
-                                    Text(
-                                      '${_selectedDate.month} / ${_selectedDate.year}',
-                                      style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.black,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    const Icon(
-                                      Icons.arrow_drop_down,
-                                      color: Colors.black,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    _showAmounts = !_showAmounts;
-                                  });
-                                },
-                                child: Icon(
-                                  _showAmounts
-                                      ? Icons.visibility
-                                      : Icons.visibility_off,
-                                  color: Colors.black,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          // Summary Stats
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              Column(
-                                children: [
-                                  Text(
-                                    _showAmounts
-                                        ? 'RM${_totalAmount.toStringAsFixed(2)}'
-                                        : '****',
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black,
-                                    ),
-                                  ),
-                                  const Text(
-                                    'Total',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFFBCBCBC),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Column(
-                                children: [
-                                  Text(
-                                    _showAmounts
-                                        ? 'RM${_incomeAmount.toStringAsFixed(2)}'
-                                        : '****',
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF52C77A),
-                                    ),
-                                  ),
-                                  const Text(
-                                    'Income',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFFBCBCBC),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Column(
-                                children: [
-                                  Text(
-                                    _showAmounts
-                                        ? 'RM${_expenseAmount.toStringAsFixed(2)}'
-                                        : '****',
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFFE74C3C),
-                                    ),
-                                  ),
-                                  const Text(
-                                    'Expense',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFFBCBCBC),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
                     const SizedBox(height: 16),
-                    // Transactions List
-                    _transactions.isEmpty
-                        ? Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(32.0),
-                              child: Text(
-                                'No transactions for this month',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
+                    // Conditional View: Calendar or Transactions List
+                    if (_isCalendarView)
+                      _buildCalendarView()
+                    else if (_transactions.isEmpty)
+                      Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32.0),
+                          child: Text(
+                            'No transactions for this month',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
                             ),
-                          )
-                        : _buildGroupedTransactionsList(),
+                          ),
+                        ),
+                      )
+                    else
+                      _buildGroupedTransactionsList(),
                   ],
                 ),
               ),
@@ -878,13 +1710,19 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           // AI Feature Button
           Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: FloatingActionButton(
-                backgroundColor: const Color(0xFF90EE90),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF90EE90),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 onPressed: () {
                   Navigator.push(
@@ -898,9 +1736,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 },
                 child: const Row(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    SizedBox(width: 12),
                     Icon(Icons.smart_toy, color: Colors.black, size: 20),
                     SizedBox(width: 8),
                     Text(
@@ -911,7 +1748,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         fontSize: 12,
                       ),
                     ),
-                    SizedBox(width: 12),
                   ],
                 ),
               ),
