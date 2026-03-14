@@ -11,9 +11,11 @@ import 'FinancialTip/financial_tip_bottom_sheet.dart';
 import 'Missions/missions_dropdown.dart';
 import 'Missions/view_achievement.dart';
 import 'Quiz/view_quiz_page.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
 
   await Supabase.initialize(
     url: 'https://drohtvfhklvqoeokopey.supabase.co',
