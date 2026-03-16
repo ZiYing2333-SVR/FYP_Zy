@@ -1,8 +1,95 @@
 import 'package:flutter/material.dart';
 import 'package:fyp_wx/Quiz/quiz_play_page.dart';
+import 'package:fyp_wx/Quiz/view_quiz_page.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class QuizRulePage extends StatelessWidget {
-  const QuizRulePage({super.key});
+  final String userId;
+  const QuizRulePage({super.key, required this.userId});
+
+  Future<bool> hasPlayedToday() async {
+    final supabase = Supabase.instance.client;
+
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final tomorrow = todayStart.add(const Duration(days: 1));
+
+    final res = await supabase
+        .from('QuizAttempt')
+        .select()
+        .eq('userId', userId)
+        .gte('completeDate', todayStart.toIso8601String())
+        .lt('completeDate', tomorrow.toIso8601String())
+        .limit(1)
+        .maybeSingle();
+
+    return res != null;
+  }
+
+  Future<void> showAlreadyPlayedDialog(BuildContext context) async {
+    await showDialog(
+      context: context,
+      builder: (_) {
+        return Dialog(
+          backgroundColor: const Color(0xFFFEFFD3),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+
+                const Icon(
+                  Icons.info_outline,
+                  size: 50,
+                  color: Colors.orange,
+                ),
+
+                const SizedBox(height: 16),
+
+                const Text(
+                  "Quiz Already Attempted",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                const Text(
+                  "You can only play the quiz once per day. Please try again tomorrow.",
+                  textAlign: TextAlign.center,
+                ),
+
+                const SizedBox(height: 20),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFA7E399),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text(
+                      "OK",
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -13,7 +100,15 @@ class QuizRulePage extends StatelessWidget {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ViewQuizPage(userId: userId),
+              ),
+                  (route) => false,
+            );
+          },
         ),
       ),
       body: Padding(
@@ -92,11 +187,19 @@ class QuizRulePage extends StatelessWidget {
                     borderRadius: BorderRadius.circular(30),
                   ),
                 ),
-                onPressed: () {
+                onPressed: () async {
+
+                  bool alreadyPlayed = await hasPlayedToday();
+
+                  if (alreadyPlayed) {
+                    await showAlreadyPlayedDialog(context);
+                    return;
+                  }
+
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const QuizPlayPage(),
+                      builder: (_) => QuizPlayPage(userId: userId),
                     ),
                   );
                 },

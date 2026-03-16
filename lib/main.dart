@@ -1,168 +1,117 @@
 import 'package:flutter/material.dart';
-import 'package:fyp_wx/AIBuddy/ai_buddy_page.dart';
-import 'package:fyp_wx/Challenge/View_Challenge.dart';
-import 'package:fyp_wx/OCR/receipt_scan_page.dart';
-import 'package:fyp_wx/pet/pet_main.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'screens/welcome_screen.dart';
 
-import 'FacialRecognition/face_auth_service.dart';
-import 'FacialRecognition/set_up_face_page.dart';
-import 'FinancialTip/financial_tip_bottom_sheet.dart';
-import 'Missions/missions_dropdown.dart';
-import 'Missions/view_achievement.dart';
-import 'Quiz/view_quiz_page.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env");
 
-  await Supabase.initialize(
-    url: 'https://drohtvfhklvqoeokopey.supabase.co',
-    anonKey: 'sb_publishable_G7rzmuNmAifrbXyuEFgbSg_PaKY75mW',
-  );
+  const supabaseUrl = 'https://drohtvfhklvqoeokopey.supabase.co';
+  const anonKey = 'sb_publishable_G7rzmuNmAifrbXyuEFgbSg_PaKY75mW';
 
-
-  // await FaceAuthService.removeAllFaces();
-  // await FaceAuthService.deleteFaceSet();
-  await FaceAuthService.createFaceSet();
+  await Supabase.initialize(url: supabaseUrl, anonKey: anonKey);
 
   runApp(const MyApp());
 }
 
-
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
+  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Home Page',
-      home: const HomePage(),
+      title: 'PawBudget',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
+      ),
+      home: const WelcomeScreen(),
     );
   }
 }
 
-class HomePage extends StatelessWidget {
-  const HomePage({super.key});
+class MyHomePage extends StatefulWidget {
+  const MyHomePage({super.key, required this.title});
+
+  // This widget is the home page of your application. It is stateful, meaning
+  // that it has a State object (defined below) that contains fields that affect
+  // how it looks.
+
+  // This class is the configuration for the state. It holds the values (in this
+  // case the title) provided by the parent (in this case the App widget) and
+  // used by the build method of the State. Fields in a Widget subclass are
+  // always marked "final".
+
+  final String title;
+
+  @override
+  State<MyHomePage> createState() => _MyHomePageState();
+}
+
+class _MyHomePageState extends State<MyHomePage> {
+  int _counter = 0;
+
+  void _incrementCounter() {
+    setState(() {
+      // This call to setState tells the Flutter framework that something has
+      // changed in this State, which causes it to rerun the build method below
+      // so that the display can reflect the updated values. If we changed
+      // _counter without calling setState(), then the build method would not be
+      // called again, and so nothing would appear to happen.
+      _counter++;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    // This method is rerun every time setState is called, for instance as done
+    // by the _incrementCounter method above.
+    //
+    // The Flutter framework has been optimized to make rerunning build methods
+    // fast, so that you can just rebuild anything that needs updating rather
+    // than having to individually change instances of widgets.
     return Scaffold(
-      backgroundColor: const Color(0xFFFEFFD3),
       appBar: AppBar(
-        title: const Text("Home"),
-        backgroundColor: const Color(0xFFA7E399),
+        // TRY THIS: Try changing the color here to a specific color (to
+        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
+        // change color while the other colors stay the same.
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        // Here we take the value from the MyHomePage object that was created by
+        // the App.build method, and use it to set our appbar title.
+        title: Text(widget.title),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
+      body: Center(
+        // Center is a layout widget. It takes a single child and positions it
+        // in the middle of the parent.
         child: Column(
+          // Column is also a layout widget. It takes a list of children and
+          // arranges them vertically. By default, it sizes itself to fit its
+          // children horizontally, and tries to be as tall as its parent.
+          //
+          // Column has various properties to control how it sizes itself and
+          // how it positions its children. Here we use mainAxisAlignment to
+          // center the children vertically; the main axis here is the vertical
+          // axis because Columns are vertical (the cross axis would be
+          // horizontal).
+          //
+          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
+          // action in the IDE, or press "p" in the console), to see the
+          // wireframe for each widget.
           mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _buildButton(context, "Financial Tips"),
-            _buildButton(context, "Quiz"),
-            _buildButton(context, "AI Buddy"),
-
-            _buildButton(context, "Missions"),
-            _buildButton(context, "Achievement"),
-
-            _buildButton(context, "Challenges"),
-
-            _buildButton(context, "Budget Pet"),
-
-            _buildButton(context, "Extract Receipt Data"),
-            _buildButton(context, "Set Up Face ID"),
+          children: <Widget>[
+            const Text('You have pushed the button this many times:'),
+            Text(
+              '$_counter',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildButton(BuildContext context, String text) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFFA7E399),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-        onPressed: () {
-          if (text == "Financial Tips") {
-            showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.transparent,
-              builder: (_) => const FinancialTipBottomSheet(),
-            );
-          }else if (text == "Quiz") {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const ViewQuizPage(),
-              ),
-            );
-          }else if (text == "AI Buddy") {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const AiBuddyPage(),
-              ),
-            );
-          }else if (text == "Extract Receipt Data") {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const ReceiptScanPage(),
-              ),
-            );
-          }else if (text == "Missions") {
-            showMissionDropdown(context);
-          }else if (text == "Achievement") {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const AchievementPage(),
-              ),
-            );
-          }else if (text == "Challenges") {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const ViewChallengePage(),
-              ),
-            );
-          }else if (text == "Budget Pet") {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const PetMainPage(),
-              ),
-            );
-          }else if (text == "Set Up Face ID") {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const SetUpFacePage(),
-              ),
-            );
-          }
-
-        },
-
-
-        child: Text(
-          text,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-          ),
-        ),
-      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _incrementCounter,
+        tooltip: 'Increment',
+        child: const Icon(Icons.add),
+      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }

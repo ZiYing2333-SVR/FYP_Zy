@@ -1,30 +1,82 @@
 import 'package:flutter/material.dart';
+import 'package:fyp_wx/Quiz/view_quiz_page.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-class QuizResultPage extends StatelessWidget {
+class QuizResultPage extends StatefulWidget {
   final int score;
   final int totalQuestion;
   final int coinsEarned;
+  final String userId;
 
   const QuizResultPage({
     super.key,
+    required this.userId,
     required this.score,
     required this.totalQuestion,
     required this.coinsEarned,
   });
 
   @override
+  State<QuizResultPage> createState() => _QuizResultPageState();
+}
+
+class _QuizResultPageState extends State<QuizResultPage> {
+
+  final supabase = Supabase.instance.client;
+
+  int coinBalance = 0;
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    loadCoinBalance();
+  }
+
+  Future<void> loadCoinBalance() async {
+    try {
+      final data = await supabase
+          .from('User')
+          .select('coinbalance')
+          .eq('userId', widget.userId)
+          .single();
+
+      setState(() {
+        coinBalance = data['coinbalance'] ?? 0;
+        isLoading = false;
+      });
+
+    } catch (e) {
+      debugPrint("Error loading coin balance: $e");
+      setState(() => isLoading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final percentage = ((score / totalQuestion) * 100).round();
+
+    final percentage =
+    ((widget.score / widget.totalQuestion) * 100).round();
 
     return Scaffold(
       backgroundColor: const Color(0xFFFEFFD3),
+
       appBar: AppBar(
         backgroundColor: const Color(0xFFFEFFD3),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ViewQuizPage(userId: widget.userId),
+              ),
+                  (route) => false,
+            );
+          },
         ),
+
         actions: [
           Container(
             margin: const EdgeInsets.only(right: 16),
@@ -34,12 +86,15 @@ class QuizResultPage extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
-              children: const [
-                Icon(Icons.monetization_on, color: Colors.amber, size: 18),
-                SizedBox(width: 4),
+              children: [
+                const Icon(Icons.monetization_on,
+                    color: Colors.amber, size: 18),
+
+                const SizedBox(width: 4),
+
                 Text(
-                  '50',          //todo : link to userID
-                  style: TextStyle(
+                  isLoading ? '...' : '$coinBalance',
+                  style: const TextStyle(
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -55,7 +110,6 @@ class QuizResultPage extends StatelessWidget {
           children: [
             const SizedBox(height: 16),
 
-            /// Title
             const Text(
               'Result of Your Quiz',
               style: TextStyle(
@@ -66,10 +120,9 @@ class QuizResultPage extends StatelessWidget {
 
             const SizedBox(height: 30),
 
-            /// Main Result Card
             Container(
               width: double.infinity,
-              height: 425, // 👈 adjust this (320–420 works well)
+              height: 425,
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(24),
@@ -80,9 +133,11 @@ class QuizResultPage extends StatelessWidget {
                   ),
                 ],
               ),
+
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+
                   const Text(
                     'Congratulations! You\nhave scored',
                     textAlign: TextAlign.center,
@@ -137,13 +192,15 @@ class QuizResultPage extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        '$coinsEarned',
+                        '${widget.coinsEarned}',
                         style: const TextStyle(
                           fontSize: 28,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+
                       const SizedBox(width: 8),
+
                       const Icon(
                         Icons.monetization_on,
                         color: Colors.amber,
@@ -154,8 +211,6 @@ class QuizResultPage extends StatelessWidget {
                 ],
               ),
             ),
-
-
           ],
         ),
       ),

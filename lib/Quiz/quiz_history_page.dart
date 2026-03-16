@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:fyp_wx/Quiz/view_quiz_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 class QuizHistoryPage extends StatefulWidget {
-  const QuizHistoryPage({super.key});
+  final String userId;
+
+  const QuizHistoryPage({super.key, required this.userId});
 
   @override
   State<QuizHistoryPage> createState() => _QuizHistoryPageState();
@@ -48,6 +51,7 @@ class _QuizHistoryPageState extends State<QuizHistoryPage> {
       final res = await supabase
           .from('QuizAttempt')
           .select()
+          .eq('userId', widget.userId)
           .gte('completeDate', targetDay.toIso8601String())
           .lt(
         'completeDate',
@@ -70,7 +74,9 @@ class _QuizHistoryPageState extends State<QuizHistoryPage> {
 
     final data = await supabase
         .from('QuizAttempt')
-        .select('completeDate');
+        .select('completeDate')
+        .eq('userId', widget.userId);;
+
 
     completedDates = data.map<DateTime>((e) {
 
@@ -101,7 +107,15 @@ class _QuizHistoryPageState extends State<QuizHistoryPage> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ViewQuizPage(userId: widget.userId),
+              ),
+                  (route) => false,
+            );
+          },
         ),
       ),
       body: SafeArea(

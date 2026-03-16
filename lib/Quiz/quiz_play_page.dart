@@ -4,7 +4,9 @@ import 'package:fyp_wx/Quiz/quiz_result_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class QuizPlayPage extends StatefulWidget {
-  const QuizPlayPage({super.key});
+  final String userId;
+
+  const QuizPlayPage({super.key, required this.userId});
 
   @override
   State<QuizPlayPage> createState() => _QuizPlayPageState();
@@ -23,11 +25,36 @@ class _QuizPlayPageState extends State<QuizPlayPage> {
   bool answered = false;
   late DateTime startTime;
 
+  int coinBalance = 0;
+  bool loadingCoins = true;
+
+  String? selectedAnswer;
+  String? correctAnswer;
+
   @override
   void initState() {
     super.initState();
     startTime = DateTime.now();
+    loadCoinBalance();
     fetchQuestions();
+  }
+
+  Future<void> loadCoinBalance() async {
+    try {
+      final data = await supabase
+          .from('User')
+          .select('coinbalance')
+          .eq('userId', widget.userId)
+          .single();
+
+      setState(() {
+        coinBalance = data['coinbalance'] ?? 0;
+        loadingCoins = false;
+      });
+    } catch (e) {
+      debugPrint("Error loading coin balance: $e");
+      setState(() => loadingCoins = false);
+    }
   }
 
   // ===============================
@@ -89,78 +116,18 @@ class _QuizPlayPageState extends State<QuizPlayPage> {
   Future<void> selectAnswer(String selected) async {
     if (answered) return;
 
-    answered = true;
     timer?.cancel();
 
-    final correct = questions[currentIndex]['correctOption'];
+    setState(() {
+      answered = true;
+      selectedAnswer = selected;
+      correctAnswer = questions[currentIndex]['correctOption'];
+    });
 
-    if (selected == correct) {
+    if (selected == correctAnswer) {
       score++;
-      await showResultPopup(
-        isCorrect: true,
-        message: 'Correct!',
-      );
-    } else {
-      await showResultPopup(
-        isCorrect: false,
-        message: 'Wrong!\nCorrect answer:\n$correct',
-      );
     }
-
-    await goNextQuestion();
   }
-
-
-
-  Future<void> showResultPopup({
-    required bool isCorrect,
-    required String message,
-  }) async {
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) {
-        // auto close dialog after 1.2s
-        Future.delayed(const Duration(milliseconds: 1200), () {
-          if (Navigator.of(context).canPop()) {
-            Navigator.of(context).pop();
-          }
-        });
-
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFEFFD3),
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  isCorrect ? Icons.check_circle : Icons.cancel,
-                  size: 60,
-                  color: isCorrect ? const Color(0xFF00BA00) : Colors.red,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-
 
 
   // ===============================
@@ -180,11 +147,12 @@ class _QuizPlayPageState extends State<QuizPlayPage> {
       setState(() {
         currentIndex++;
         answered = false;
+        selectedAnswer = null;
+        correctAnswer = null;
       });
       startTimer();
     }
   }
-
 
 
   // ===============================
@@ -332,7 +300,8 @@ class _QuizPlayPageState extends State<QuizPlayPage> {
                       ),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    onPressed: () => Navigator.pop(context, true), // ✅ return true
+                    onPressed: () => Navigator.pop(context, true),
+                    // ✅ return true
                     child: const Text(
                       'Done',
                       style: TextStyle(color: Colors.white),
@@ -348,7 +317,6 @@ class _QuizPlayPageState extends State<QuizPlayPage> {
   }
 
 
-
   // ===============================
   // SAVE RESULT
   // ===============================
@@ -356,27 +324,57 @@ class _QuizPlayPageState extends State<QuizPlayPage> {
     timer?.cancel();
 
     final attemptId = await generateAttemptId();
-    final timeSpent =
-        DateTime.now().difference(startTime).inMinutes;
+    final timeSpent = DateTime
+        .now()
+        .difference(startTime)
+        .inMinutes;
+    final coinsEarned = score * 2;
 
-    await supabase.from('QuizAttempt').insert({
-      'attemptId': attemptId,
-      'totalQuestion': 10,
-      'score': score,
-      'completeDate': DateTime.now().toIso8601String(),
-      'timeSpent': timeSpent,
-    });
+    try {
+      /// 1️⃣ Save quiz attempt
+      await supabase.from('QuizAttempt').insert({
+        'attemptId': attemptId,
+        'userId': widget.userId,
+        'totalQuestion': 10,
+        'score': score,
+        'completeDate': DateTime.now().toIso8601String(),
+        'timeSpent': timeSpent,
+      });
+
+      /// 2️⃣ Get current coin balance
+      final userData = await supabase
+          .from('User')
+          .select('coinbalance')
+          .eq('userId', widget.userId)
+          .single();
+
+      int currentCoins = userData['coinbalance'] ?? 0;
+
+      /// 3️⃣ Add earned coins
+      int newBalance = currentCoins + coinsEarned;
+
+      /// 4️⃣ Update database
+      await supabase
+          .from('User')
+          .update({'coinbalance': newBalance})
+          .eq('userId', widget.userId);
+    } catch (e) {
+      debugPrint("Error saving quiz result: $e");
+    }
 
     if (!mounted) return;
 
+    /// 5️⃣ Go to result page
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => QuizResultPage(
-          score: score,
-          totalQuestion: 10,
-          coinsEarned: score * 2,
-        ),
+        builder: (_) =>
+            QuizResultPage(
+              userId: widget.userId,
+              score: score,
+              totalQuestion: 10,
+              coinsEarned: coinsEarned,
+            ),
       ),
     );
   }
@@ -406,7 +404,7 @@ class _QuizPlayPageState extends State<QuizPlayPage> {
             if (exit) Navigator.pop(context);
           },
         ),
-        actions: const [
+        actions: [
           Padding(
             padding: EdgeInsets.only(right: 16),
             child: Row(
@@ -414,8 +412,8 @@ class _QuizPlayPageState extends State<QuizPlayPage> {
                 Icon(Icons.monetization_on, color: Colors.amber),
                 SizedBox(width: 4),
                 Text(
-                  '0',
-                  style: TextStyle(color: Colors.black),
+                  loadingCoins ? '...' : '$coinBalance',
+                  style: const TextStyle(color: Colors.black),
                 ),
               ],
             ),
@@ -423,105 +421,149 @@ class _QuizPlayPageState extends State<QuizPlayPage> {
         ],
       ),
 
-      body: Container(
-        color: const Color(0xFFFEFFD3),
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            const SizedBox(height: 5),
+    body: Container(
+    color: const Color(0xFFFEFFD3),
+    child: LayoutBuilder(
+    builder: (context, constraints) {
+    return SingleChildScrollView(
+    padding: const EdgeInsets.all(20),
+    child: ConstrainedBox(
+    constraints: BoxConstraints(
+    minHeight: constraints.maxHeight,
+    ),
+    child: IntrinsicHeight(
+    child: Column(
+    children: [
 
-            /// ⏱ Circular Countdown Timer
-            SizedBox(
-              width: 80,
-              height: 80,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  CircularProgressIndicator(
-                    value: timeLeft / 40, // shrink ring
-                    strokeWidth: 8,
-                    backgroundColor: Colors.grey.shade300,
-                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.red),
-                  ),
-                  Text(
-                    '$timeLeft',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+    const SizedBox(height: 5),
 
-            const SizedBox(height: 0),
+    /// ⏱ Timer
+    SizedBox(
+    width: 80,
+    height: 80,
+    child: Stack(
+    alignment: Alignment.center,
+    children: [
+    CircularProgressIndicator(
+    value: timeLeft / 40,
+    strokeWidth: 8,
+    backgroundColor: Colors.grey.shade300,
+    valueColor:
+    const AlwaysStoppedAnimation<Color>(Colors.red),
+    ),
+    Text(
+    '$timeLeft',
+    style: const TextStyle(
+    fontSize: 18,
+    fontWeight: FontWeight.bold,
+    ),
+    ),
+    ],
+    ),
+    ),
 
+    const SizedBox(height: 20),
 
-            /// 📘 Question Container
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24,
-                vertical: 28, // 👈 bigger height
-              ),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.55),
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Column(
-                children: [
-                  Text.rich(
-                    TextSpan(
-                      children: [
-                        const TextSpan(
-                          text: 'Question ',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black, // 🖤 black
-                          ),
-                        ),
-                        TextSpan(
-                          text: '${currentIndex + 1} / 10',
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF00BA00), // 🟢 green
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+    /// Question Container
+    Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(
+    horizontal: 24,
+    vertical: 28,
+    ),
+    decoration: BoxDecoration(
+    color: Colors.white.withValues(alpha: 0.55),
+    borderRadius: BorderRadius.circular(24),
+    ),
+    child: Column(
+    children: [
+    Text.rich(
+    TextSpan(
+    children: [
+    const TextSpan(
+    text: 'Question ',
+    style: TextStyle(
+    fontSize: 15,
+    fontWeight: FontWeight.w600,
+    color: Colors.black,
+    ),
+    ),
+    TextSpan(
+    text: '${currentIndex + 1} / 10',
+    style: const TextStyle(
+    fontSize: 15,
+    fontWeight: FontWeight.w600,
+    color: Color(0xFF00BA00),
+    ),
+    ),
+    ],
+    ),
+    ),
+    const SizedBox(height: 18),
+    Text(
+    q['question'],
+    textAlign: TextAlign.center,
+    style: const TextStyle(
+    fontSize: 15,
+    fontWeight: FontWeight.bold,
+    height: 1.4,
+    ),
+    ),
+    ],
+    ),
+    ),
 
-                  const SizedBox(height: 18),
-                  Text(
-                    q['question'],
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      height: 1.4,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+    const SizedBox(height: 30),
 
+    /// Options
+    _optionCard(q['option1']),
+    _optionCard(q['option2']),
+    _optionCard(q['option3']),
 
-            const SizedBox(height: 30),
+    const Spacer(),
 
-            /// 🃏 Options as Cards
-            _optionCard(q['option1']),
-            _optionCard(q['option2']),
-            _optionCard(q['option3']),
-          ],
-        ),
-      ),
-
+    /// Continue button
+    if (answered)
+    SizedBox(
+    width: double.infinity,
+    child: ElevatedButton(
+    style: ElevatedButton.styleFrom(
+    backgroundColor: const Color(0xFFA7E399),
+    padding: const EdgeInsets.symmetric(vertical: 14),
+    shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(20),
+    ),
+    ),
+    onPressed: goNextQuestion,
+    child: const Text(
+    "Continue",
+    style: TextStyle(color: Colors.white),
+    ),
+    ),
+    ),
+    ],
+    ),
+    ),
+    ),
+    );
+    },
+    ),
+    ),
     );
   }
 
   Widget _optionCard(String text) {
+    Color backgroundColor = Colors.white;
+
+    if (answered) {
+      if (text == correctAnswer) {
+        backgroundColor = Color(0xFFA7E399);
+      }
+      else if (text == selectedAnswer && selectedAnswer != correctAnswer) {
+        backgroundColor = Colors.red.shade300;
+      }
+    }
+
     return GestureDetector(
       onTap: () => selectAnswer(text),
       child: Container(
@@ -532,11 +574,11 @@ class _QuizPlayPageState extends State<QuizPlayPage> {
           horizontal: 16,
         ),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: backgroundColor,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08),
+              color: Colors.black.withOpacity(0.08),
               blurRadius: 6,
               offset: const Offset(0, 3),
             ),
@@ -548,12 +590,10 @@ class _QuizPlayPageState extends State<QuizPlayPage> {
           style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w500,
-            color: Colors.grey, // ✅ grey options
           ),
         ),
       ),
     );
   }
+
 }
-
-

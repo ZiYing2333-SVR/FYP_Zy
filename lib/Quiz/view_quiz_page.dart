@@ -5,7 +5,9 @@ import 'package:fyp_wx/Quiz/quiz_rule.page.dart';
 
 
 class ViewQuizPage extends StatelessWidget {
-  const ViewQuizPage({super.key});
+  final String userId;
+
+  const ViewQuizPage({super.key, required this.userId});
 
   @override
   Widget build(BuildContext context) {
@@ -59,7 +61,7 @@ class ViewQuizPage extends StatelessWidget {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const QuizRulePage(),
+                            builder: (_) => QuizRulePage(userId: userId),
                           ),
                         );
                       },
@@ -75,7 +77,7 @@ class ViewQuizPage extends StatelessWidget {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const QuizHistoryPage(),
+                            builder: (_) => QuizHistoryPage(userId: userId),
                           ),
                         );
                       },
