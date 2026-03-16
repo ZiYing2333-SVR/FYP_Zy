@@ -4,7 +4,12 @@ import 'package:fyp_wx/FinancialTip/view_tips_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class FinancialTipLibraryPage extends StatefulWidget {
-  const FinancialTipLibraryPage({super.key});
+  final String userId;
+
+  const FinancialTipLibraryPage({
+    super.key,
+    required this.userId,
+  });
 
   @override
   State<FinancialTipLibraryPage> createState() =>
@@ -51,11 +56,10 @@ class _FinancialTipLibraryPageState
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () {
-            Navigator.pop(context);
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => const ViewTipsPage(),
+                builder: (_) => ViewTipsPage(userId: widget.userId),
               ),
             );
           },

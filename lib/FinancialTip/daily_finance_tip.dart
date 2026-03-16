@@ -1,11 +1,21 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:fyp_wx/FinancialTip/tip_detail_page.dart';
 import 'package:fyp_wx/FinancialTip/view_tips_page.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class DailyFinanceTipPage extends StatefulWidget {
-  const DailyFinanceTipPage({super.key});
+  final String userId;
+
+  const DailyFinanceTipPage({
+    super.key,
+    required this.userId,
+  });
 
   @override
   State<DailyFinanceTipPage> createState() => _DailyFinanceTipPageState();
@@ -14,6 +24,10 @@ class DailyFinanceTipPage extends StatefulWidget {
 class _DailyFinanceTipPageState extends State<DailyFinanceTipPage> {
   late DateTime _focusedDay;
   late DateTime _selectedDay;
+
+  String? newsTitle;
+  String? newsUrl;
+
 
   Map<String, dynamic>? dailyTip;
   bool isLoading = true;
@@ -31,11 +45,83 @@ class _DailyFinanceTipPageState extends State<DailyFinanceTipPage> {
     _loadTipForDate(today);
   }
 
-  /// 🔐 Deterministic daily tip (same date → same tip)
+  Future<Map<String, dynamic>?> fetchFinancialNews() async {
+    final apiKey = dotenv.env['NEWS_API_KEY'];
+
+    final url = Uri.parse(
+      "https://newsapi.org/v2/top-headlines?category=business&language=en&apiKey=$apiKey",
+    );
+
+    final response = await http.get(url);
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+
+      if (data['articles'].isNotEmpty) {
+        return data['articles'][0];
+      }
+    }
+
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> findMatchingCategory(String newsTitle) async {
+
+    final supabase = Supabase.instance.client;
+
+    final categories = await supabase
+        .from('TipCategory')
+        .select('tipCategoryId,title,topicKeyword');
+
+    newsTitle = newsTitle
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9 ]'), ' ');
+
+    int bestScore = 0;
+    Map<String, dynamic>? bestCategory;
+
+    for (var category in categories) {
+
+      String keywords = category['topicKeyword'] ?? "";
+      List<String> keywordList = keywords.split(',');
+
+      int score = 0;
+
+      for (var keyword in keywordList) {
+
+        String word = keyword
+            .trim()
+            .toLowerCase()
+            .replaceAll(RegExp(r'[^a-z0-9 ]'), '');
+
+        if (newsTitle.contains(word)) {
+          score++;
+          debugPrint("Matched keyword: $word");
+        }
+
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestCategory = category;
+      }
+
+    }
+
+    return bestCategory;
+  }
+
   Future<void> _loadTipForDate(DateTime date) async {
     final targetDay = DateTime(date.year, date.month, date.day);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+
+    final supabase = Supabase.instance.client;
+
+    bool isToday =
+        targetDay.year == today.year &&
+            targetDay.month == today.month &&
+            targetDay.day == today.day;
 
     if (targetDay.isAfter(today)) {
       setState(() {
@@ -47,35 +133,142 @@ class _DailyFinanceTipPageState extends State<DailyFinanceTipPage> {
 
     setState(() => isLoading = true);
 
-    try {
-      final supabase = Supabase.instance.client;
+    final existing = await supabase
+        .from('DailyFinanceRecommendation')
+        .select()
+        .eq('date', targetDay.toIso8601String().split("T")[0])
+        .maybeSingle();
 
-      final List<dynamic> tips = await supabase
+    if (existing != null) {
+
+      newsTitle = existing['newsTitle'];
+      newsUrl = existing['newsUrl'];
+
+      final tip = await supabase
           .from('FinancialTip')
           .select('''
-  tipId,
-  title,
-  subTitle,
-  content,
-  TipCategory (
-    tipIcon
-  )
-''')
+        tipId,
+        title,
+        subTitle,
+        content,
+        TipCategory (
+          tipIcon
+        )
+      ''')
+          .eq('tipId', existing['tipId'])
+          .single();
 
-          .order('tipId');
+      dailyTip = tip;
 
-      if (tips.isEmpty) {
-        dailyTip = null;
+      setState(() => isLoading = false);
+      return;
+    }
+
+    try {
+
+      dynamic category;
+      List<dynamic> tips;
+      String? combinedNews;
+
+      if (isToday) {
+
+        /// 1️⃣ Fetch news ONLY for today
+        final news = await fetchFinancialNews();
+
+        if (news != null) {
+          combinedNews =
+              "${news['title']} ${news['description'] ?? ""}";
+          newsTitle = news['title'];
+          newsUrl = news['url'];
+
+          debugPrint("News title from API: ${news['title']}");
+        }
+
+        /// 2️⃣ Match category
+        if (combinedNews != null) {
+          category = await findMatchingCategory(combinedNews);
+        }
+
       } else {
-        final daysSinceEpoch =
-            targetDay.difference(DateTime(1970, 1, 1)).inDays;
-        final index = daysSinceEpoch % tips.length;
-        dailyTip = tips[index];
-        debugPrint('📦 dailyTip = $dailyTip');
+
+        /// ❌ Past date → no news
+        newsTitle = null;
+        newsUrl = null;
 
       }
+
+      /// 3️⃣ Fetch tips
+      if (category != null) {
+
+        tips = await supabase
+            .from('FinancialTip')
+            .select('''
+          tipId,
+          title,
+          subTitle,
+          content,
+          TipCategory (
+            tipIcon
+          )
+        ''')
+            .eq('tipCategoryId', category['tipCategoryId']);
+
+      } else {
+
+        /// fallback → random tips
+        tips = await supabase
+            .from('FinancialTip')
+            .select('''
+          tipId,
+          title,
+          subTitle,
+          content,
+          TipCategory (
+            tipIcon
+          )
+        ''');
+
+      }
+
+      /// 4️⃣ Pick one tip
+      if (tips.isNotEmpty) {
+
+        /// random tip for both cases
+        tips.shuffle();
+        dailyTip = tips.first;
+
+        final last = await supabase
+            .from('DailyFinanceRecommendation')
+            .select('recommendationId')
+            .order('date', ascending: false)
+            .limit(1)
+            .maybeSingle();
+
+        String newId = "R0001";
+
+        if (last != null) {
+          int num = int.parse(last['recommendationId'].substring(1)) + 1;
+          newId = "R${num.toString().padLeft(4, '0')}";
+        }
+
+        if (isToday && dailyTip != null) {
+
+          await supabase.from('DailyFinanceRecommendation').upsert({
+            'recommendationId': newId,
+            'date': targetDay.toIso8601String().split("T")[0],
+            'tipId': dailyTip!['tipId'],
+            'newsTitle': newsTitle,
+            'newsUrl': newsUrl
+          });
+
+        }
+
+      } else {
+        dailyTip = null;
+      }
+
     } catch (e) {
-      debugPrint('❌ Error fetching daily tip: $e');
+      debugPrint('❌ Error fetching smart tip: $e');
       dailyTip = null;
     }
 
@@ -100,15 +293,7 @@ class _DailyFinanceTipPageState extends State<DailyFinanceTipPage> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () {
-            Navigator.pop(context);
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const ViewTipsPage(),
-              ),
-            );
-          },
+          onPressed: () => Navigator.pop(context),
         ),
       ),
       body: SafeArea(
@@ -319,6 +504,53 @@ class _DailyFinanceTipPageState extends State<DailyFinanceTipPage> {
                               'Read Tip',
                               style:
                               TextStyle(color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height :20),
+
+                ///news section
+                if (newsTitle != null)
+                  Container(
+                    margin: const EdgeInsets.only(top: 20),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+
+                        const Text(
+                          "Related Financial News",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+
+                        const SizedBox(height: 8),
+
+                        Text(newsTitle!),
+
+                        const SizedBox(height: 10),
+
+                        InkWell(
+                          onTap: () async {
+                            if (newsUrl != null) {
+                              final uri = Uri.parse(newsUrl!);
+                              await launchUrl(uri, mode: LaunchMode.externalApplication);
+                            }
+                          },
+                          child: const Text(
+                            "Read News",
+                            style: TextStyle(
+                              color: Colors.blue,
+                              decoration: TextDecoration.underline,
                             ),
                           ),
                         ),

@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../screens/settings_screen.dart';
 import 'daily_finance_tip.dart';
 import 'financial_tip_library_page.dart';
 
 class ViewTipsPage extends StatelessWidget {
-  const ViewTipsPage({super.key});
+  final String userId;
+
+  const ViewTipsPage({
+    super.key,
+    required this.userId
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -15,7 +21,14 @@ class ViewTipsPage extends StatelessWidget {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => SettingsScreen(userId: userId),
+              ),
+            );
+          },
         ),
       ),
       body: Padding(
@@ -54,11 +67,10 @@ class ViewTipsPage extends StatelessWidget {
                       imagePath: 'assets/images/daily.png',
                       title: 'Daily Finance Tips',
                       onTap: () {
-                          Navigator.pop(context);
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => const DailyFinanceTipPage(),
+                              builder: (_) => DailyFinanceTipPage(userId: userId),
                             ),
                           );
                       },
@@ -70,11 +82,10 @@ class ViewTipsPage extends StatelessWidget {
                       imagePath: 'assets/images/library.png',
                       title: 'Finance Tips Library',
                       onTap: () {
-                        Navigator.pop(context);
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const FinancialTipLibraryPage(),
+                            builder: (_) => FinancialTipLibraryPage(userId: userId),
                           ),
                         );
                       },

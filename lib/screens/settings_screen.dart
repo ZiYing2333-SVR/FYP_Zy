@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 // import 'package:image_picker/image_picker.dart';
 // import 'dart:typed_data';
+import '../FinancialTip/view_tips_page.dart';
 import '../Quiz/view_quiz_page.dart';
 import 'home_screen.dart';
 // import 'welcome_screen.dart';
@@ -205,7 +206,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     },
                   ),
                   _buildDivider(),
-                  _buildMenuItem('Finance Tips', 8),
+                  _buildMenuItem(
+                    'Finance Tips',
+                    8,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              ViewTipsPage(userId: widget.userId),
+                        ),
+                      );
+                    },
+                  ),
                   _buildDivider(),
                   _buildMenuItem('Challenges', 9),
                   _buildDivider(),

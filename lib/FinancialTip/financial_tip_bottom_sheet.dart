@@ -2,7 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:fyp_wx/FinancialTip/view_tips_page.dart';
 
 class FinancialTipBottomSheet extends StatelessWidget {
-  const FinancialTipBottomSheet({super.key});
+  final String userId;
+
+  const FinancialTipBottomSheet({
+    super.key,
+    required this.userId,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -89,7 +94,7 @@ class FinancialTipBottomSheet extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const ViewTipsPage(),
+                    builder: (_) => ViewTipsPage(userId: userId),
                   ),
                 );
               },
