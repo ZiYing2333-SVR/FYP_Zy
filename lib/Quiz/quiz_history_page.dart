@@ -108,12 +108,11 @@ class _QuizHistoryPageState extends State<QuizHistoryPage> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () {
-            Navigator.pushAndRemoveUntil(
+            Navigator.pushReplacement(
               context,
               MaterialPageRoute(
                 builder: (_) => ViewQuizPage(userId: widget.userId),
               ),
-                  (route) => false,
             );
           },
         ),

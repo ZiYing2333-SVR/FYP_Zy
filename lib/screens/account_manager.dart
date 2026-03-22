@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/bank_icon_helper.dart';
 import 'add_account_page1.dart';
 import 'edit_account_page.dart';
+import 'settings_screen.dart';
 
 class AccountManager extends StatefulWidget {
   final String userId;
@@ -81,30 +82,313 @@ class _AccountManagerState extends State<AccountManager> {
   void _showDeleteConfirmation(String accountId, String accountName) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFFFFF9E6),
-        title: const Text('Delete Account'),
-        content: Text('Are you sure you want to delete "$accountName"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _deleteAccount(accountId);
-            },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Warning icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFFF9800),
+                  ),
+                  child: const Icon(
+                    Icons.warning,
+                    color: Colors.white,
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Delete title
+                const Text(
+                  'Delete Account',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFF39C12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Delete message
+                Text(
+                  'Are you sure you want to delete "$accountName"? This action cannot be undone.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF666666),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Action buttons
+                Row(
+                  children: [
+                    // Cancel button
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey[300],
+                          foregroundColor: Colors.black87,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Delete button
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _deleteAccount(accountId);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF6B6B),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        child: const Text('Delete'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
+        );
+      },
+    );
+  }
+
+  Widget _buildGroupedAccountList() {
+    // Group accounts by type
+    final Map<String, List<Map<String, dynamic>>> groupedAccounts = {};
+    for (final account in _accounts) {
+      final accountType = account['accountType'] ?? 'Other';
+      if (!groupedAccounts.containsKey(accountType)) {
+        groupedAccounts[accountType] = [];
+      }
+      groupedAccounts[accountType]!.add(account);
+    }
+
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: groupedAccounts.length,
+      itemBuilder: (context, typeIndex) {
+        final accountType = groupedAccounts.keys.elementAt(typeIndex);
+        final accounts = groupedAccounts[accountType]!;
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 20.0),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey[200]!),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Account Type Header inside card
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                  child: Text(
+                    accountType,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black54,
+                    ),
+                  ),
+                ),
+                // Divider after header
+                Divider(
+                  height: 1,
+                  color: Colors.grey[200],
+                  indent: 0,
+                  endIndent: 0,
+                ),
+                // Accounts list
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: accounts.length,
+                  separatorBuilder: (context, index) => Divider(
+                    height: 1,
+                    color: Colors.grey[200],
+                    indent: 16,
+                    endIndent: 16,
+                  ),
+                  itemBuilder: (context, index) {
+                    final account = accounts[index];
+                    final accountName =
+                        account['accountName'] ?? 'Unnamed Account';
+                    final iconImage = account['iconImage'];
+
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          // Account icon and name
+                          Expanded(
+                            child: Row(
+                              children: [
+                                if (iconImage != null && iconImage.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 12.0),
+                                    child: _buildIconImage(iconImage),
+                                  )
+                                else
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 12.0),
+                                    child: Container(
+                                      width: 40,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey[300],
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Icon(
+                                        Icons.account_balance_wallet,
+                                      ),
+                                    ),
+                                  ),
+                                Expanded(
+                                  child: Text(
+                                    accountName,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black87,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Menu actions
+                          PopupMenuButton(
+                            onSelected: (value) {
+                              if (value == 'edit') {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => EditAccountPage(
+                                      account: account,
+                                      userId: widget.userId,
+                                    ),
+                                  ),
+                                ).then((updated) {
+                                  if (updated == true) {
+                                    _fetchAccounts();
+                                  }
+                                });
+                              } else if (value == 'delete') {
+                                _showDeleteConfirmation(
+                                  account['accountId'],
+                                  accountName,
+                                );
+                              }
+                            },
+                            itemBuilder: (BuildContext context) => [
+                              const PopupMenuItem(
+                                value: 'edit',
+                                child: Text('Edit'),
+                              ),
+                              const PopupMenuItem(
+                                value: 'delete',
+                                child: Text(
+                                  'Delete',
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
   Widget _buildIconImage(String imagePath) {
+    // For full URLs (custom uploads from Supabase S3)
+    if (imagePath.startsWith('http')) {
+      return Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        child: Image.network(
+          imagePath,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.account_balance_wallet),
+            );
+          },
+        ),
+      );
+    }
     // For bank logos (AccountLogo/), use Supabase network URL
-    if (imagePath.startsWith('AccountLogo/')) {
+    else if (imagePath.startsWith('AccountLogo/')) {
       final supabaseUrl = BankIconHelper.getBankIconUrl(imagePath);
       return Container(
         width: 40,
@@ -130,8 +414,9 @@ class _AccountManagerState extends State<AccountManager> {
           },
         ),
       );
-    } else if (imagePath.startsWith('assets/')) {
-      // Remove the assets/ prefix since Image.asset() adds it automatically
+    }
+    // For local assets
+    else if (imagePath.startsWith('assets/')) {
       final assetPath = imagePath.replaceFirst('assets/', '');
       return Container(
         width: 40,
@@ -158,30 +443,15 @@ class _AccountManagerState extends State<AccountManager> {
         ),
       );
     } else {
-      // Handle network images
+      // Default placeholder for unknown types
       return Container(
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Colors.grey[300],
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey[200]!),
         ),
-        child: Image.network(
-          imagePath,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.account_balance_wallet),
-            );
-          },
-        ),
+        child: const Icon(Icons.account_balance_wallet),
       );
     }
   }
@@ -201,7 +471,15 @@ class _AccountManagerState extends State<AccountManager> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   GestureDetector(
-                    onTap: () => Navigator.pop(context),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              SettingsScreen(userId: widget.userId),
+                        ),
+                      );
+                    },
                     child: const Icon(Icons.close, size: 28),
                   ),
                   const Text(
@@ -257,166 +535,7 @@ class _AccountManagerState extends State<AccountManager> {
                   ),
                 )
               else
-                ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _accounts.length,
-                  itemBuilder: (context, index) {
-                    final account = _accounts[index];
-                    final accountType = account['accountType'] ?? 'Other';
-                    final accountName =
-                        account['accountName'] ?? 'Unnamed Account';
-                    final balance = account['balance'] ?? 0.0;
-                    final iconImage = account['iconImage'];
-
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (index == 0 ||
-                              _accounts[index - 1]['accountType'] !=
-                                  accountType)
-                            Padding(
-                              padding: const EdgeInsets.only(
-                                bottom: 12.0,
-                                left: 4.0,
-                              ),
-                              child: Text(
-                                accountType,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black54,
-                                ),
-                              ),
-                            ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFA7E399),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                // Account icon and name
-                                Expanded(
-                                  child: Row(
-                                    children: [
-                                      if (iconImage != null &&
-                                          iconImage.isNotEmpty)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            right: 12.0,
-                                          ),
-                                          child: _buildIconImage(iconImage),
-                                        )
-                                      else
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            right: 12.0,
-                                          ),
-                                          child: Container(
-                                            width: 40,
-                                            height: 40,
-                                            decoration: BoxDecoration(
-                                              color: Colors.grey[300],
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                            ),
-                                            child: const Icon(
-                                              Icons.account_balance_wallet,
-                                            ),
-                                          ),
-                                        ),
-                                      Expanded(
-                                        child: Text(
-                                          accountName,
-                                          style: const TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.black87,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                // Balance and actions
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 6,
-                                      ),
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xFF4CAF50),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: Text(
-                                        '\$${balance.toStringAsFixed(2)}',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    PopupMenuButton(
-                                      onSelected: (value) {
-                                        if (value == 'edit') {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (context) =>
-                                                  EditAccountPage(
-                                                    account: account,
-                                                    userId: widget.userId,
-                                                  ),
-                                            ),
-                                          ).then((updated) {
-                                            if (updated == true) {
-                                              _fetchAccounts();
-                                            }
-                                          });
-                                        } else if (value == 'delete') {
-                                          _showDeleteConfirmation(
-                                            account['accountId'],
-                                            accountName,
-                                          );
-                                        }
-                                      },
-                                      itemBuilder: (BuildContext context) => [
-                                        const PopupMenuItem(
-                                          value: 'edit',
-                                          child: Text('Edit'),
-                                        ),
-                                        const PopupMenuItem(
-                                          value: 'delete',
-                                          child: Text(
-                                            'Delete',
-                                            style: TextStyle(color: Colors.red),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
+                _buildGroupedAccountList(),
               const SizedBox(height: 24),
             ],
           ),

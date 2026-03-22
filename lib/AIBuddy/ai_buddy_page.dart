@@ -4,22 +4,38 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+import 'ai_buddy_history_page.dart';
 
+class ChatMessage {
+  final String text;
+  final bool isUser;
+
+  ChatMessage({
+    required this.text,
+    required this.isUser,
+  });
+}
 
 class AiBuddyPage extends StatefulWidget {
-  const AiBuddyPage({super.key});
+  final String userId;
+
+  const AiBuddyPage({
+    super.key,
+    required this.userId,
+  });
 
   @override
   State<AiBuddyPage> createState() => _AiBuddyPageState();
 }
 
 class _AiBuddyPageState extends State<AiBuddyPage> {
+  final ScrollController _scrollController = ScrollController();
   final supabase = Supabase.instance.client;
   final TextEditingController _controller = TextEditingController();
+  String? _sessionId;
 
   bool isLoading = false;
-  String? aiReply;
-  String _lastQuestionText = '';
+  final List<ChatMessage> _messages = [];
 
   /// Gemini API Key
   final String geminiApiKey = dotenv.env['GEMINI_API_KEY'] ?? "No Key";
@@ -35,6 +51,19 @@ class _AiBuddyPageState extends State<AiBuddyPage> {
           icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.history, color: Colors.black),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AiBuddyHistoryPage(userId: widget.userId),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -74,7 +103,7 @@ class _AiBuddyPageState extends State<AiBuddyPage> {
   // CHAT AREA
   // ===============================
   Widget _buildChatArea() {
-    if (aiReply == null) {
+    if (_messages.isEmpty) {
       return Center(
         child: Container(
           width: double.infinity,
@@ -89,7 +118,7 @@ class _AiBuddyPageState extends State<AiBuddyPage> {
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.08),
                 blurRadius: 12,
-                offset: const Offset(0, 6), // downwards
+                offset: const Offset(0, 6),
               ),
             ],
           ),
@@ -102,30 +131,26 @@ class _AiBuddyPageState extends State<AiBuddyPage> {
       );
     }
 
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          /// User bubble
-          Align(
-            alignment: Alignment.centerRight,
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.only(bottom: 12),
+      itemCount: _messages.length,
+      itemBuilder: (context, index){
+        final message = _messages[index];
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Align(
+            alignment: message.isUser
+                ? Alignment.centerRight
+                : Alignment.centerLeft,
             child: _chatBubble(
-              text: _lastQuestionText,
-              isUser: true,
+              text: message.text,
+              isUser: message.isUser,
             ),
           ),
-
-          const SizedBox(height: 12),
-
-          /// AI bubble
-          Align(
-            alignment: Alignment.centerLeft,
-            child: _chatBubble(
-              text: aiReply!,
-              isUser: false,
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -220,12 +245,13 @@ class _AiBuddyPageState extends State<AiBuddyPage> {
     final question = _controller.text.trim();
     if (question.isEmpty) return;
 
-    _lastQuestionText = question;
+    _controller.clear();
 
     setState(() {
       isLoading = true;
-      aiReply = null;
+      _messages.add(ChatMessage(text: question, isUser: true));
     });
+    _scrollToBottom();
 
     try {
       final response = await http.post(
@@ -239,7 +265,7 @@ class _AiBuddyPageState extends State<AiBuddyPage> {
               "parts": [
                 {
                   "text":
-                  "You are a friendly financial assistant. Give simple, helpful advice.\n\nUser question:\n$question"
+                  "You are a friendly financial assistant. Reply in plain text only. Keep answers short, clear, and practical by default, around 2 to 6 sentences. Only give a longer explanation if the user explicitly asks for more details, examples, step-by-step guidance, or a deeper explanation. Do not use markdown, asterisks, bold formatting, or bullet symbols.\n\nUser question:\n$question"
                 }
               ]
             }
@@ -253,24 +279,39 @@ class _AiBuddyPageState extends State<AiBuddyPage> {
         throw Exception(data['error']['message']);
       }
 
-      final reply =
-      data['candidates'][0]['content']['parts'][0]['text'];
+      final reply = data['candidates'][0]['content']['parts'][0]['text']
+          .replaceAll('**', '')
+          .replaceAll('* ', '• ');
 
-      setState(() => aiReply = reply);
+      setState(() {
+        _messages.add(ChatMessage(text: reply, isUser: false));
+      });
+      _scrollToBottom();
 
       final queryId = await _generateQueryId();
       await supabase.from('AIQuery').insert({
         'queryId': queryId,
+        'sessionId': _sessionId,
+        'userId': widget.userId,
         'queryText': question,
         'aiResponse': reply,
+        'createdAt': DateTime.now().toIso8601String(),
       });
-
-      _controller.clear();
     } catch (e) {
-      setState(() => aiReply = '❌ Gemini error:\n$e');
+      setState(() {
+        _messages.add(
+          ChatMessage(
+            text: '❌ Gemini error:\n$e',
+            isUser: false,
+          ),
+        );
+        _scrollToBottom();
+      });
     }
 
-    setState(() => isLoading = false);
+    setState(() {
+      isLoading = false;
+    });
   }
 
   // ===============================
@@ -289,4 +330,28 @@ class _AiBuddyPageState extends State<AiBuddyPage> {
     final num = int.parse(last.substring(2)) + 1;
     return 'AI${num.toString().padLeft(3, '0')}';
   }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _createSessionId();
+  }
+
+  void _createSessionId() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _sessionId = 'S$now';
+  }
+
 }

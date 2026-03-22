@@ -155,10 +155,7 @@ class WelcomeScreen extends StatelessWidget {
                     const Text(
                       'By continue you agree to our',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF95A5A6),
-                      ),
+                      style: TextStyle(fontSize: 12, color: Color(0xFF95A5A6)),
                     ),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,

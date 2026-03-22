@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/bank_icon_helper.dart';
+import '../services/budget_forecast_service.dart';
 import 'home_screen.dart';
 import 'settings_screen.dart';
 import 'add_account_page1.dart';
+import 'account_detail_screen.dart';
+import 'savings_page.dart';
 
 class AccountPage extends StatefulWidget {
   final String userId;
@@ -19,11 +22,13 @@ class _AccountPageState extends State<AccountPage> {
   bool _isLoading = true;
   int _selectedNavIndex = 1;
   bool _showBalance = true;
+  bool _hasBudgetAlert = false;
 
   @override
   void initState() {
     super.initState();
     _fetchAccounts();
+    _checkBudgetAlerts();
   }
 
   Future<void> _fetchAccounts() async {
@@ -53,6 +58,10 @@ class _AccountPageState extends State<AccountPage> {
   double _calculateTotalBalance() {
     double total = 0.0;
     for (var account in _accounts) {
+      // Only include in asset if assetStatus is true
+      final assetStatus = account['assetStatus'] ?? true;
+      if (!assetStatus) continue;
+
       final balance = account['balance'];
       if (balance != null) {
         total += (balance is int) ? balance.toDouble() : (balance as double);
@@ -61,9 +70,48 @@ class _AccountPageState extends State<AccountPage> {
     return total;
   }
 
+  Future<void> _checkBudgetAlerts() async {
+    try {
+      final budgets = await Supabase.instance.client
+          .from('Budget')
+          .select()
+          .eq('userId', widget.userId);
+
+      bool hasAlert = false;
+      final forecastService = BudgetForecastService();
+
+      // Check each budget for high risk using forecast-based logic
+      for (var budget in budgets) {
+        final isHighRisk = await forecastService.checkHighRiskAlert(
+          widget.userId,
+          budget['budgetId'],
+          (budget['amount'] ?? 0).toDouble(),
+          budget['accountId'],
+          budget['categoryId'],
+          budget['ledgerId'],
+        );
+
+        if (isHighRisk) {
+          hasAlert = true;
+          break;
+        }
+      }
+
+      setState(() {
+        _hasBudgetAlert = hasAlert;
+      });
+    } catch (e) {
+      print('Error checking budget alerts: $e');
+    }
+  }
+
   Map<String, double> _calculateCategoryBalance() {
     Map<String, double> categoryBalances = {};
     for (var account in _accounts) {
+      // Only include in asset if assetStatus is true
+      final assetStatus = account['assetStatus'] ?? true;
+      if (!assetStatus) continue;
+
       final type = account['accountType'] ?? 'Other';
       final balance = account['balance'];
       double balanceValue = 0.0;
@@ -78,8 +126,35 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Widget _buildIconImage(String imagePath) {
+    // For full URLs (custom uploads from Supabase S3)
+    if (imagePath.startsWith('http')) {
+      return Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        child: Image.network(
+          imagePath,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.account_balance_wallet, size: 20),
+            );
+          },
+        ),
+      );
+    }
     // For bank logos (AccountLogo/), use Supabase network URL
-    if (imagePath.startsWith('AccountLogo/')) {
+    else if (imagePath.startsWith('AccountLogo/')) {
       final supabaseUrl = BankIconHelper.getBankIconUrl(imagePath);
       return Container(
         width: 40,
@@ -105,7 +180,9 @@ class _AccountPageState extends State<AccountPage> {
           },
         ),
       );
-    } else if (imagePath.startsWith('assets/')) {
+    }
+    // For local assets
+    else if (imagePath.startsWith('assets/')) {
       final assetPath = imagePath.replaceFirst('assets/', '');
       return Container(
         width: 40,
@@ -132,29 +209,15 @@ class _AccountPageState extends State<AccountPage> {
         ),
       );
     } else {
+      // Default placeholder for unknown types
       return Container(
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Colors.grey[300],
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey[200]!),
         ),
-        child: Image.network(
-          imagePath,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.account_balance_wallet, size: 20),
-            );
-          },
-        ),
+        child: const Icon(Icons.account_balance_wallet, size: 20),
       );
     }
   }
@@ -360,6 +423,7 @@ class _AccountPageState extends State<AccountPage> {
                             child: Column(
                               children: [
                                 ...accounts.map((account) {
+                                  final accountId = account['accountId'] ?? '';
                                   final accountName =
                                       account['accountName'] ?? 'Unnamed';
                                   final balanceValue =
@@ -370,105 +434,124 @@ class _AccountPageState extends State<AccountPage> {
                                   final notes =
                                       account['notes'] ?? 'Description';
                                   final iconImage = account['iconImage'];
+                                  final hideBalanceStatus =
+                                      account['hideBalanceStatus'] ?? false;
 
-                                  return Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 12,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      border: Border(
-                                        bottom: BorderSide(
-                                          color: Colors.grey.shade200,
-                                          width: 1,
+                                  return GestureDetector(
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              AccountDetailScreen(
+                                                accountId: accountId,
+                                                userId: widget.userId,
+                                              ),
+                                        ),
+                                      );
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 12,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        border: Border(
+                                          bottom: BorderSide(
+                                            color: Colors.grey.shade200,
+                                            width: 1,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Expanded(
-                                          child: Row(
-                                            children: [
-                                              if (iconImage != null &&
-                                                  iconImage.isNotEmpty)
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        right: 12.0,
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Expanded(
+                                            child: Row(
+                                              children: [
+                                                if (iconImage != null &&
+                                                    iconImage.isNotEmpty)
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          right: 12.0,
+                                                        ),
+                                                    child: _buildIconImage(
+                                                      iconImage,
+                                                    ),
+                                                  )
+                                                else
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          right: 12.0,
+                                                        ),
+                                                    child: Container(
+                                                      width: 40,
+                                                      height: 40,
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.grey[300],
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              8,
+                                                            ),
                                                       ),
-                                                  child: _buildIconImage(
-                                                    iconImage,
+                                                      child: const Icon(
+                                                        Icons
+                                                            .account_balance_wallet,
+                                                        size: 20,
+                                                      ),
+                                                    ),
                                                   ),
-                                                )
-                                              else
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        right: 12.0,
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        accountName,
+                                                        style: const TextStyle(
+                                                          fontSize: 14,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          color: Colors.black87,
+                                                        ),
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
                                                       ),
-                                                  child: Container(
-                                                    width: 40,
-                                                    height: 40,
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.grey[300],
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            8,
-                                                          ),
-                                                    ),
-                                                    child: const Icon(
-                                                      Icons
-                                                          .account_balance_wallet,
-                                                      size: 20,
-                                                    ),
+                                                      Text(
+                                                        notes,
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w400,
+                                                          color: Colors
+                                                              .grey
+                                                              .shade600,
+                                                        ),
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                      ),
+                                                    ],
                                                   ),
                                                 ),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      accountName,
-                                                      style: const TextStyle(
-                                                        fontSize: 14,
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.black87,
-                                                      ),
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                    ),
-                                                    Text(
-                                                      notes,
-                                                      style: TextStyle(
-                                                        fontSize: 12,
-                                                        fontWeight:
-                                                            FontWeight.w400,
-                                                        color: Colors
-                                                            .grey
-                                                            .shade600,
-                                                      ),
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
+                                              ],
+                                            ),
                                           ),
-                                        ),
-                                        Text(
-                                          _formatCurrency(balance),
-                                          style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.black87,
+                                          Text(
+                                            hideBalanceStatus
+                                                ? '*****'
+                                                : _formatCurrency(balance),
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.black87,
+                                            ),
                                           ),
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
                                   );
                                 }).toList(),
@@ -520,40 +603,82 @@ class _AccountPageState extends State<AccountPage> {
                 ),
               ),
             ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedNavIndex,
-        selectedItemColor: Colors.black87,
-        unselectedItemColor: Colors.grey,
-        onTap: (index) {
-          setState(() {
-            _selectedNavIndex = index;
-          });
-
-          if (index == 0) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => HomeScreen(userId: widget.userId),
+      bottomNavigationBar: Stack(
+        children: [
+          BottomNavigationBar(
+            currentIndex: _selectedNavIndex,
+            backgroundColor: const Color(0xFFFEFFD3),
+            type: BottomNavigationBarType.fixed,
+            items: const [
+              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.account_balance_wallet),
+                label: 'Account',
               ),
-            );
-          } else if (index == 4) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => SettingsScreen(userId: widget.userId),
+              BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.savings),
+                label: 'Saving',
               ),
-            );
-          }
-        },
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.account_balance_wallet),
-            label: 'Account',
+              BottomNavigationBarItem(
+                icon: Icon(Icons.settings),
+                label: 'Setting',
+              ),
+            ],
+            onTap: (index) {
+              setState(() {
+                _selectedNavIndex = index;
+              });
+              if (index == 0) {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => HomeScreen(userId: widget.userId),
+                  ),
+                );
+              } else if (index == 3) {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => SavingsPage(userId: widget.userId),
+                  ),
+                );
+              } else if (index == 4) {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => SettingsScreen(userId: widget.userId),
+                  ),
+                ).then((_) {
+                  _checkBudgetAlerts();
+                });
+              }
+            },
           ),
-          BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
-          BottomNavigationBarItem(icon: Icon(Icons.savings), label: 'Saving'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Setting'),
+          // Alert badge on Settings icon
+          if (_hasBudgetAlert)
+            Positioned(
+              right: 12,
+              top: 8,
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE53935),
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(
+                  child: Text(
+                    '!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

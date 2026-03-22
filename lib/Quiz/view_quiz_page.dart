@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fyp_wx/Quiz/quiz_history_page.dart';
 import 'package:fyp_wx/Quiz/quiz_rule.page.dart';
+import '../screens/settings_screen.dart';
 
 
 
@@ -18,7 +19,14 @@ class ViewQuizPage extends StatelessWidget {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => SettingsScreen(userId: userId),
+              ),
+            );
+          },
         ),
       ),
       body: Padding(
@@ -57,7 +65,6 @@ class ViewQuizPage extends StatelessWidget {
                       imagePath: 'assets/images/quiz.png',
                       title: 'Attempt Quiz',
                       onTap: () {
-                        Navigator.pop(context);
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -73,7 +80,6 @@ class ViewQuizPage extends StatelessWidget {
                       imagePath: 'assets/images/history.png',
                       title: 'Quiz History',
                       onTap: () {
-                        Navigator.pop(context);
                         Navigator.push(
                           context,
                           MaterialPageRoute(

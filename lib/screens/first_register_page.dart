@@ -47,8 +47,7 @@ class _FirstRegisterPageState extends State<FirstRegisterPage> {
         return null;
       } else {
         setState(() {
-          _errorMessage =
-              'Invalid email format. Use: example@domain.com';
+          _errorMessage = 'Invalid email format. Use: example@domain.com';
         });
         return '';
       }
@@ -79,7 +78,7 @@ class _FirstRegisterPageState extends State<FirstRegisterPage> {
   Future<bool> _checkIfUserExists(String input) async {
     try {
       final supabase = Supabase.instance.client;
-      
+
       if (input.contains('@')) {
         // Check if email exists
         print('Checking email: $input');
@@ -88,7 +87,7 @@ class _FirstRegisterPageState extends State<FirstRegisterPage> {
             .select()
             .eq('email', input)
             .maybeSingle();
-        
+
         print('Email check response: $response');
         if (response != null) {
           return true;
@@ -101,7 +100,7 @@ class _FirstRegisterPageState extends State<FirstRegisterPage> {
             .select()
             .eq('phoneNumber', input)
             .maybeSingle();
-        
+
         print('Phone check response: $response');
         if (response != null) {
           return true;
@@ -117,38 +116,130 @@ class _FirstRegisterPageState extends State<FirstRegisterPage> {
   void _showExistsDialog(String input) {
     final isEmail = input.contains('@');
     final fieldType = isEmail ? 'Email' : 'Phone number';
-    
+
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Account Already Exists'),
-          content: Text(
-            '$fieldType already exists in our system. Please login to your account.',
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
           ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text('Cancel'),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
             ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const LoginScreen(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Warning icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFF39C12),
                   ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFA7E399),
-              ),
-              child: const Text('Go to Login'),
+                  child: const Icon(Icons.info, color: Colors.white, size: 32),
+                ),
+                const SizedBox(height: 24),
+                // Title
+                const Text(
+                  'Account Already Exists',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFF39C12),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Divider
+                Container(height: 1, color: const Color(0xFFFFE5B4)),
+                const SizedBox(height: 16),
+                // Message
+                Text(
+                  '$fieldType already exists in our system.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF666666),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Please login to your account.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: Color(0xFF666666)),
+                ),
+                const SizedBox(height: 24),
+                // Buttons
+                Column(
+                  children: [
+                    // Go to Login button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const LoginScreen(),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFA7E399),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        child: const Text('Go to Login'),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Cancel button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: OutlinedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                        },
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(
+                            color: Color(0xFFE8D5F2),
+                            width: 2,
+                          ),
+                          foregroundColor: const Color(0xFF666666),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ],
+          ),
         );
       },
     );
@@ -168,7 +259,14 @@ class _FirstRegisterPageState extends State<FirstRegisterPage> {
               Row(
                 children: [
                   GestureDetector(
-                    onTap: () => Navigator.pop(context),
+                    onTap: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const LoginScreen(),
+                        ),
+                      );
+                    },
                     child: const Icon(Icons.arrow_back, size: 28),
                   ),
                 ],
@@ -217,10 +315,7 @@ class _FirstRegisterPageState extends State<FirstRegisterPage> {
                 decoration: BoxDecoration(
                   color: const Color(0xFFFFF9E6),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: const Color(0xFFFFE5B4),
-                    width: 2,
-                  ),
+                  border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
                 ),
                 child: Form(
                   key: _formKey,
@@ -242,9 +337,6 @@ class _FirstRegisterPageState extends State<FirstRegisterPage> {
                       // Email/Phone Number Field
                       TextFormField(
                         controller: _emailController,
-                        onChanged: (value) {
-                          _validateInput(value);
-                        },
                         decoration: InputDecoration(
                           hintText: 'Email/Phone Number',
                           hintStyle: const TextStyle(

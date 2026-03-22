@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'settings_screen.dart';
 import 'account_page.dart';
+import 'add_transaction.dart';
+import 'transaction_detail_screen.dart';
+import 'savings_page.dart';
+import 'ai_features_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final String userId;
@@ -20,6 +24,8 @@ class _HomeScreenState extends State<HomeScreen> {
   double _expenseAmount = 0;
   List<Map<String, dynamic>> _transactions = [];
   bool _isLoading = true;
+  bool _showAmounts = true;
+  bool _hasBudgetAlert = false;
 
   // Ledger related
   List<Map<String, dynamic>> _ledgers = [];
@@ -32,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _currentUserId = widget.userId;
     _fetchLedgers();
+    _checkBudgetAlerts();
   }
 
   Future<void> _fetchLedgers() async {
@@ -81,7 +88,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final response = await supabase
           .from('Transaction')
-          .select()
+          .select('*, Category(name, icon), Account(accountName, iconImage)')
+          .eq('ledgerId', _selectedLedgerId ?? '')
           .gte('date', startOfMonth.toIso8601String())
           .lte('date', endOfMonth.toIso8601String())
           .order('date', ascending: false);
@@ -130,9 +138,491 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _checkBudgetAlerts() async {
+    try {
+      final budgets = await Supabase.instance.client
+          .from('Budget')
+          .select()
+          .eq('userId', _currentUserId ?? widget.userId);
+
+      bool hasAlert = false;
+
+      // Check each budget for >= 80% usage
+      for (var budget in budgets) {
+        final double usagePercentage = await _calculateBudgetUsage(budget);
+        if (usagePercentage >= 80) {
+          hasAlert = true;
+          break;
+        }
+      }
+
+      setState(() {
+        _hasBudgetAlert = hasAlert;
+      });
+    } catch (e) {
+      print('Error checking budget alerts: $e');
+    }
+  }
+
+  Future<double> _calculateBudgetUsage(Map<String, dynamic> budget) async {
+    try {
+      final budgetType = budget['type'] ?? '';
+      final budgetAmount = (budget['amount'] ?? 0).toDouble();
+      final cycleType = (budget['cycleType'] ?? 'month').toLowerCase();
+
+      if (budgetAmount <= 0) return 0;
+
+      // Calculate date range based on cycle type
+      final now = DateTime.now();
+      final DateTime startDate;
+
+      switch (cycleType) {
+        case 'day':
+          startDate = DateTime(now.year, now.month, now.day);
+          break;
+        case 'week':
+          startDate = now.subtract(Duration(days: now.weekday - 1));
+          break;
+        case 'month':
+          startDate = DateTime(now.year, now.month, 1);
+          break;
+        case 'year':
+          startDate = DateTime(now.year, 1, 1);
+          break;
+        default:
+          startDate = DateTime(now.year, now.month, 1);
+      }
+
+      // Fetch transactions based on budget type
+      List<dynamic> transactions = [];
+
+      if (budgetType == 'account') {
+        final accountId = budget['accountId'];
+        if (accountId != null) {
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('accountId', accountId)
+              .gte('date', startDate.toIso8601String());
+        }
+      } else if (budgetType == 'category') {
+        final categoryId = budget['categoryId'];
+        if (categoryId != null) {
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('categoryId', categoryId)
+              .eq('type', 'expense')
+              .gte('date', startDate.toIso8601String());
+        }
+      } else if (budgetType == 'ledger') {
+        final ledgerId = budget['ledgerId'];
+        if (ledgerId != null) {
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('ledgerId', ledgerId)
+              .eq('type', 'expense')
+              .gte('date', startDate.toIso8601String());
+        }
+      }
+
+      // Sum up transaction amounts
+      double totalSpent = 0;
+      for (var transaction in transactions) {
+        totalSpent += ((transaction['amount'] ?? 0) as num).toDouble();
+      }
+
+      return (totalSpent / budgetAmount) * 100;
+    } catch (e) {
+      print('Error calculating budget usage: $e');
+      return 0;
+    }
+  }
+
   String _getDayOfWeek(DateTime date) {
     final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return days[date.weekday - 1];
+  }
+
+  String _getMonthName(int month) {
+    final months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return months[month - 1];
+  }
+
+  IconData _getIconData(String iconName) {
+    final iconMap = {
+      'shopping_bag': Icons.shopping_bag,
+      'restaurant': Icons.restaurant,
+      'local_taxi': Icons.local_taxi,
+      'local_gas_station': Icons.local_gas_station,
+      'movie': Icons.movie,
+      'shopping_cart': Icons.shopping_cart,
+      'health_and_safety': Icons.health_and_safety,
+      'school': Icons.school,
+      'airplane': Icons.flight,
+      'home': Icons.home,
+      'phone': Icons.phone,
+      'electric_bolt': Icons.electric_bolt,
+      'water': Icons.water,
+      'sports_bar': Icons.sports_bar,
+      'entertainment': Icons.theaters,
+      'fitness_center': Icons.fitness_center,
+      'book': Icons.book,
+      'pets': Icons.pets,
+      'card_giftcard': Icons.card_giftcard,
+      'savings': Icons.savings,
+      'trending_up': Icons.trending_up,
+      'currency_pound': Icons.currency_pound,
+    };
+    return iconMap[iconName] ?? Icons.shopping_bag;
+  }
+
+  Widget _buildCategoryImage(String? iconUrl) {
+    // If iconUrl is a URL (starts with http), display it as an image
+    if (iconUrl != null &&
+        iconUrl.isNotEmpty &&
+        (iconUrl.startsWith('http') || iconUrl.startsWith('/'))) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          iconUrl,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return Center(
+              child: Icon(Icons.shopping_bag, color: Colors.white, size: 20),
+            );
+          },
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Center(
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.5,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    }
+    // Otherwise, treat it as an icon name
+    return Center(
+      child: Icon(
+        _getIconData(iconUrl ?? 'shopping_bag'),
+        color: Colors.white,
+        size: 20,
+      ),
+    );
+  }
+
+  Widget _buildGroupedTransactionsList() {
+    // Group transactions by date
+    Map<String, List<Map<String, dynamic>>> groupedByDate = {};
+    for (var transaction in _transactions) {
+      final date = transaction['date'] != null
+          ? DateTime.parse(transaction['date'])
+          : DateTime.now();
+      final dateKey = '${date.year}-${date.month}-${date.day}';
+      if (!groupedByDate.containsKey(dateKey)) {
+        groupedByDate[dateKey] = [];
+      }
+      groupedByDate[dateKey]!.add(transaction);
+    }
+
+    // Sort dates in descending order
+    final sortedDates = groupedByDate.keys.toList()
+      ..sort((a, b) => b.compareTo(a));
+
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: sortedDates.length,
+      itemBuilder: (context, index) {
+        final dateKey = sortedDates[index];
+        final dateTransactions = groupedByDate[dateKey]!;
+        final date = DateTime.parse(dateTransactions[0]['date']);
+
+        // Calculate daily income and expense separately
+        double dayIncome = 0;
+        double dayExpense = 0;
+        for (var txn in dateTransactions) {
+          final amount = double.tryParse(txn['amount'].toString()) ?? 0;
+          final type = txn['type']?.toString().toLowerCase() ?? 'expense';
+          if (type == 'income') {
+            dayIncome += amount;
+          } else {
+            dayExpense += amount;
+          }
+        }
+
+        return Container(
+          margin: const EdgeInsets.only(top: 12, bottom: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF9E6),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFFFE5B4), width: 1),
+          ),
+          child: Column(
+            children: [
+              // Date Header
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFAE6),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(11),
+                    topRight: Radius.circular(11),
+                  ),
+                  border: Border(
+                    bottom: BorderSide(
+                      color: const Color(0xFFFFE5B4),
+                      width: 1,
+                    ),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '${_getDayOfWeek(date)}, ${date.day.toString().padLeft(2, '0')} ${_getMonthName(date.month)}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        if (dayIncome > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 16),
+                            child: Text(
+                              'IN RM${dayIncome.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF52C77A),
+                              ),
+                            ),
+                          ),
+                        if (dayExpense > 0)
+                          Text(
+                            'OUT RM${dayExpense.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFE74C3C),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // Transaction Items
+              ...dateTransactions.asMap().entries.map((entry) {
+                final txnIndex = entry.key;
+                final transaction = entry.value;
+                final amount =
+                    double.tryParse(transaction['amount'].toString()) ?? 0;
+                final type =
+                    transaction['type']?.toString().toLowerCase() ?? 'expense';
+                final categoryData = transaction['Category'] ?? {};
+                final categoryName = categoryData['name'] ?? 'Category';
+                final categoryIcon = categoryData['icon'] ?? 'shopping_bag';
+                final accountData = transaction['Account'] ?? {};
+                final accountLogo = accountData['iconImage'] ?? '';
+                final note = transaction['note'] ?? '';
+                final isRefunded = transaction['refund'] == true;
+                final isLastItem = txnIndex == dateTransactions.length - 1;
+
+                return Column(
+                  children: [
+                    GestureDetector(
+                      onTap: () async {
+                        final transactionId =
+                            transaction['transactionId'] as String;
+                        print(
+                          'Opening transaction detail for ID: $transactionId',
+                        );
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => TransactionDetailScreen(
+                              transactionId: transactionId,
+                              userId: _currentUserId,
+                            ),
+                          ),
+                        );
+                        // Refresh transactions if a transaction was deleted or refunded
+                        if (result == true) {
+                          _fetchTransactions();
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            // Category Icon
+                            Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFC8A5D8),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: _buildCategoryImage(categoryIcon),
+                            ),
+                            const SizedBox(width: 12),
+                            // Category Name and Note
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    categoryName,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                  if (note.isNotEmpty)
+                                    Text(
+                                      note,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFFBCBCBC),
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Right side: Amount, Account Icon, and Refund Badge
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    // Amount
+                                    Text(
+                                      '${type == 'income' ? '+' : '-'}RM${amount.toStringAsFixed(2)}',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: type == 'income'
+                                            ? const Color(0xFF52C77A)
+                                            : const Color(0xFFE74C3C),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    // Account Icon in small circle
+                                    if (accountLogo.isNotEmpty)
+                                      Container(
+                                        width: 24,
+                                        height: 24,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: const Color(0xFFFFE5B4),
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: ClipOval(
+                                          child: Image.network(
+                                            accountLogo,
+                                            fit: BoxFit.cover,
+                                            errorBuilder:
+                                                (context, error, stackTrace) {
+                                                  return Container(
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.grey[300],
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    child: const Icon(
+                                                      Icons.account_balance,
+                                                      size: 12,
+                                                    ),
+                                                  );
+                                                },
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                // Refund Badge below amount and account icon
+                                if (isRefunded)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFE5B4),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Text(
+                                      'REFUNDED',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFFE74C3C),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    // Divider between transactions (but not after last one)
+                    if (!isLastItem)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Divider(
+                          color: const Color(0xFFFFE5B4),
+                          height: 1,
+                          thickness: 1,
+                        ),
+                      ),
+                  ],
+                );
+              }).toList(),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -142,6 +632,7 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFFFEFFD3),
         elevation: 0,
+        automaticallyImplyLeading: false,
         title: Row(
           children: [
             // Ledger Dropdown
@@ -274,7 +765,19 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ],
                                 ),
                               ),
-                              const Icon(Icons.visibility, color: Colors.black),
+                              GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    _showAmounts = !_showAmounts;
+                                  });
+                                },
+                                child: Icon(
+                                  _showAmounts
+                                      ? Icons.visibility
+                                      : Icons.visibility_off,
+                                  color: Colors.black,
+                                ),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 16),
@@ -285,7 +788,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               Column(
                                 children: [
                                   Text(
-                                    'RM${_totalAmount.toStringAsFixed(2)}',
+                                    _showAmounts
+                                        ? 'RM${_totalAmount.toStringAsFixed(2)}'
+                                        : '****',
                                     style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.bold,
@@ -304,7 +809,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               Column(
                                 children: [
                                   Text(
-                                    'RM${_incomeAmount.toStringAsFixed(2)}',
+                                    _showAmounts
+                                        ? 'RM${_incomeAmount.toStringAsFixed(2)}'
+                                        : '****',
                                     style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.bold,
@@ -323,7 +830,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               Column(
                                 children: [
                                   Text(
-                                    'RM${_expenseAmount.toStringAsFixed(2)}',
+                                    _showAmounts
+                                        ? 'RM${_expenseAmount.toStringAsFixed(2)}'
+                                        : '****',
                                     style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.bold,
@@ -359,146 +868,168 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                           )
-                        : ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: _transactions.length,
-                            itemBuilder: (context, index) {
-                              final transaction = _transactions[index];
-                              final amount =
-                                  double.tryParse(
-                                    transaction['amount'].toString(),
-                                  ) ??
-                                  0;
-                              final type =
-                                  transaction['type']
-                                      ?.toString()
-                                      .toLowerCase() ??
-                                  'expense';
-                              final category =
-                                  transaction['category'] ?? 'Category';
-                              final note = transaction['note'] ?? '';
-                              final date = transaction['date'] != null
-                                  ? DateTime.parse(transaction['date'])
-                                  : DateTime.now();
-
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFF9E6),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: const Color(0xFFFFE5B4),
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 40,
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFC8A5D8),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Icon(
-                                        Icons.shopping_bag,
-                                        color: Colors.white,
-                                        size: 20,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            category,
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.black,
-                                            ),
-                                          ),
-                                          if (note.isNotEmpty)
-                                            Text(
-                                              note,
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                color: Color(0xFFBCBCBC),
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
-                                      children: [
-                                        Text(
-                                          '${type == 'income' ? '+' : '-'}RM${amount.toStringAsFixed(2)}',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.bold,
-                                            color: type == 'income'
-                                                ? const Color(0xFF52C77A)
-                                                : const Color(0xFFE74C3C),
-                                          ),
-                                        ),
-                                        Text(
-                                          _getDayOfWeek(date),
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            color: Color(0xFFBCBCBC),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
+                        : _buildGroupedTransactionsList(),
                   ],
                 ),
               ),
             ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        backgroundColor: const Color(0xFFFEFFD3),
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.receipt_long),
-            label: 'Account',
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // AI Feature Button
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF90EE90),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AIFeaturesScreen(
+                        userId: _currentUserId!,
+                        ledgerId: _selectedLedgerId,
+                      ),
+                    ),
+                  );
+                },
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.smart_toy, color: Colors.black, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'AI Features',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-          BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
-          BottomNavigationBarItem(icon: Icon(Icons.savings), label: 'Saving'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Setting'),
+          // Bottom Navigation Bar
+          Stack(
+            children: [
+              BottomNavigationBar(
+                currentIndex: _selectedIndex,
+                backgroundColor: const Color(0xFFFEFFD3),
+                type: BottomNavigationBarType.fixed,
+                items: const [
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.home),
+                    label: 'Home',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.account_balance_wallet),
+                    label: 'Account',
+                  ),
+                  BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.savings),
+                    label: 'Saving',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.settings),
+                    label: 'Setting',
+                  ),
+                ],
+                onTap: (index) {
+                  setState(() {
+                    _selectedIndex = index;
+                  });
+                  if (index == 1) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            AccountPage(userId: _currentUserId!),
+                      ),
+                    );
+                  } else if (index == 3) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            SavingsPage(userId: _currentUserId!),
+                      ),
+                    );
+                  } else if (index == 4) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            SettingsScreen(userId: _currentUserId!),
+                      ),
+                    ).then((_) {
+                      _checkBudgetAlerts();
+                    });
+                  }
+                },
+              ),
+              // Alert badge on Settings icon
+              if (_hasBudgetAlert)
+                Positioned(
+                  right: 12,
+                  top: 8,
+                  child: Container(
+                    width: 20,
+                    height: 20,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFE53935),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Center(
+                      child: Text(
+                        '!',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ],
-        onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-          if (index == 1) {
-            Navigator.push(
+      ),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 80),
+        child: FloatingActionButton(
+          heroTag: 'add_transaction_fab',
+          backgroundColor: const Color(0xFF90EE90),
+          onPressed: () async {
+            final result = await Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => AccountPage(userId: _currentUserId!),
+                builder: (context) => AddTransaction(
+                  userId: _currentUserId!,
+                  ledgerId: _selectedLedgerId,
+                ),
               ),
             );
-          } else if (index == 4) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => SettingsScreen(userId: _currentUserId!),
-              ),
-            );
-          }
-        },
+            // Refresh transactions if a new one was added
+            if (result == true) {
+              await _fetchTransactions();
+            }
+          },
+          child: const Icon(Icons.add, color: Colors.black, size: 30),
+        ),
       ),
     );
   }

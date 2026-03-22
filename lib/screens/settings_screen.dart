@@ -5,12 +5,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../FinancialTip/view_tips_page.dart';
 import '../Quiz/view_quiz_page.dart';
 import 'home_screen.dart';
-// import 'welcome_screen.dart';
+import 'welcome_screen.dart';
 import 'profile_settings_screen.dart';
 import 'ledger_manager.dart';
 import 'account_manager.dart';
 import 'currency_settings_page.dart';
 import 'account_page.dart';
+import 'category_manager.dart';
+import 'savings_page.dart';
+import 'budget_page.dart';
+import 'report_page.dart';
 
 class SettingsScreen extends StatefulWidget {
   final String userId;
@@ -26,11 +30,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _userNickname = 'Nickname';
   String? _profileImageUrl;
   bool _isLoadingProfile = true;
+  bool _hasBudgetAlert = false;
 
   @override
   void initState() {
     super.initState();
     _fetchUserProfile();
+    _checkBudgetAlerts();
   }
 
   Future<void> _fetchUserProfile() async {
@@ -52,6 +58,108 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _checkBudgetAlerts() async {
+    try {
+      final budgets = await Supabase.instance.client
+          .from('Budget')
+          .select()
+          .eq('userId', widget.userId);
+
+      bool hasAlert = false;
+
+      // Check each budget for >= 80% usage
+      for (var budget in budgets) {
+        final double usagePercentage = await _calculateBudgetUsage(budget);
+        if (usagePercentage >= 80) {
+          hasAlert = true;
+          break;
+        }
+      }
+
+      setState(() {
+        _hasBudgetAlert = hasAlert;
+      });
+    } catch (e) {
+      print('Error checking budget alerts: $e');
+    }
+  }
+
+  Future<double> _calculateBudgetUsage(Map<String, dynamic> budget) async {
+    try {
+      final budgetType = budget['type'] ?? '';
+      final budgetAmount = (budget['amount'] ?? 0).toDouble();
+      final cycleType = (budget['cycleType'] ?? 'month').toLowerCase();
+
+      if (budgetAmount <= 0) return 0;
+
+      // Calculate date range based on cycle type
+      final now = DateTime.now();
+      final DateTime startDate;
+
+      switch (cycleType) {
+        case 'day':
+          startDate = DateTime(now.year, now.month, now.day);
+          break;
+        case 'week':
+          startDate = now.subtract(Duration(days: now.weekday - 1));
+          break;
+        case 'month':
+          startDate = DateTime(now.year, now.month, 1);
+          break;
+        case 'year':
+          startDate = DateTime(now.year, 1, 1);
+          break;
+        default:
+          startDate = DateTime(now.year, now.month, 1);
+      }
+
+      // Fetch transactions based on budget type
+      List<dynamic> transactions = [];
+
+      if (budgetType == 'account') {
+        final accountId = budget['accountId'];
+        if (accountId != null) {
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('accountId', accountId)
+              .gte('date', startDate.toIso8601String());
+        }
+      } else if (budgetType == 'category') {
+        final categoryId = budget['categoryId'];
+        if (categoryId != null) {
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('categoryId', categoryId)
+              .eq('type', 'expense')
+              .gte('date', startDate.toIso8601String());
+        }
+      } else if (budgetType == 'ledger') {
+        final ledgerId = budget['ledgerId'];
+        if (ledgerId != null) {
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('ledgerId', ledgerId)
+              .eq('type', 'expense')
+              .gte('date', startDate.toIso8601String());
+        }
+      }
+
+      // Sum up transaction amounts
+      double totalSpent = 0;
+      for (var transaction in transactions) {
+        totalSpent += ((transaction['amount'] ?? 0) as num).toDouble();
+      }
+
+      return (totalSpent / budgetAmount) * 100;
+    } catch (e) {
+      print('Error calculating budget usage: $e');
+      return 0;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -60,73 +168,241 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           children: [
             // Profile Section
-            Container(
-              margin: const EdgeInsets.all(24),
-              padding: const EdgeInsets.all(24),
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF0F5),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
+            Stack(
+              children: [
+                Container(
+                  margin: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.all(24),
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF0F5),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  // Avatar
-                  Container(
-                    width: 100,
-                    height: 100,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE85B8A),
-                      shape: BoxShape.circle,
-                    ),
-                    child: _isLoadingProfile
-                        ? const Center(
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
+                  child: Column(
+                    children: [
+                      // Avatar
+                      Container(
+                        width: 100,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE85B8A),
+                          shape: BoxShape.circle,
+                        ),
+                        child: _isLoadingProfile
+                            ? const Center(
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                ),
+                              )
+                            : _profileImageUrl != null &&
+                                  _profileImageUrl!.isNotEmpty
+                            ? ClipOval(
+                                child: Image.network(
+                                  _profileImageUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Center(
+                                      child: Icon(
+                                        Icons.person,
+                                        size: 60,
+                                        color: Colors.white,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              )
+                            : Center(
+                                child: Icon(
+                                  Icons.person,
+                                  size: 60,
+                                  color: Colors.white,
+                                ),
+                              ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _userNickname,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Logout Button
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Tooltip(
+                      message: 'Logout',
+                      child: Container(
+                        decoration: BoxDecoration(
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFE74C3C).withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
                             ),
-                          )
-                        : _profileImageUrl != null &&
-                              _profileImageUrl!.isNotEmpty
-                        ? ClipOval(
-                            child: Image.network(
-                              _profileImageUrl!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Center(
-                                  child: Icon(
-                                    Icons.person,
-                                    size: 60,
-                                    color: Colors.white,
+                          ],
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () {
+                              showDialog(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  backgroundColor: const Color(0xFFFFF9E6),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(20),
                                   ),
-                                );
-                              },
-                            ),
-                          )
-                        : Center(
-                            child: Icon(
-                              Icons.person,
-                              size: 60,
-                              color: Colors.white,
+                                  contentPadding: const EdgeInsets.all(24),
+                                  content: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      // Icon
+                                      Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFFA7E399),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.logout_rounded,
+                                          color: Colors.white,
+                                          size: 48,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 20),
+                                      // Title
+                                      const Text(
+                                        'Logout',
+                                        style: TextStyle(
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFFF39C12),
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      // Description
+                                      const Text(
+                                        'Are you sure you want to logout from your account?',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Color(0xFF666666),
+                                          height: 1.5,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 24),
+                                      // Cancel Button
+                                      SizedBox(
+                                        width: double.infinity,
+                                        height: 48,
+                                        child: ElevatedButton(
+                                          onPressed: () =>
+                                              Navigator.pop(context),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: const Color(
+                                              0xFFA7E399,
+                                            ),
+                                            foregroundColor: Colors.black87,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            elevation: 0,
+                                          ),
+                                          child: const Text(
+                                            'Cancel',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      // Logout Button
+                                      SizedBox(
+                                        width: double.infinity,
+                                        height: 48,
+                                        child: OutlinedButton(
+                                          onPressed: () {
+                                            Navigator.pop(context);
+                                            Navigator.pushAndRemoveUntil(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (context) =>
+                                                    const WelcomeScreen(),
+                                              ),
+                                              (route) => false,
+                                            );
+                                          },
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: Colors.grey[700],
+                                            side: BorderSide(
+                                              color: Colors.grey[300]!,
+                                              width: 1.5,
+                                            ),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            'Logout',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                            borderRadius: BorderRadius.circular(50),
+                            child: Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE74C3C),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
+                              ),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.logout,
+                                  color: Colors.white,
+                                  size: 26,
+                                ),
+                              ),
                             ),
                           ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _userNickname,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black,
+                        ),
+                      ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
             // Menu Items Section
             Container(
@@ -165,11 +441,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     },
                   ),
                   _buildDivider(),
-                  _buildMenuItem('Category Manager', 2),
+                  _buildMenuItem(
+                    'Category Manager',
+                    2,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              CategoryManager(userId: widget.userId),
+                        ),
+                      );
+                    },
+                  ),
                   _buildDivider(),
-                  _buildMenuItem('Report', 3),
+                  _buildMenuItem(
+                    'Report',
+                    3,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              ReportPage(userId: widget.userId),
+                        ),
+                      );
+                    },
+                  ),
                   _buildDivider(),
-                  _buildMenuItem('Budget', 4, hasNotification: true),
+                  _buildMenuItem(
+                    'Budget',
+                    4,
+                    hasNotification: _hasBudgetAlert,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              BudgetPage(userId: widget.userId),
+                        ),
+                      ).then((_) {
+                        // Refresh alerts when returning from Budget page
+                        _checkBudgetAlerts();
+                      });
+                    },
+                  ),
                   _buildDivider(),
                   _buildMenuItem('Saving', 5),
                   _buildDivider(),
@@ -245,7 +561,82 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: _buildBottomNavigationBar(),
+      bottomNavigationBar: Stack(
+        children: [
+          BottomNavigationBar(
+            currentIndex: _selectedIndex,
+            backgroundColor: const Color(0xFFFEFFD3),
+            type: BottomNavigationBarType.fixed,
+            items: const [
+              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.account_balance_wallet),
+                label: 'Account',
+              ),
+              BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.savings),
+                label: 'Saving',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.settings),
+                label: 'Setting',
+              ),
+            ],
+            onTap: (index) {
+              setState(() {
+                _selectedIndex = index;
+              });
+              if (index == 0) {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => HomeScreen(userId: widget.userId),
+                  ),
+                );
+              } else if (index == 1) {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AccountPage(userId: widget.userId),
+                  ),
+                );
+              } else if (index == 3) {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => SavingsPage(userId: widget.userId),
+                  ),
+                );
+              }
+            },
+          ),
+          // Alert badge on Settings icon
+          if (_hasBudgetAlert)
+            Positioned(
+              right: 12,
+              top: 8,
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE53935),
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(
+                  child: Text(
+                    '!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -303,113 +694,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Divider(color: Colors.green[400], height: 1, thickness: 1),
-    );
-  }
-
-  Widget _buildBottomNavigationBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFA5D6A7),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedIndex = 0;
-                  });
-                  if (_selectedIndex == 0) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => HomeScreen(userId: widget.userId),
-                      ),
-                    );
-                  }
-                },
-                child: _buildBottomNavItem(Icons.home, 'Home', false),
-              ),
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedIndex = 1;
-                  });
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => AccountPage(userId: widget.userId),
-                    ),
-                  );
-                },
-                child: _buildBottomNavItem(
-                  Icons.account_circle,
-                  'Account',
-                  false,
-                ),
-              ),
-              _buildBottomNavItem(Icons.pets, 'Pet', false),
-              _buildBottomNavItem(Icons.savings, 'Saving', false),
-              _buildBottomNavItem(Icons.settings, 'Settings', true),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBottomNavItem(
-    IconData icon,
-    String label,
-    bool hasNotification,
-  ) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Stack(
-          children: [
-            Icon(icon, size: 24, color: Colors.black87),
-            if (hasNotification)
-              Positioned(
-                right: -4,
-                top: -4,
-                child: Container(
-                  width: 18,
-                  height: 18,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFE53935),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Center(
-                    child: Text(
-                      '1',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 10,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: Colors.black87),
-        ),
-      ],
     );
   }
 }

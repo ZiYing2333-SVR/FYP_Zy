@@ -12,8 +12,26 @@ class ForgotPasswordPage1 extends StatefulWidget {
 
 class _ForgotPasswordPage1State extends State<ForgotPasswordPage1> {
   final _emailPhoneController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
   String _errorMessage = '';
   bool _isLoading = false;
+
+  bool _isValidEmail(String input) {
+    final emailRegex = RegExp(
+      r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+    );
+    return emailRegex.hasMatch(input);
+  }
+
+  bool _isValidPhoneNumber(String input) {
+    // Phone number should contain only digits and be at least 10 characters
+    final phoneRegex = RegExp(r'^[0-9]{10,}$');
+    return phoneRegex.hasMatch(input);
+  }
+
+  bool _isValidInput(String input) {
+    return _isValidEmail(input) || _isValidPhoneNumber(input);
+  }
 
   Future<Map<String, dynamic>?> _verifyEmailOrPhone(String input) async {
     try {
@@ -80,185 +98,213 @@ class _ForgotPasswordPage1State extends State<ForgotPasswordPage1> {
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Forgot Password Title
-                    Center(
-                      child: const Text(
-                        'Forgot Password',
-                        style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFFF39C12), // Orange
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Forgot Password Title
+                      Center(
+                        child: const Text(
+                          'Forgot Password',
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFF39C12), // Orange
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 24),
-                    // Email/Phone Number Field
-                    TextFormField(
-                      controller: _emailPhoneController,
-                      decoration: InputDecoration(
-                        hintText: 'Email/Phone Number',
-                        hintStyle: const TextStyle(
-                          color: Color(0xFFBCBCBC),
-                          fontSize: 14,
-                        ),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFE8D5F2),
-                          ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFE8D5F2),
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(
+                      const SizedBox(height: 24),
+                      // Email/Phone Number Field
+                      TextFormField(
+                        controller: _emailPhoneController,
+                        decoration: InputDecoration(
+                          hintText: 'Email/Phone Number',
+                          hintStyle: const TextStyle(
                             color: Color(0xFFBCBCBC),
-                            width: 2,
+                            fontSize: 14,
+                          ),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFE8D5F2),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFE8D5F2),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFBCBCBC),
+                              width: 2,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
                           ),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
+                        validator: (value) {
+                          return null;
+                        },
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    // Error Message Display
-                    if (_errorMessage.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _errorMessage,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFFE74C3C), // Red color
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            GestureDetector(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const FirstRegisterPage(),
-                                  ),
-                                );
-                              },
-                              child: const Text(
-                                'Go to Register Page',
-                                style: TextStyle(
+                      const SizedBox(height: 12),
+                      // Error Message Display
+                      if (_errorMessage.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _errorMessage,
+                                style: const TextStyle(
                                   fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF52C77A), // Green
+                                  color: Color(0xFFE74C3C), // Red color
+                                  fontWeight: FontWeight.w500,
                                 ),
+                                softWrap: true,
+                                maxLines: null,
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    const SizedBox(height: 24),
-                    // Next Button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton(
-                        onPressed: _isLoading
-                            ? null
-                            : () async {
-                                final input = _emailPhoneController.text.trim();
-
-                                if (input.isEmpty) {
-                                  setState(() {
-                                    _errorMessage =
-                                        'Please enter your email or phone number';
-                                  });
-                                  return;
-                                }
-
-                                setState(() {
-                                  _isLoading = true;
-                                  _errorMessage = '';
-                                });
-
-                                try {
-                                  final user = await _verifyEmailOrPhone(input);
-
-                                  if (mounted) {
-                                    if (user != null) {
-                                      // Navigate to second page with user data
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) =>
-                                              ForgotPasswordPage2(
-                                                userId: user['userId'],
-                                                oldPassword: user['password'],
-                                              ),
+                              // Show "Go to Register Page" only when user is not found
+                              if (_errorMessage ==
+                                  'The phone number or email has not been registered yet.')
+                                Column(
+                                  children: [
+                                    const SizedBox(height: 12),
+                                    GestureDetector(
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                const FirstRegisterPage(),
+                                          ),
+                                        );
+                                      },
+                                      child: const Text(
+                                        'Go to Register Page',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF52C77A), // Green
                                         ),
-                                      );
-                                    } else {
-                                      // Show error message
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 24),
+                      // Next Button
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: _isLoading
+                              ? null
+                              : () async {
+                                  // Validate form first
+                                  if (!_formKey.currentState!.validate()) {
+                                    setState(() {
+                                      _errorMessage = '';
+                                    });
+                                    return;
+                                  }
+
+                                  final input = _emailPhoneController.text
+                                      .trim();
+
+                                  setState(() {
+                                    _isLoading = true;
+                                    _errorMessage = '';
+                                  });
+
+                                  // Validate input format
+                                  if (!_isValidInput(input)) {
+                                    setState(() {
+                                      _isLoading = false;
+                                      _errorMessage =
+                                          'Please enter a valid email or phone number (10+ digits)';
+                                    });
+                                    return;
+                                  }
+
+                                  try {
+                                    final user = await _verifyEmailOrPhone(
+                                      input,
+                                    );
+
+                                    if (mounted) {
+                                      if (user != null) {
+                                        // Navigate to second page with user data
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                ForgotPasswordPage2(
+                                                  userId: user['userId'],
+                                                  oldPassword: user['password'],
+                                                ),
+                                          ),
+                                        );
+                                      } else {
+                                        // Show error message
+                                        setState(() {
+                                          _errorMessage =
+                                              'The phone number or email has not been registered yet.';
+                                        });
+                                      }
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
                                       setState(() {
                                         _errorMessage =
-                                            'The phone number or email has not been registered yet.';
+                                            'An error occurred. Please try again.';
+                                      });
+                                    }
+                                  } finally {
+                                    if (mounted) {
+                                      setState(() {
+                                        _isLoading = false;
                                       });
                                     }
                                   }
-                                } catch (e) {
-                                  if (mounted) {
-                                    setState(() {
-                                      _errorMessage =
-                                          'An error occurred. Please try again.';
-                                    });
-                                  }
-                                } finally {
-                                  if (mounted) {
-                                    setState(() {
-                                      _isLoading = false;
-                                    });
-                                  }
-                                }
-                              },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFA7E399), // Green
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: const Color(0xFFCCCCCC),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFA7E399), // Green
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: const Color(0xFFCCCCCC),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                          textStyle: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        child: _isLoading
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white,
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
                                   ),
-                                ),
-                              )
-                            : const Text('Next'),
+                                )
+                              : const Text('Next'),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               SizedBox(height: MediaQuery.of(context).size.height * 0.05),
