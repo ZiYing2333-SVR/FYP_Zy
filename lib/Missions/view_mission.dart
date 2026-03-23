@@ -3,7 +3,11 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class MissionPage extends StatefulWidget {
-  const MissionPage({super.key});
+  final String userId;
+  const MissionPage({
+    super.key,
+    required this.userId,
+  });
 
   @override
   State<MissionPage> createState() => _MissionPageState();
@@ -13,7 +17,9 @@ class _MissionPageState extends State<MissionPage> {
 
   final supabase = Supabase.instance.client;
 
-  int coinBalance = 26;
+  int coinBalance = 0;
+
+  int currentStreak = 0;
 
   List<Map<String, dynamic>> missions = [];
 
@@ -23,106 +29,258 @@ class _MissionPageState extends State<MissionPage> {
   @override
   void initState() {
     super.initState();
+    fetchUserCoinBalance();
     assignDailyMissions();
+    fetchCurrentStreak();
+  }
+
+  Future<void> fetchUserCoinBalance() async {
+    try {
+      final data = await supabase
+          .from('User')
+          .select('coinbalance')
+          .eq('userId', widget.userId)
+          .single();
+
+      setState(() {
+        coinBalance = data['coinbalance'] ?? 0;
+      });
+    } catch (e) {
+      debugPrint('Error fetching coin balance: $e');
+    }
   }
 
   // =========================================================
   // 🎲 ASSIGN RANDOM MISSIONS INTO MissionProgress
   // =========================================================
   Future<void> assignDailyMissions() async {
+    final today = DateTime.now().toIso8601String().substring(0, 10);
 
-    final today =
-    DateTime.now().toIso8601String().substring(0, 10);
+    try {
+      /// Check whether this user already has missions assigned today
+      final existing = await supabase
+          .from('MissionProgress')
+          .select()
+          .eq('assignDate', today)
+          .eq('userId', widget.userId);
 
-    /// Check already assigned today
-    final existing = await supabase
-        .from('MissionProgress')
-        .select()
-        .eq('assignDate', today);
+      if (existing.isNotEmpty) {
+        await fetchAssignedMissions();
+        return;
+      }
 
-    if (existing.isNotEmpty) {
-      fetchAssignedMissions();
-      return;
-    }
+      /// Get fixed daily mission M001
+      final dailyMission = await supabase
+          .from('Mission')
+          .select()
+          .eq('missionId', 'M001')
+          .single();
 
-    /// Random pick 3 missions
-    final randomMissions = await supabase
-        .from('Mission')
-        .select()
-        .limit(3);
+      /// Get all other missions except M001
+      final otherMissionData = await supabase
+          .from('Mission')
+          .select()
+          .neq('missionId', 'M001');
 
-    /// Insert into MissionProgress
-    for (var m in randomMissions) {
+      /// Shuffle and take 2 random missions
+      final otherMissions =
+      List<Map<String, dynamic>>.from(otherMissionData)..shuffle();
+
+      final selectedOtherMissions = otherMissions.take(2).toList();
+
+      /// Insert M001 first
+      /// Since user opened the mission page, count as daily check-in
       await supabase.from('MissionProgress').insert({
         'assignDate': today,
-        'isComplete': false,
+        'isComplete': true,
         'isClaim': false,
-        'missionId': m['missionId'],
-        'userId': null, // temp user ----------------------need to change
+        'missionId': dailyMission['missionId'],
+        'userId': widget.userId,
       });
-    }
 
-    fetchAssignedMissions();
+      /// Insert 2 random missions as incomplete
+      for (var m in selectedOtherMissions) {
+        await supabase.from('MissionProgress').insert({
+          'assignDate': today,
+          'isComplete': false,
+          'isClaim': false,
+          'missionId': m['missionId'],
+          'userId': widget.userId,
+        });
+      }
+
+      await fetchAssignedMissions();
+    } catch (e) {
+      debugPrint('Error assigning daily missions: $e');
+    }
   }
 
   // =========================================================
   // 🔗 FETCH JOINED DATA
   // =========================================================
   Future<void> fetchAssignedMissions() async {
+    final today = DateTime.now().toIso8601String().substring(0, 10);
 
-    final today =
-    DateTime.now().toIso8601String().substring(0, 10);
+    try {
+      final data = await supabase
+          .from('MissionProgress')
+          .select('''
+          progressId,
+          isComplete,
+          isClaim,
+          assignDate,
+          userId,
+          Mission (
+            missionId,
+            title,
+            iconName,
+            rewardCoins
+          )
+        ''')
+          .eq('assignDate', today)
+          .eq('userId', widget.userId);
 
-    final data = await supabase
-        .from('MissionProgress')
-        .select('''
-        progressId,
-        isComplete,
-        isClaim,
-        assignDate,
-        Mission (
-          missionId,
-          title,
-          iconName,
-          rewardCoins
-        )
-      ''')
-        .eq('assignDate', today);   // ✅ FILTER TODAY ONLY
-
-    debugPrint("MISSION TODAY: $data");
-
-    setState(() {
-      missions =
+      List<Map<String, dynamic>> missionList =
       List<Map<String, dynamic>>.from(data);
-    });
+
+      /// Make sure M001 appears first
+      missionList.sort((a, b) {
+        final idA = a['Mission']?['missionId'] ?? '';
+        final idB = b['Mission']?['missionId'] ?? '';
+
+        if (idA == 'M001' && idB != 'M001') return -1;
+        if (idA != 'M001' && idB == 'M001') return 1;
+        return 0;
+      });
+
+      setState(() {
+        missions = missionList;
+      });
+
+      await fetchCurrentStreak();
+
+      debugPrint("MISSION TODAY: $missionList");
+    } catch (e) {
+      debugPrint('Error fetching assigned missions: $e');
+    }
+  }
+
+  Future<void> fetchCurrentStreak() async {
+    try {
+      final data = await supabase
+          .from('MissionProgress')
+          .select('assignDate, isComplete, isClaim')
+          .eq('userId', widget.userId)
+          .order('assignDate', ascending: false);
+
+      final progressList = List<Map<String, dynamic>>.from(data);
+
+      Map<String, List<Map<String, dynamic>>> groupedByDate = {};
+
+      for (var row in progressList) {
+        final rawDate = row['assignDate'];
+
+        /// normalize to yyyy-MM-dd string
+        final date = rawDate.toString().substring(0, 10);
+
+        groupedByDate.putIfAbsent(date, () => []);
+        groupedByDate[date]!.add(row);
+      }
+
+      debugPrint("Grouped By Date: $groupedByDate");
+
+      int streak = 0;
+      DateTime checkDate = DateTime.now();
+
+      while (true) {
+        final dateStr =
+            "${checkDate.year.toString().padLeft(4, '0')}-"
+            "${checkDate.month.toString().padLeft(2, '0')}-"
+            "${checkDate.day.toString().padLeft(2, '0')}";
+
+        final dayMissions = groupedByDate[dateStr];
+
+        debugPrint("Checking date: $dateStr");
+        debugPrint("Day missions: $dayMissions");
+
+        if (dayMissions == null || dayMissions.length < 3) {
+          break;
+        }
+
+        final allCompleted =
+        dayMissions.every((mission) => mission['isComplete'] == true);
+
+        if (!allCompleted) {
+          break;
+        }
+
+        streak++;
+        checkDate = checkDate.subtract(const Duration(days: 1));
+      }
+
+      debugPrint("Final streak = $streak");
+
+      if (!mounted) return;
+
+      setState(() {
+        currentStreak = streak;
+      });
+    } catch (e) {
+      debugPrint('Error fetching streak: $e');
+    }
+  }
+
+  Future<void> completeMission(String missionId) async {
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+
+    try {
+      await supabase
+          .from('MissionProgress')
+          .update({'isComplete': true})
+          .eq('userId', widget.userId)
+          .eq('assignDate', today)
+          .eq('missionId', missionId);
+
+      await fetchAssignedMissions();
+    } catch (e) {
+      debugPrint('Error completing mission $missionId: $e');
+    }
   }
 
 
   // =========================================================
   // 🪙 CLAIM REWARD
   // =========================================================
-  Future<void> claimReward(
-      Map missionProgress) async {
+  Future<void> claimReward(Map missionProgress) async {
+    try {
+      final progressId = missionProgress['progressId'];
+      final reward = missionProgress['Mission']['rewardCoins'] as int;
 
-    final progressId =
-    missionProgress['progressId'];
+      /// 1. Mark mission as claimed
+      await supabase
+          .from('MissionProgress')
+          .update({'isClaim': true})
+          .eq('progressId', progressId)
+          .eq('userId', widget.userId);
 
-    final reward =
-    missionProgress['Mission']['rewardCoins'] as int;
+      /// 2. Calculate new coin balance
+      final newBalance = coinBalance + reward;
 
+      /// 3. Update User table
+      await supabase
+          .from('User')
+          .update({'coinbalance': newBalance})
+          .eq('userId', widget.userId);
 
-    /// Update claim status
-    await supabase
-        .from('MissionProgress')
-        .update({'isClaim': true})
-        .eq('progressId', progressId);
+      /// 4. Update local UI
+      setState(() {
+        coinBalance = newBalance;
+      });
 
-    /// Update coins locally
-    setState(() {
-      coinBalance += reward;
-    });
-
-    fetchAssignedMissions();
+      await fetchAssignedMissions();
+    } catch (e) {
+      debugPrint('Error claiming reward: $e');
+    }
   }
 
   // =========================================================
@@ -246,22 +404,18 @@ class _MissionPageState extends State<MissionPage> {
   // =========================================================
   Widget _buildStreakRow() {
     return Row(
-      mainAxisAlignment:
-      MainAxisAlignment.spaceBetween,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: List.generate(7, (index) {
-
-        bool isActive = index < 3;
+        bool isActive = index < currentStreak;
 
         return Container(
           width: 42,
-          padding:
-          const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(vertical: 4),
           decoration: BoxDecoration(
             color: isActive
                 ? const Color(0xFFA7E399)
                 : Colors.green.shade100,
-            borderRadius:
-            BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(16),
           ),
           child: Column(
             children: [
@@ -269,9 +423,7 @@ class _MissionPageState extends State<MissionPage> {
                 "Day",
                 style: TextStyle(
                   fontSize: 10,
-                  color: isActive
-                      ? Colors.white
-                      : Colors.green,
+                  color: isActive ? Colors.white : Colors.green,
                 ),
               ),
               Text(
@@ -279,9 +431,7 @@ class _MissionPageState extends State<MissionPage> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: isActive
-                      ? Colors.white
-                      : Colors.green,
+                  color: isActive ? Colors.white : Colors.green,
                 ),
               ),
             ],

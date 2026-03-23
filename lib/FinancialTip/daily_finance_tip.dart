@@ -9,6 +9,8 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../Missions/mission_service.dart';
+
 class DailyFinanceTipPage extends StatefulWidget {
   final String userId;
 
@@ -489,7 +491,14 @@ class _DailyFinanceTipPageState extends State<DailyFinanceTipPage> {
                                 BorderRadius.circular(30),
                               ),
                             ),
-                            onPressed: () {
+                            onPressed: () async {
+                              await MissionService.completeMission(
+                                userId: widget.userId,
+                                missionId: 'M002',
+                              );
+
+                              if (!mounted) return;
+
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(

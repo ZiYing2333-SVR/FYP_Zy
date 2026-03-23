@@ -6,7 +6,12 @@ import 'custom_challenge_detail.dart';
 
 
 class CustomChallengePage extends StatefulWidget {
-  const CustomChallengePage({super.key});
+  final String userId;
+
+  const CustomChallengePage({
+    super.key,
+    required this.userId,
+  });
 
   @override
   State<CustomChallengePage> createState() =>
@@ -26,19 +31,27 @@ class _CustomChallengePageState
 
   /// ===== LOAD DATA =====
   Future<void> loadChallenges() async {
-    final supabase = Supabase.instance.client;
+    try {
+      final supabase = Supabase.instance.client;
 
-    final response = await supabase
-        .from('CustomChallenge')
-        .select(
-        'customChallengeId, title, rules, duration, rewardedCoins')
-        .order('customChallengeId');
+      final response = await supabase
+          .from('CustomChallenge')
+          .select(
+        'customChallengeId, title, description, duration, rewardedCoins, userId',
+      )
+          .eq('userId', widget.userId)
+          .order('customChallengeId');
 
-
-    setState(() {
-      challenges = response;
-      isLoading = false;
-    });
+      setState(() {
+        challenges = response;
+        isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('Error loading custom challenges: $e');
+      setState(() {
+        isLoading = false;
+      });
+    }
   }
 
   /// ===== UI =====
@@ -59,8 +72,7 @@ class _CustomChallengePageState
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (_) =>
-                const ViewChallengePage(),
+                builder: (_) => ViewChallengePage(userId: widget.userId),
               ),
             );
           },
@@ -120,8 +132,8 @@ class _CustomChallengePageState
                         MaterialPageRoute(
                           builder: (_) =>
                               CustomChallengeDetailsPage(
-                                customChallengeId:
-                                c['customChallengeId'],
+                                userId: widget.userId,
+                                customChallengeId: c['customChallengeId'],
                               ),
                         ),
                       );
@@ -164,8 +176,7 @@ class _CustomChallengePageState
           await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) =>
-              const CreateCustomChallengePage(),
+              builder: (_) => CreateCustomChallengePage(userId: widget.userId),
             ),
           );
 

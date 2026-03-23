@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class CustomChallengeDetailsPage
-    extends StatefulWidget {
+class CustomChallengeDetailsPage extends StatefulWidget {
+  final String userId;
   final String customChallengeId;
 
   const CustomChallengeDetailsPage({
     super.key,
+    required this.userId,
     required this.customChallengeId,
   });
 
@@ -36,9 +37,10 @@ class _CustomChallengeDetailsPageState
     final response = await supabase
         .from('CustomChallenge')
         .select(
-        'title, rules, duration, rewardedCoins')
+        'title, description, duration, rewardedCoins')
         .eq('customChallengeId',
         widget.customChallengeId)
+        .eq('userId', widget.userId)
         .single();
 
     setState(() {
@@ -109,7 +111,7 @@ class _CustomChallengeDetailsPageState
       "joinedAt":
       DateTime.now().toIso8601String(),
       "isComplete": false,
-      "userId": null,
+      "userId": widget.userId,
       "customChallengeId":
       widget.customChallengeId,
     });
@@ -210,7 +212,7 @@ class _CustomChallengeDetailsPageState
 
     final formattedRules =
     formatRules(
-        challenge!['rules'] ?? '');
+        challenge!['description'] ?? '');
 
     return Scaffold(
       backgroundColor:

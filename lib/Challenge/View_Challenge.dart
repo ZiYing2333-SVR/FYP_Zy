@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:fyp_wx/Challenge/preset_challenge_page.dart';
 import 'package:fyp_wx/Challenge/view_joined_challenge.dart';
-
+import '../screens/settings_screen.dart';
 import 'custom_challenge_list.dart';
 
-
-
-
 class ViewChallengePage extends StatelessWidget {
-  const ViewChallengePage({super.key});
+  final String userId;
+
+  const ViewChallengePage({
+    super.key,
+    required this.userId,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +21,14 @@ class ViewChallengePage extends StatelessWidget {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => SettingsScreen(userId: userId),
+              ),
+            );
+          },
         ),
       ),
       body: Padding(
@@ -44,11 +53,8 @@ class ViewChallengePage extends StatelessWidget {
                 ),
               ],
             ),
-
-
             const SizedBox(height: 24),
 
-            //  Cards fill remaining space
             Expanded(
               child: Column(
                 children: [
@@ -57,11 +63,12 @@ class ViewChallengePage extends StatelessWidget {
                       imagePath: 'assets/images/presetChallenge.png',
                       title: 'Pre-set Challenge',
                       onTap: () {
-                        Navigator.pop(context);
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const PresetChallengePage(),
+                            builder: (_) => PresetChallengePage(
+                              userId: userId,
+                            ),
                           ),
                         );
                       },
@@ -73,11 +80,12 @@ class ViewChallengePage extends StatelessWidget {
                       imagePath: 'assets/images/createChallenge.png',
                       title: 'Create Challenge',
                       onTap: () {
-                        Navigator.pop(context);
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const CustomChallengePage(),
+                            builder: (_) => CustomChallengePage(
+                              userId: userId,
+                            ),
                           ),
                         );
                       },
@@ -89,11 +97,12 @@ class ViewChallengePage extends StatelessWidget {
                       imagePath: 'assets/images/joinChallenge.png',
                       title: 'Challenge Joined',
                       onTap: () {
-                        Navigator.pop(context);
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const ViewJoinedChallengePage(),
+                            builder: (_) => ViewJoinedChallengePage(
+                              userId: userId,
+                            ),
                           ),
                         );
                       },
@@ -123,9 +132,8 @@ class ViewChallengePage extends StatelessWidget {
           color: Colors.white.withValues(alpha: 0.4),
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
-
             BoxShadow(
-              color: Colors.black.withValues(alpha:0.1),
+              color: Colors.black.withValues(alpha: 0.1),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),

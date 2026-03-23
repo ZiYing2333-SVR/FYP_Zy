@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:fyp_wx/Quiz/quiz_result_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../Missions/mission_service.dart';
+
 class QuizPlayPage extends StatefulWidget {
   final String userId;
 
@@ -340,6 +342,11 @@ class _QuizPlayPageState extends State<QuizPlayPage> {
         'completeDate': DateTime.now().toIso8601String(),
         'timeSpent': timeSpent,
       });
+
+      await MissionService.completeMission(
+        userId: widget.userId,
+        missionId: 'M004',
+      );
 
       /// 2️⃣ Get current coin balance
       final userData = await supabase

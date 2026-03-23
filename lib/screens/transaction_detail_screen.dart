@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../Challenge/challenge_tracking_service.dart';
 import 'refund_screen.dart';
 
 class TransactionDetailScreen extends StatefulWidget {
@@ -116,6 +117,11 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           })
           .eq('transactionId', widget.transactionId);
 
+      /// ✅ Recalculate preset challenge progress
+      if (widget.userId != null) {
+        await ChallengeTrackingService().updateUserChallenges(widget.userId!);
+      }
+
       setState(() {
         _transaction!['note'] = _noteController.text;
         _transaction!['accountId'] = _selectedAccountId;
@@ -217,6 +223,11 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
             .delete()
             .eq('transactionId', widget.transactionId);
 
+        /// ✅ Recalculate preset challenge progress
+        if (widget.userId != null) {
+          await ChallengeTrackingService().updateUserChallenges(widget.userId!);
+        }
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Transaction deleted successfully')),
@@ -235,7 +246,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   }
 
   void _navigateToRefund() {
-    if (_transaction == null) return;
+    if (_transaction == null || widget.userId == null) return;
 
     final amount = double.tryParse(_transaction!['amount'].toString()) ?? 0;
     final accountName = _transaction!['Account']?['accountName'] ?? 'Account';
@@ -248,6 +259,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           amount: amount,
           accountId: _transaction!['accountId'],
           accountName: accountName,
+          userId: widget.userId!,
         ),
       ),
     ).then((result) {

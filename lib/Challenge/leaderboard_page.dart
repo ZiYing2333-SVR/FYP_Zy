@@ -12,16 +12,14 @@ class LeaderboardPage extends StatefulWidget {
   });
 
   @override
-  State<LeaderboardPage> createState() =>
-      _LeaderboardPageState();
+  State<LeaderboardPage> createState() => _LeaderboardPageState();
 }
 
-class _LeaderboardPageState
-    extends State<LeaderboardPage> {
-  List participants = [];
+class _LeaderboardPageState extends State<LeaderboardPage> {
+  List<Map<String, dynamic>> participants = [];
   bool isLoading = true;
   String challengeTitle = "";
-
+  String? loadedChallengeId;
 
   @override
   void initState() {
@@ -29,18 +27,17 @@ class _LeaderboardPageState
     loadLeaderboard();
   }
 
-  /// ================= LOAD =================
   Future<void> loadLeaderboard() async {
     final supabase = Supabase.instance.client;
 
     late final List data;
 
-    /// ===== GET CHALLENGE TITLE =====
     if (widget.challengeId != null) {
+      loadedChallengeId = widget.challengeId;
 
       final challenge = await supabase
           .from('Challenge')
-          .select('title')
+          .select('title, challengeId')
           .eq('challengeId', widget.challengeId!)
           .single();
 
@@ -51,10 +48,8 @@ class _LeaderboardPageState
           .select('progressValue, userId')
           .eq('challengeId', widget.challengeId!)
           .order('progressValue', ascending: false);
-
-    }
-
-    else if (widget.customChallengeId != null) {
+    } else if (widget.customChallengeId != null) {
+      loadedChallengeId = null;
 
       final challenge = await supabase
           .from('CustomChallenge')
@@ -67,34 +62,27 @@ class _LeaderboardPageState
       data = await supabase
           .from('ChallengeParticipant')
           .select('progressValue, userId')
-          .eq('customChallengeId',
-          widget.customChallengeId!)
+          .eq('customChallengeId', widget.customChallengeId!)
           .order('progressValue', ascending: false);
-    }
-
-    else {
+    } else {
       data = [];
     }
 
-    /// ===== BUILD PARTICIPANTS =====
-    List temp = [];
+    List<Map<String, dynamic>> temp = [];
 
     for (var p in data) {
       if (p['userId'] == null) continue;
 
-      final userList = await supabase
+      final user = await supabase
           .from('User')
           .select('nickname, profileImage')
-          .eq('userId', p['userId']);
-
-      if (userList.isEmpty) continue;
-
-      final user = userList.first;
+          .eq('userId', p['userId'])
+          .single();
 
       temp.add({
-        "nickname": user['nickname'],
-        "profileImage": user['profileImage'],
-        "progress": p['progressValue'] ?? 0,
+        "nickname": user['nickname'] ?? 'Unknown',
+        "profileImage": user['profileImage'] ?? '',
+        "progress": (p['progressValue'] ?? 0) as num,
       });
     }
 
@@ -104,39 +92,45 @@ class _LeaderboardPageState
     });
   }
 
+  String formatProgress(num progress) {
+    switch (loadedChallengeId) {
+      case 'PC0001':
+        return "${progress.toInt()} days";
 
+      case 'PC0002':
+        return "RM${progress.toStringAsFixed(2)}";
 
-  /// ================= UI =================
+      case 'PC0003':
+        return "${progress.toInt()} days";
+
+      case 'PC0004':
+        return "RM${progress.toStringAsFixed(2)}";
+
+      default:
+        return progress.toString();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor:
-      const Color(0xFFFEFFD3),
-
+      backgroundColor: const Color(0xFFFEFFD3),
       appBar: AppBar(
-        backgroundColor:
-        const Color(0xFFFEFFD3),
+        backgroundColor: const Color(0xFFFEFFD3),
         elevation: 0,
         leading: IconButton(
-          icon:
-          const Icon(Icons.arrow_back),
-          onPressed: () =>
-              Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
         ),
       ),
-
       body: isLoading
-          ? const Center(
-          child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator())
           : Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-
-            /// ===== HEADER =====
             Row(
-              mainAxisAlignment:
-              MainAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Image.asset(
                   'assets/images/joinChallenge.png',
@@ -150,81 +144,45 @@ class _LeaderboardPageState
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontSize: 20,
-                      fontWeight:
-                      FontWeight.bold,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
               ],
             ),
-
             const SizedBox(height: 20),
-
-            /// ===== LEADERBOARD CONTAINER =====
             Expanded(
               child: Container(
-                padding:
-                const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Colors.white
-                      .withValues(alpha: 0.4),
-                  borderRadius:
-                  BorderRadius.circular(
-                      20),
+                  color: Colors.white.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-
                 child: Column(
                   children: [
-
-                    /// TITLE
                     const Text(
                       "Leaderboard",
                       style: TextStyle(
                         fontSize: 22,
-                        fontWeight:
-                        FontWeight.bold,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-
                     const SizedBox(height: 20),
-
-                    /// ===== PODIUM =====
                     buildPodium(),
-
                     const SizedBox(height: 20),
-
-                    /// ===== REMAINING USERS =====
                     Expanded(
-                      child: participants
-                          .length >
-                          3
+                      child: participants.length > 3
                           ? ListView.builder(
-                        itemCount:
-                        participants
-                            .length -
-                            3,
-                        itemBuilder:
-                            (context,
-                            index) {
-                          final p =
-                          participants[
-                          index +
-                              3];
-
-                          return buildRankCard(
-                            index + 4,
-                            p,
-                          );
+                        itemCount: participants.length - 3,
+                        itemBuilder: (context, index) {
+                          final p = participants[index + 3];
+                          return buildRankCard(index + 4, p);
                         },
                       )
                           : const Center(
                         child: Text(
                           "No more participants",
-                          style:
-                          TextStyle(
-                            color: Colors
-                                .grey,
-                          ),
+                          style: TextStyle(color: Colors.grey),
                         ),
                       ),
                     ),
@@ -235,51 +193,34 @@ class _LeaderboardPageState
           ],
         ),
       ),
-
     );
   }
 
-  /// ================= PODIUM =================
   Widget buildPodium() {
     if (participants.isEmpty) {
-      return const Text(
-          "No leaderboard data");
+      return const Text("No leaderboard data");
     }
 
     return Container(
-      padding:
-      const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white
-            .withValues(alpha: 0.4),
-        borderRadius:
-        BorderRadius.circular(20),
+        color: Colors.white.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
-        mainAxisAlignment:
-        MainAxisAlignment.spaceEvenly,
-        crossAxisAlignment:
-        CrossAxisAlignment.end,
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          if (participants.length >= 2)
-            buildTopUser(
-                participants[1], 2),
-
-          buildTopUser(
-              participants[0], 1,
-              isFirst: true),
-
-          if (participants.length >= 3)
-            buildTopUser(
-                participants[2], 3),
+          if (participants.length >= 2) buildTopUser(participants[1], 2),
+          buildTopUser(participants[0], 1, isFirst: true),
+          if (participants.length >= 3) buildTopUser(participants[2], 3),
         ],
       ),
     );
   }
 
-  /// ================= TOP USER =================
   Widget buildTopUser(
-      Map user,
+      Map<String, dynamic> user,
       int rank, {
         bool isFirst = false,
       }) {
@@ -293,8 +234,7 @@ class _LeaderboardPageState
         medalColor = Colors.grey;
         break;
       case 3:
-        medalColor =
-            Colors.brown.shade300;
+        medalColor = Colors.brown.shade300;
         break;
       default:
         medalColor = Colors.green;
@@ -303,13 +243,10 @@ class _LeaderboardPageState
     return Column(
       children: [
         Stack(
-          alignment:
-          Alignment.bottomCenter,
+          alignment: Alignment.bottomCenter,
           children: [
-            /// Avatar ring
             Container(
-              padding:
-              const EdgeInsets.all(3),
+              padding: const EdgeInsets.all(3),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(
@@ -318,101 +255,76 @@ class _LeaderboardPageState
                 ),
               ),
               child: CircleAvatar(
-                radius:
-                isFirst ? 38 : 30,
-                backgroundImage:
-                NetworkImage(
-                  user['profileImage'],
-                ),
+                radius: isFirst ? 38 : 30,
+                backgroundImage: user['profileImage'] != null &&
+                    user['profileImage'].toString().isNotEmpty
+                    ? NetworkImage(user['profileImage'])
+                    : null,
+                child: user['profileImage'] == null ||
+                    user['profileImage'].toString().isEmpty
+                    ? const Icon(Icons.person)
+                    : null,
               ),
             ),
-
-            /// Medal badge
             Positioned(
               bottom: -4,
               child: CircleAvatar(
                 radius: 14,
-                backgroundColor:
-                medalColor,
+                backgroundColor: medalColor,
                 child: Text(
                   "$rank",
-                  style:
-                  const TextStyle(
+                  style: const TextStyle(
                     color: Colors.white,
-                    fontWeight:
-                    FontWeight.bold,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
             ),
           ],
         ),
-
         const SizedBox(height: 6),
-
         Text(
           user['nickname'],
-          style: const TextStyle(
-            fontWeight:
-            FontWeight.bold,
-          ),
+          style: const TextStyle(fontWeight: FontWeight.bold),
         ),
-
-        Text("${user['progress']}%"),
+        Text(formatProgress(user['progress'])),
       ],
     );
   }
 
-  /// ================= RANK CARD =================
-  Widget buildRankCard(
-      int rank, Map user) {
+  Widget buildRankCard(int rank, Map<String, dynamic> user) {
     return Container(
-      margin:
-      const EdgeInsets.only(
-          bottom: 12),
-      padding:
-      const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
+        gradient: const LinearGradient(
           colors: [
-            const Color(0xFF9ED39E),
-            const Color(0xFFCDE8C9),
+            Color(0xFF9ED39E),
+            Color(0xFFCDE8C9),
           ],
         ),
-        borderRadius:
-        BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         children: [
-          /// Rank circle
           CircleAvatar(
-            backgroundColor:
-            Colors.green,
+            backgroundColor: Colors.green,
             child: Text(
               "$rank",
               style: const TextStyle(
                 color: Colors.white,
-                fontWeight:
-                FontWeight.bold,
+                fontWeight: FontWeight.bold,
               ),
             ),
           ),
-
           const SizedBox(width: 12),
-
-          /// Name
           Expanded(
             child: Text(
               user['nickname'],
-              style: const TextStyle(
-                fontWeight:
-                FontWeight.bold,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
-
-          /// Progress
-          Text("${user['progress']}%"),
+          Text(formatProgress(user['progress'])),
         ],
       ),
     );

@@ -131,13 +131,13 @@ class _MissionContent extends StatelessWidget {
                       ),
                       onPressed: () {
                         Navigator.pop(context);
-
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const MissionPage(),
-                          ),
-                        );
+                        //TODO:
+                        // Navigator.push(
+                        //   context,
+                        //   MaterialPageRoute(
+                        //     builder: (_) => MissionPage(userId: userId),
+                        //   ),
+                        // );
                       },
                       child: const Text(
                         "View Missions",

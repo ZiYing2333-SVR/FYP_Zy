@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 // import 'package:image_picker/image_picker.dart';
 // import 'dart:typed_data';
+import '../Challenge/View_Challenge.dart';
 import '../FinancialTip/view_tips_page.dart';
+import '../Missions/view_mission.dart';
 import '../Quiz/view_quiz_page.dart';
 import 'home_screen.dart';
 import 'welcome_screen.dart';
@@ -536,9 +538,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     },
                   ),
                   _buildDivider(),
-                  _buildMenuItem('Challenges', 9),
+                  _buildMenuItem(
+                      'Daily Missions',
+                      9,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              MissionPage(userId: widget.userId),
+                        ),
+                      );
+                    },
+                  ),
                   _buildDivider(),
-                  _buildMenuItem('Achievement', 10),
+                  _buildMenuItem(
+                    'Challenges',
+                    11,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ViewChallengePage(userId: widget.userId),
+                        ),
+                      );
+                    },
+                  ),
                   _buildDivider(),
                   _buildMenuItem(
                     'Quiz',

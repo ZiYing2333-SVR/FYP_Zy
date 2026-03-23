@@ -1,75 +1,67 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class CreateCustomChallengePage
-    extends StatefulWidget {
-  const CreateCustomChallengePage({super.key});
+class CreateCustomChallengePage extends StatefulWidget {
+  final String userId;
+
+  const CreateCustomChallengePage({
+    super.key,
+    required this.userId,
+  });
 
   @override
   State<CreateCustomChallengePage> createState() =>
       _CreateCustomChallengePageState();
 }
 
-class _CreateCustomChallengePageState
-    extends State<CreateCustomChallengePage> {
+class _CreateCustomChallengePageState extends State<CreateCustomChallengePage> {
   final _formKey = GlobalKey<FormState>();
 
   final titleController = TextEditingController();
-  final descriptionController =
-  TextEditingController();
   final rulesController = TextEditingController();
   final targetController = TextEditingController();
 
-  String type = "streak";
+  String type = "spending_limit";
   int duration = 7;
   int coins = 5;
 
-  /// ================= CREATE =================
   Future<void> createChallenge() async {
-    if (!_formKey.currentState!.validate())
-      return;
+    if (!_formKey.currentState!.validate()) return;
 
     final supabase = Supabase.instance.client;
 
-    final user =
-        supabase.auth.currentUser;
+    try {
+      final newId = await generateCustomChallengeId();
 
-    final userId =
-        user?.id; // nullable safe
+      await supabase.from('CustomChallenge').insert({
+        "customChallengeId": newId,
+        "title": titleController.text.trim(),
+        "description": rulesController.text.trim(),
+        "type": type,
+        "duration": duration,
+        "rewardedCoins": coins,
+        "targetAmount": targetController.text.trim().isEmpty
+            ? null
+            : double.parse(targetController.text.trim()),
+        "userId": widget.userId,
+        "createdAt": DateTime.now().toIso8601String(),
+      });
 
+      if (!mounted) return;
 
-    /// 🔢 Generate ID
-    final newId =
-    await generateCustomChallengeId();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Challenge Created")),
+      );
 
-    await supabase.from('CustomChallenge').insert({
-      "customChallengeId": newId,
-      "title": titleController.text,
-      "description":
-      descriptionController.text,
-      "rules": rulesController.text,
-      "type": type,
-      "duration": duration,
-      "rewardedCoins": coins,
-      "targetAmount":
-      targetController.text.isEmpty
-          ? null
-          : double.parse(
-          targetController.text),
-      "userId": userId,
-      "createdAt":
-      DateTime.now().toIso8601String(),
-    });
+      Navigator.pop(context, true);
+    } catch (e) {
+      debugPrint("Error creating custom challenge: $e");
 
-    /// Success message
-    ScaffoldMessenger.of(context)
-        .showSnackBar(
-      const SnackBar(
-          content:
-          Text("Challenge Created")),
-    );
-
-    Navigator.pop(context);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Failed to create challenge: $e")),
+      );
+    }
   }
 
   Future<String> generateCustomChallengeId() async {
@@ -86,41 +78,37 @@ class _CreateCustomChallengePageState
     }
 
     final lastId = data.first['customChallengeId'];
-
-    final number =
-        int.parse(lastId.substring(2)) + 1;
+    final number = int.parse(lastId.substring(2)) + 1;
 
     return "CC${number.toString().padLeft(4, '0')}";
   }
 
+  @override
+  void dispose() {
+    titleController.dispose();
+    rulesController.dispose();
+    targetController.dispose();
+    super.dispose();
+  }
 
-  /// ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor:
-      const Color(0xFFFEFFD3),
-
+      backgroundColor: const Color(0xFFFEFFD3),
       appBar: AppBar(
-        backgroundColor:
-        const Color(0xFFFEFFD3),
+        backgroundColor: const Color(0xFFFEFFD3),
         elevation: 0,
         leading: IconButton(
-          icon:
-          const Icon(Icons.arrow_back),
-          onPressed: () =>
-              Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
         ),
       ),
-
       body: SingleChildScrollView(
-        padding:
-        const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(20),
         child: Form(
           key: _formKey,
           child: Column(
             children: [
-              /// ===== HEADER =====
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -139,77 +127,47 @@ class _CreateCustomChallengePageState
                   ),
                 ],
               ),
-
               const SizedBox(height: 24),
 
-              /// ===== FIELDS =====
               buildSideField(
-                  "Title",
-                  TextFormField(
-                    controller:
-                    titleController,
-                    validator: required,
-                    decoration:
-                    inputStyle(),
-                  )),
+                "Title",
+                TextFormField(
+                  controller: titleController,
+                  validator: required,
+                  decoration: inputStyle(),
+                ),
+              ),
+
 
               buildSideField(
-                  "Description",
-                  TextFormField(
-                    controller:
-                    descriptionController,
-                    validator: required,
-                    decoration:
-                    inputStyle(),
-                  )),
+                "Descriptions",
+                TextFormField(
+                  controller: rulesController,
+                  validator: required,
+                  decoration: inputStyle(),
+                ),
+              ),
 
-              buildSideField(
-                  "Rules",
-                  TextFormField(
-                    controller:
-                    rulesController,
-                    validator: required,
-                    decoration:
-                    inputStyle(),
-                  )),
-
-              /// ===== TYPE =====
               buildSideField(
                 "Type",
                 DropdownButtonFormField<String>(
                   value: type,
-                  isExpanded: true, // ✅ prevents overflow
+                  isExpanded: true,
                   decoration: inputStyle(),
                   items: const [
                     DropdownMenuItem(
-                      value: "streak",
-                      child: Text(
-                        "Streak",
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    DropdownMenuItem(
                       value: "spending_limit",
-                      child: Text(
-                        "Spending Limit",
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      child: Text("Spending Limit"),
                     ),
                     DropdownMenuItem(
                       value: "saving_goal",
-                      child: Text(
-                        "Saving Goal",
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      child: Text("Saving Goal"),
                     ),
                   ],
-                  onChanged: (v) =>
-                      setState(() => type = v!),
+                  onChanged: (v) => setState(() => type = v!),
                 ),
               ),
 
-              /// ===== TARGET AMOUNT ====
-              if (type != "streak")
                 buildSideField(
                   "Target Amount",
                   TextFormField(
@@ -219,56 +177,35 @@ class _CreateCustomChallengePageState
                   ),
                 ),
 
-
-              /// ===== DURATION SPINNER =====
               buildSideField(
                 "Durations",
                 numberSpinner(
                   value: duration,
                   min: 1,
                   max: 14,
-                  onChanged: (v) =>
-                      setState(
-                              () => duration = v),
+                  onChanged: (v) => setState(() => duration = v),
                 ),
               ),
 
-              /// ===== COINS SPINNER =====
               buildSideField(
                 "Coin Rewarded",
                 numberSpinner(
                   value: coins,
                   min: 1,
                   max: 20,
-                  onChanged: (v) =>
-                      setState(
-                              () => coins = v),
+                  onChanged: (v) => setState(() => coins = v),
                 ),
               ),
 
-
-
-              /// ===== CREATE BUTTON =====
               SizedBox(
                 width: 200,
                 height: 55,
                 child: ElevatedButton(
-                  onPressed: () {
-                    print("Create clicked");
-                    createChallenge();
-                  },
-
-                  style: ElevatedButton
-                      .styleFrom(
-                    backgroundColor:
-                    const Color(
-                        0xFF9ED39E),
-                    shape:
-                    RoundedRectangleBorder(
-                      borderRadius:
-                      BorderRadius
-                          .circular(
-                          30),
+                  onPressed: createChallenge,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF9ED39E),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
                     ),
                   ),
                   child: const Text(
@@ -287,26 +224,16 @@ class _CreateCustomChallengePageState
     );
   }
 
-  /// ================= COMPONENTS =================
-
-  /// Left label + right field
-  Widget buildSideField(
-      String label, Widget field) {
+  Widget buildSideField(String label, Widget field) {
     return Padding(
-      padding:
-      const EdgeInsets.only(
-          bottom: 16),
+      padding: const EdgeInsets.only(bottom: 16),
       child: Row(
         children: [
           SizedBox(
             width: 120,
             child: Text(
               label,
-              style:
-              const TextStyle(
-                fontWeight:
-                FontWeight.w600,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
           Expanded(child: field),
@@ -315,71 +242,53 @@ class _CreateCustomChallengePageState
     );
   }
 
-  /// Number Spinner
   Widget numberSpinner({
     required int value,
     required int min,
     required int max,
-    required Function(int)
-    onChanged,
+    required Function(int) onChanged,
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white
-            .withValues(alpha: 0.6),
-        borderRadius:
-        BorderRadius.circular(20),
+        color: Colors.white.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(
-                Icons.remove),
-            onPressed: value > min
-                ? () =>
-                onChanged(value - 1)
-                : null,
+            icon: const Icon(Icons.remove),
+            onPressed: value > min ? () => onChanged(value - 1) : null,
           ),
           Expanded(
             child: Center(
               child: Text(
                 "$value",
-                style:
-                const TextStyle(
+                style: const TextStyle(
                   fontSize: 16,
-                  fontWeight:
-                  FontWeight.bold,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ),
           ),
           IconButton(
-            icon:
-            const Icon(Icons.add),
-            onPressed: value < max
-                ? () =>
-                onChanged(value + 1)
-                : null,
+            icon: const Icon(Icons.add),
+            onPressed: value < max ? () => onChanged(value + 1) : null,
           ),
         ],
       ),
     );
   }
 
-  /// Input style
   InputDecoration inputStyle() {
     return InputDecoration(
       filled: true,
-      fillColor: Colors.white
-          .withValues(alpha: 0.6),
+      fillColor: Colors.white.withValues(alpha: 0.6),
       border: OutlineInputBorder(
-        borderRadius:
-        BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(20),
         borderSide: BorderSide.none,
       ),
     );
   }
 
-  String? required(String? v) =>
-      v!.isEmpty ? "Required" : null;
+  String? required(String? v) => v == null || v.trim().isEmpty ? "Required" : null;
 }

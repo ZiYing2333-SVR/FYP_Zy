@@ -3,6 +3,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 
+import '../Challenge/challenge_tracking_service.dart';
+import '../Missions/mission_service.dart';
+
 class AddTransaction extends StatefulWidget {
   final String userId;
   final String? ledgerId;
@@ -361,6 +364,7 @@ class _AddTransactionState extends State<AddTransaction> {
 
       final amount = double.parse(_amountText);
 
+
       // Save transaction to database
       await Supabase.instance.client.from('Transaction').insert({
         'transactionId': transactionId,
@@ -386,6 +390,15 @@ class _AddTransactionState extends State<AddTransaction> {
             .update({'balance': newBalance})
             .eq('accountId', _selectedAccountId ?? '');
       }
+
+      /// ✅ Mark LogExpense mission complete
+      await MissionService.completeMission(
+        userId: widget.userId,
+        missionId: 'M003',
+      );
+
+      /// ✅ Recalculate preset challenge progress
+      await ChallengeTrackingService().updateUserChallenges(widget.userId);
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Transaction saved successfully')),

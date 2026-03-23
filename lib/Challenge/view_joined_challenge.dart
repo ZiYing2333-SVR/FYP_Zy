@@ -6,8 +6,12 @@ import 'challenge_progress.dart';
 
 class ViewJoinedChallengePage
     extends StatefulWidget {
-  const ViewJoinedChallengePage(
-      {super.key});
+
+  final String userId;
+  const ViewJoinedChallengePage({
+    super.key,
+    required this.userId,
+  });
 
   @override
   State<ViewJoinedChallengePage>
@@ -18,7 +22,7 @@ class ViewJoinedChallengePage
 class _ViewJoinedChallengePageState
     extends State<
         ViewJoinedChallengePage> {
-  List joinedChallenges = [];
+  List<Map<String, dynamic>> joinedChallenges = [];
   bool isLoading = true;
 
   @override
@@ -27,24 +31,190 @@ class _ViewJoinedChallengePageState
     loadJoinedChallenges();
   }
 
+  Future<String> _generateChallengeParticipantId() async {
+    final supabase = Supabase.instance.client;
+
+    final lastRecord = await supabase
+        .from('ChallengeParticipant')
+        .select('challengeParticipantId')
+        .order('challengeParticipantId', ascending: false)
+        .limit(1)
+        .maybeSingle();
+
+    if (lastRecord == null || lastRecord['challengeParticipantId'] == null) {
+      return 'CP00001';
+    }
+
+    final lastId = lastRecord['challengeParticipantId'].toString();
+    final lastNumber = int.tryParse(lastId.replaceFirst('CP', '')) ?? 0;
+    final newNumber = lastNumber + 1;
+
+    return 'CP${newNumber.toString().padLeft(5, '0')}';
+  }
+
+  Future<void> _showInvitationActionDialog(Map<String, dynamic> challenge) async {
+    final action = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFFFFF9E6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text(
+            'Challenge Invitation',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF52C77A),
+            ),
+          ),
+          content: Text(
+            'Do you want to accept or reject "${challenge['title']}"?',
+            textAlign: TextAlign.center,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'reject'),
+              child: const Text('Reject'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, 'accept'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF9ED39E),
+              ),
+              child: const Text(
+                'Accept',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (action == 'reject') {
+      await _rejectInvitation(challenge);
+    } else if (action == 'accept') {
+      await _acceptInvitation(challenge);
+    }
+  }
+
+  Future<void> _rejectInvitation(Map<String, dynamic> challenge) async {
+    final supabase = Supabase.instance.client;
+
+    try {
+      await supabase
+          .from('ChallengeInvitation')
+          .update({'status': 'reject'})
+          .eq('challengeInvitationId', challenge['challengeInvitationId']);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invitation rejected')),
+      );
+
+      await loadJoinedChallenges();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error rejecting invitation: $e')),
+      );
+    }
+  }
+
+  Future<void> _acceptInvitation(Map<String, dynamic> challenge) async {
+    final supabase = Supabase.instance.client;
+
+    try {
+      final existingParticipant = await supabase
+          .from('ChallengeParticipant')
+          .select('challengeParticipantId')
+          .eq('userId', widget.userId)
+          .eq(
+        challenge['challengeId'] != null ? 'challengeId' : 'customChallengeId',
+        challenge['challengeId'] ?? challenge['customChallengeId'],
+      )
+          .maybeSingle();
+
+      if (existingParticipant != null) {
+        await supabase
+            .from('ChallengeInvitation')
+            .update({'status': 'accept'})
+            .eq('challengeInvitationId', challenge['challengeInvitationId']);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You already joined this challenge')),
+        );
+
+        await loadJoinedChallenges();
+        return;
+      }
+
+      int duration = 0;
+
+      if (challenge['challengeId'] != null) {
+        final challengeData = await supabase
+            .from('Challenge')
+            .select('duration')
+            .eq('challengeId', challenge['challengeId'])
+            .single();
+
+        duration = challengeData['duration'] ?? 0;
+      }
+
+      if (challenge['customChallengeId'] != null) {
+        final customData = await supabase
+            .from('CustomChallenge')
+            .select('duration')
+            .eq('customChallengeId', challenge['customChallengeId'])
+            .single();
+
+        duration = customData['duration'] ?? 0;
+      }
+
+      final participantId = await _generateChallengeParticipantId();
+      final startDate = DateTime.now();
+      final endDate = startDate.add(Duration(days: duration));
+
+      await supabase.from('ChallengeParticipant').insert({
+        'challengeParticipantId': participantId,
+        'userId': widget.userId,
+        'challengeId': challenge['challengeId'],
+        'customChallengeId': challenge['customChallengeId'],
+        'progressValue': 0,
+        'startDate': startDate.toIso8601String(),
+        'endDate': endDate.toIso8601String(),
+      });
+
+      await supabase
+          .from('ChallengeInvitation')
+          .update({'status': 'accept'})
+          .eq('challengeInvitationId', challenge['challengeInvitationId']);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invitation accepted')),
+      );
+
+      await loadJoinedChallenges();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error accepting invitation: $e')),
+      );
+    }
+  }
+
   /// ===== LOAD JOINED =====
   Future<void> loadJoinedChallenges() async {
     final supabase = Supabase.instance.client;
 
-    /// Get all participants (userId null for now)
-    final participants =
-    await supabase
+    final participants = await supabase
         .from('ChallengeParticipant')
-        .select(
-        'challengeParticipantId, challengeId, customChallengeId');
+        .select('challengeParticipantId, challengeId, customChallengeId, userId')
+        .eq('userId', widget.userId);
 
+    List<Map<String, dynamic>> tempList = [];
 
-    List tempList = [];
-
-    /// Loop participants
     for (var p in participants) {
-
-      /// PRESET
+      /// PRESET challenge
       if (p['challengeId'] != null) {
         final preset = await supabase
             .from('Challenge')
@@ -54,28 +224,66 @@ class _ViewJoinedChallengePageState
 
         tempList.add({
           "title": preset['title'],
-          "participantId":
-          p['challengeParticipantId'], // ADD
+          "participantId": p['challengeParticipantId'],
+          "isInvitation": false,
         });
       }
 
-      /// CUSTOM
+      /// CUSTOM challenge
       if (p['customChallengeId'] != null) {
         final custom = await supabase
             .from('CustomChallenge')
             .select('title')
-            .eq('customChallengeId',
-            p['customChallengeId'])
+            .eq('customChallengeId', p['customChallengeId'])
             .single();
 
         tempList.add({
           "title": custom['title'],
-          "participantId":
-          p['challengeParticipantId'], // ADD
+          "participantId": p['challengeParticipantId'],
+          "isInvitation": false,
         });
       }
     }
 
+    final invitations = await supabase
+        .from('ChallengeInvitation')
+        .select('challengeInvitationId, challengeId, customChallengeId, status')
+        .eq('receiverUserId', widget.userId)
+        .eq('status', 'pending');
+
+    for (var i in invitations) {
+      if (i['challengeId'] != null) {
+        final preset = await supabase
+            .from('Challenge')
+            .select('title')
+            .eq('challengeId', i['challengeId'])
+            .single();
+
+        tempList.add({
+          "title": preset['title'],
+          "challengeInvitationId": i['challengeInvitationId'],
+          "challengeId": i['challengeId'],
+          "customChallengeId": null,
+          "isInvitation": true,
+        });
+      }
+
+      if (i['customChallengeId'] != null) {
+        final custom = await supabase
+            .from('CustomChallenge')
+            .select('title')
+            .eq('customChallengeId', i['customChallengeId'])
+            .single();
+
+        tempList.add({
+          "title": custom['title'],
+          "challengeInvitationId": i['challengeInvitationId'],
+          "challengeId": null,
+          "customChallengeId": i['customChallengeId'],
+          "isInvitation": true,
+        });
+      }
+    }
 
     setState(() {
       joinedChallenges = tempList;
@@ -99,8 +307,7 @@ class _ViewJoinedChallengePageState
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (_) =>
-                const ViewChallengePage(),
+                builder: (_) => ViewChallengePage(userId: widget.userId),
               ),
             );
           },
@@ -164,17 +371,18 @@ class _ViewJoinedChallengePageState
                   return InkWell(
                     borderRadius: BorderRadius.circular(20),
                     onTap: () {
-                      /// Navigate to Progress Page
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              JoinedChallengeProgressPage(
-                                participantId:
-                                c['participantId'], // pass ID
-                              ),
-                        ),
-                      );
+                      if (c['isInvitation'] == true) {
+                        _showInvitationActionDialog(c);
+                      } else {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => JoinedChallengeProgressPage(
+                              participantId: c['participantId'],
+                            ),
+                          ),
+                        );
+                      }
                     },
                     child: Container(
                       margin:
@@ -186,11 +394,22 @@ class _ViewJoinedChallengePageState
                         borderRadius:
                         BorderRadius.circular(20),
                       ),
-                      child: Text(
-                        c['title'],
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              c['title'],
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          if (c['isInvitation'] == true)
+                            const Icon(
+                              Icons.notifications_active,
+                              color: Colors.red,
+                            ),
+                        ],
                       ),
                     ),
                   );

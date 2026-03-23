@@ -5,7 +5,12 @@ import 'View_Challenge.dart';
 import 'presetChallenge_detail.dart';
 
 class PresetChallengePage extends StatefulWidget {
-  const PresetChallengePage({super.key});
+
+  final String userId;
+  const PresetChallengePage({
+    super.key,
+    required this.userId,
+  });
 
   @override
   State<PresetChallengePage> createState() =>
@@ -56,8 +61,7 @@ class _PresetChallengePageState
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (_) =>
-                const ViewChallengePage(),
+                builder: (_) => ViewChallengePage(userId: widget.userId),
               ),
             );
           },
@@ -108,19 +112,14 @@ class _PresetChallengePageState
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) =>
-                              ChallengeDetailsPage(
-                                challengeId: challenge['challengeId'],
-                                title: challenge[
-                                'title'],
-                                rules: challenge[
-                                'rules'],
-                                duration:
-                                challenge[
-                                'duration'],
-                                coins: challenge[
-                                'rewardedCoins'],
-                              ),
+                          builder: (_) => ChallengeDetailsPage(
+                            userId: widget.userId,
+                            challengeId: challenge['challengeId'],
+                            title: challenge['title'],
+                            rules: challenge['rules'],
+                            duration: challenge['duration'],
+                            coins: challenge['rewardedCoins'],
+                          ),
                         ),
                       );
                     },
