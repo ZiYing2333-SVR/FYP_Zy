@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:collection/collection.dart';
 import 'dart:io';
 
 class AddTransaction extends StatefulWidget {
@@ -28,6 +29,8 @@ class _AddTransactionState extends State<AddTransaction> {
   XFile? _selectedImage;
   List<Map<String, dynamic>> _accounts = [];
   String? _selectedAccountId;
+  String? _selectedFromAccountId;
+  String? _selectedToAccountId;
   Map<String, dynamic>? _selectedAccount;
   final ImagePicker _imagePicker = ImagePicker();
 
@@ -195,18 +198,44 @@ class _AddTransactionState extends State<AddTransaction> {
   }
 
   Future<void> _saveTransaction() async {
-    if (_selectedCategory == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Please select a category')));
-      return;
-    }
+    // Validate based on transaction type
+    if (_selectedType == 'transfer') {
+      if (_selectedFromAccountId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select a from account')),
+        );
+        return;
+      }
 
-    if (_selectedAccountId == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Please select an account')));
-      return;
+      if (_selectedToAccountId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select a to account')),
+        );
+        return;
+      }
+
+      if (_selectedFromAccountId == _selectedToAccountId) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('From and To accounts cannot be the same'),
+          ),
+        );
+        return;
+      }
+    } else {
+      if (_selectedCategory == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select a category')),
+        );
+        return;
+      }
+
+      if (_selectedAccountId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select an account')),
+        );
+        return;
+      }
     }
 
     if (_amountText == '0' || _amountText.isEmpty) {
@@ -221,6 +250,19 @@ class _AddTransactionState extends State<AddTransaction> {
   }
 
   Future<void> _showPreviewDialog() async {
+    // Get from/to account details for transfer
+    Map<String, dynamic>? fromAccount;
+    Map<String, dynamic>? toAccount;
+
+    if (_selectedType == 'transfer') {
+      fromAccount = _accounts.firstWhereOrNull(
+        (acc) => acc['accountId'] == _selectedFromAccountId,
+      );
+      toAccount = _accounts.firstWhereOrNull(
+        (acc) => acc['accountId'] == _selectedToAccountId,
+      );
+    }
+
     showDialog(
       context: context,
       builder: (context) {
@@ -244,11 +286,25 @@ class _AddTransactionState extends State<AddTransaction> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildPreviewItem('Type', _selectedType.toUpperCase()),
-                _buildPreviewItem('Category', _selectedCategory!['name'] ?? ''),
-                _buildPreviewItem(
-                  'Account',
-                  _selectedAccount!['accountName'] ?? '',
-                ),
+                if (_selectedType == 'transfer') ...[
+                  _buildPreviewItem(
+                    'From Account',
+                    fromAccount?['accountName'] ?? 'Unknown',
+                  ),
+                  _buildPreviewItem(
+                    'To Account',
+                    toAccount?['accountName'] ?? 'Unknown',
+                  ),
+                ] else ...[
+                  _buildPreviewItem(
+                    'Category',
+                    _selectedCategory!['name'] ?? '',
+                  ),
+                  _buildPreviewItem(
+                    'Account',
+                    _selectedAccount!['accountName'] ?? '',
+                  ),
+                ],
                 _buildPreviewItem('Amount', 'RM${_amountText}'),
                 _buildPreviewItem(
                   'Date',
@@ -348,43 +404,94 @@ class _AddTransactionState extends State<AddTransaction> {
             .getPublicUrl(filePath);
       }
 
-      // Generate transaction ID: TRANS+userId+sequence
-      // Get the count of existing transactions for this user to generate sequence
-      final existingTransactions = await Supabase.instance.client
-          .from('Transaction')
-          .select('transactionId')
-          .like('transactionId', 'TRANS${widget.userId}%');
-
-      final sequenceNumber = existingTransactions.length + 1;
-      final formattedSequence = sequenceNumber.toString().padLeft(6, '0');
-      final transactionId = 'TRANS${widget.userId}$formattedSequence';
-
       final amount = double.parse(_amountText);
 
-      // Save transaction to database
-      await Supabase.instance.client.from('Transaction').insert({
-        'transactionId': transactionId,
-        'categoryId': _selectedCategory!['categoryId'],
-        'accountId': _selectedAccountId,
-        'amount': amount,
-        'date': _selectedDate.toIso8601String(),
-        'note': _noteController.text,
-        'type': _selectedType,
-        'ledgerId': widget.ledgerId,
-        'image': imageUrl,
-      });
+      if (_selectedType == 'transfer') {
+        // For transfer, create a single record in Transfer table
+        // Get the count of existing transfers for this user to generate sequence
+        final existingTransfers = await Supabase.instance.client
+            .from('Transfer')
+            .select('transferId')
+            .like('transferId', 'TRANSFER${widget.userId}%');
 
-      // Update account balance based on transaction type
-      if (_selectedAccountId != null) {
-        final currentBalance = _selectedAccount?['balance'] ?? 0.0;
-        final newBalance = _selectedType == 'expense'
-            ? currentBalance - amount
-            : currentBalance + amount;
+        final sequenceNumber = existingTransfers.length + 1;
+        final formattedSequence = sequenceNumber.toString().padLeft(6, '0');
+        final transferId = 'TRANSFER${widget.userId}$formattedSequence';
 
-        await Supabase.instance.client
-            .from('Account')
-            .update({'balance': newBalance})
-            .eq('accountId', _selectedAccountId ?? '');
+        // Save transfer record to Transfer table
+        await Supabase.instance.client.from('Transfer').insert({
+          'transferId': transferId,
+          'fromAccountId': _selectedFromAccountId,
+          'toAccountId': _selectedToAccountId,
+          'amount': amount,
+          'date': _selectedDate.toIso8601String(),
+          'note': _noteController.text,
+          'noteImage': imageUrl,
+        });
+
+        // Update both account balances
+        if (_selectedFromAccountId != null) {
+          final fromAccount = _accounts.firstWhereOrNull(
+            (acc) => acc['accountId'] == _selectedFromAccountId,
+          );
+          final fromBalance = fromAccount?['balance'] ?? 0.0;
+          final newFromBalance = fromBalance - amount;
+
+          await Supabase.instance.client
+              .from('Account')
+              .update({'balance': newFromBalance})
+              .eq('accountId', _selectedFromAccountId ?? '');
+        }
+
+        if (_selectedToAccountId != null) {
+          final toAccount = _accounts.firstWhereOrNull(
+            (acc) => acc['accountId'] == _selectedToAccountId,
+          );
+          final toBalance = toAccount?['balance'] ?? 0.0;
+          final newToBalance = toBalance + amount;
+
+          await Supabase.instance.client
+              .from('Account')
+              .update({'balance': newToBalance})
+              .eq('accountId', _selectedToAccountId ?? '');
+        }
+      } else {
+        // Original logic for expense/income transactions
+        // Generate transaction ID: TRANS+userId+sequence
+        final existingTransactions = await Supabase.instance.client
+            .from('Transaction')
+            .select('transactionId')
+            .like('transactionId', 'TRANS${widget.userId}%');
+
+        final sequenceNumber = existingTransactions.length + 1;
+        final formattedSequence = sequenceNumber.toString().padLeft(6, '0');
+        final transactionId = 'TRANS${widget.userId}$formattedSequence';
+
+        // Save transaction to database
+        await Supabase.instance.client.from('Transaction').insert({
+          'transactionId': transactionId,
+          'categoryId': _selectedCategory!['categoryId'],
+          'accountId': _selectedAccountId,
+          'amount': amount,
+          'date': _selectedDate.toIso8601String(),
+          'note': _noteController.text,
+          'type': _selectedType,
+          'ledgerId': widget.ledgerId,
+          'image': imageUrl,
+        });
+
+        // Update account balance based on transaction type
+        if (_selectedAccountId != null) {
+          final currentBalance = _selectedAccount?['balance'] ?? 0.0;
+          final newBalance = _selectedType == 'expense'
+              ? currentBalance - amount
+              : currentBalance + amount;
+
+          await Supabase.instance.client
+              .from('Account')
+              .update({'balance': newBalance})
+              .eq('accountId', _selectedAccountId ?? '');
+        }
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -416,7 +523,7 @@ class _AddTransactionState extends State<AddTransaction> {
       ),
       body: Column(
         children: [
-          // Expense/Income Toggle (Top Center - Larger)
+          // Expense/Income/Transfer Toggle (Top Center - Larger)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Row(
@@ -450,7 +557,7 @@ class _AddTransactionState extends State<AddTransaction> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
                 GestureDetector(
                   onTap: () {
                     setState(() {
@@ -479,13 +586,46 @@ class _AddTransactionState extends State<AddTransaction> {
                     ),
                   ),
                 ),
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedType = 'transfer';
+                      _selectedCategory = null;
+                      _selectedFromAccountId = null;
+                      _selectedToAccountId = null;
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _selectedType == 'transfer'
+                          ? const Color(0xFFA7E399)
+                          : const Color(0xFFE8E8E8),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text(
+                      'Transfer',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
-          // Categories Grid (Scrollable - takes more space)
+          // Categories Grid (Expense/Income) or Account Selection (Transfer) - Scrollable
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
+                : _selectedType == 'transfer'
+                ? _buildTransferAccountSelection()
                 : Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 24,
@@ -590,7 +730,7 @@ class _AddTransactionState extends State<AddTransaction> {
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   _buildNoteButton(),
-                  _buildAccountButton(),
+                  if (_selectedType != 'transfer') _buildAccountButton(),
                   _buildDateButton(),
                   _buildImageButton(),
                   _buildIconButton(Icons.qr_code_scanner, 'Scanning', () {
@@ -786,6 +926,197 @@ class _AddTransactionState extends State<AddTransaction> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildTransferAccountSelection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // From Account Section
+          const Text(
+            'From Account',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _accounts.map((account) {
+                final isSelected =
+                    _selectedFromAccountId == account['accountId'];
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedFromAccountId = account['accountId'];
+                    });
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? const Color(0xFF90EE90)
+                          : Colors.white,
+                      border: Border.all(
+                        color: isSelected ? Colors.black : Colors.grey[300]!,
+                        width: isSelected ? 2 : 1,
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFB0E0E6),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child:
+                              account['iconImage'] != null &&
+                                  account['iconImage'].toString().isNotEmpty
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Image.network(
+                                    account['iconImage'],
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Icon(
+                                        Icons.account_balance_wallet,
+                                        color: Colors.grey[600],
+                                        size: 16,
+                                      );
+                                    },
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.account_balance_wallet,
+                                  color: Colors.grey[600],
+                                  size: 16,
+                                ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          account['accountName'] ?? 'Unknown',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 24),
+          // To Account Section
+          const Text(
+            'To Account',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _accounts.map((account) {
+                final isSelected = _selectedToAccountId == account['accountId'];
+                final isFromAccount =
+                    _selectedFromAccountId == account['accountId'];
+                return GestureDetector(
+                  onTap: isFromAccount
+                      ? null
+                      : () {
+                          setState(() {
+                            _selectedToAccountId = account['accountId'];
+                          });
+                        },
+                  child: Opacity(
+                    opacity: isFromAccount ? 0.5 : 1.0,
+                    child: Container(
+                      margin: const EdgeInsets.only(right: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? const Color(0xFFA7E399)
+                            : Colors.white,
+                        border: Border.all(
+                          color: isSelected ? Colors.black : Colors.grey[300]!,
+                          width: isSelected ? 2 : 1,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFB0E0E6),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child:
+                                account['iconImage'] != null &&
+                                    account['iconImage'].toString().isNotEmpty
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: Image.network(
+                                      account['iconImage'],
+                                      fit: BoxFit.cover,
+                                      errorBuilder:
+                                          (context, error, stackTrace) {
+                                            return Icon(
+                                              Icons.account_balance_wallet,
+                                              color: Colors.grey[600],
+                                              size: 16,
+                                            );
+                                          },
+                                    ),
+                                  )
+                                : Icon(
+                                    Icons.account_balance_wallet,
+                                    color: Colors.grey[600],
+                                    size: 16,
+                                  ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            account['accountName'] ?? 'Unknown',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1187,5 +1518,63 @@ class _AddTransactionState extends State<AddTransaction> {
         ),
       ),
     );
+  }
+
+  // Method to refund/reverse a transfer
+  Future<void> refundTransfer(String transferId) async {
+    try {
+      // Fetch the transfer record
+      final transferData = await Supabase.instance.client
+          .from('Transfer')
+          .select()
+          .eq('transferId', transferId)
+          .single();
+
+      final fromAccountId = transferData['fromAccountId'];
+      final toAccountId = transferData['toAccountId'];
+      final amount = transferData['amount'];
+
+      // Reverse the transfer: add amount back to source, deduct from destination
+      if (fromAccountId != null) {
+        final fromAccount = _accounts.firstWhereOrNull(
+          (acc) => acc['accountId'] == fromAccountId,
+        );
+        final fromBalance = fromAccount?['balance'] ?? 0.0;
+        final newFromBalance = fromBalance + amount; // Add back
+
+        await Supabase.instance.client
+            .from('Account')
+            .update({'balance': newFromBalance})
+            .eq('accountId', fromAccountId);
+      }
+
+      if (toAccountId != null) {
+        final toAccount = _accounts.firstWhereOrNull(
+          (acc) => acc['accountId'] == toAccountId,
+        );
+        final toBalance = toAccount?['balance'] ?? 0.0;
+        final newToBalance = toBalance - amount; // Deduct
+
+        await Supabase.instance.client
+            .from('Account')
+            .update({'balance': newToBalance})
+            .eq('accountId', toAccountId);
+      }
+
+      // Delete the transfer record
+      await Supabase.instance.client
+          .from('Transfer')
+          .delete()
+          .eq('transferId', transferId);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Transfer refunded successfully')),
+      );
+    } catch (e) {
+      print('Error refunding transfer: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error refunding transfer: $e')));
+    }
   }
 }

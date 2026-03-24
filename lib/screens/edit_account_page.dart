@@ -10,11 +10,14 @@ import 'account_manager.dart';
 class EditAccountPage extends StatefulWidget {
   final Map<String, dynamic> account;
   final String userId;
+  final String
+  source; // 'detail' for account_detail_screen, 'manager' for account_manager
 
   const EditAccountPage({
     super.key,
     required this.account,
     required this.userId,
+    this.source = 'detail', // default to detail
   });
 
   @override
@@ -303,14 +306,13 @@ class _EditAccountPageState extends State<EditAccountPage> {
                       child: ElevatedButton(
                         onPressed: () {
                           Navigator.pop(context); // Close dialog
-                          Navigator.pushAndRemoveUntil(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  AccountManager(userId: widget.userId),
-                            ),
-                            (route) => false,
-                          );
+                          if (widget.source == 'manager') {
+                            // Return to account manager
+                            Navigator.pop(context, true);
+                          } else {
+                            // Return to account detail screen
+                            Navigator.pop(context, true);
+                          }
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFA7E399),
@@ -323,7 +325,11 @@ class _EditAccountPageState extends State<EditAccountPage> {
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        child: const Text('View Account Manager'),
+                        child: Text(
+                          widget.source == 'manager'
+                              ? 'Back to Account Manager'
+                              : 'Back to Account Details',
+                        ),
                       ),
                     ),
                   ],

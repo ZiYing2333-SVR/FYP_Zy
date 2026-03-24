@@ -19,6 +19,7 @@ class AccountPage extends StatefulWidget {
 
 class _AccountPageState extends State<AccountPage> {
   List<Map<String, dynamic>> _accounts = [];
+  Map<String, dynamic> _currencies = {};
   bool _isLoading = true;
   int _selectedNavIndex = 1;
   bool _showBalance = true;
@@ -27,8 +28,26 @@ class _AccountPageState extends State<AccountPage> {
   @override
   void initState() {
     super.initState();
+    _fetchCurrencies();
     _fetchAccounts();
     _checkBudgetAlerts();
+  }
+
+  Future<void> _fetchCurrencies() async {
+    try {
+      final response = await Supabase.instance.client.from('Currency').select();
+
+      final Map<String, dynamic> currencyMap = {};
+      for (var currency in response) {
+        currencyMap[currency['currencyId']] = currency;
+      }
+
+      setState(() {
+        _currencies = currencyMap;
+      });
+    } catch (e) {
+      print('Error fetching currencies: $e');
+    }
   }
 
   Future<void> _fetchAccounts() async {
@@ -222,8 +241,53 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
+  String _getCurrencySymbol(String? currencyId) {
+    if (currencyId == null || currencyId.isEmpty || currencyId == 'NULL') {
+      return 'RM'; // Default fallback
+    }
+    final currency = _currencies[currencyId];
+    if (currency != null && currency['symbol'] != null) {
+      return currency['symbol'];
+    }
+    return currency?['code'] ?? 'RM';
+  }
+
+  String _formatCurrencyWithSymbol(double amount, String? currencyId) {
+    final symbol = _getCurrencySymbol(currencyId);
+    return '$symbol${amount.toStringAsFixed(2)}';
+  }
+
   String _formatCurrency(double amount) {
     return 'RM${amount.toStringAsFixed(2)}';
+  }
+
+  List<String> _getUniqueCurrencies() {
+    final currencies = <String>{};
+    for (var account in _accounts) {
+      final assetStatus = account['assetStatus'] ?? true;
+      if (assetStatus) {
+        final currencyId = account['currencyId'] ?? 'NULL';
+        currencies.add(currencyId);
+      }
+    }
+    return currencies.toList();
+  }
+
+  double _calculateBalanceByCurrency(String currencyId) {
+    double total = 0.0;
+    for (var account in _accounts) {
+      final assetStatus = account['assetStatus'] ?? true;
+      if (!assetStatus) continue;
+
+      final accountCurrency = account['currencyId'] ?? 'NULL';
+      if (accountCurrency != currencyId) continue;
+
+      final balance = account['balance'];
+      if (balance != null) {
+        total += (balance is int) ? balance.toDouble() : (balance as double);
+      }
+    }
+    return total;
   }
 
   @override
@@ -312,61 +376,212 @@ class _AccountPageState extends State<AccountPage> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Asset Summary Card
+                    // Asset Summary Card - Multi-Color Design with Currency Support
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 24,
-                      ),
                       decoration: BoxDecoration(
-                        color: Colors.green.shade200,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
+                            color: const Color(0xFFA7E399).withOpacity(0.4),
+                            blurRadius: 20,
+                            offset: const Offset(0, 10),
+                          ),
+                          BoxShadow(
+                            color: const Color(0xFFA7E399).withOpacity(0.2),
+                            blurRadius: 40,
+                            offset: const Offset(0, 20),
                           ),
                         ],
                       ),
                       child: Column(
                         children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Asset',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black87,
-                                ),
+                          // Header Section with Light Green
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 20,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  const Color(0xFFA7E399),
+                                  const Color(0xFF90EE90),
+                                ],
                               ),
-                              GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    _showBalance = !_showBalance;
-                                  });
-                                },
-                                child: Icon(
-                                  _showBalance
-                                      ? Icons.visibility
-                                      : Icons.visibility_off,
-                                  color: Colors.black87,
-                                  size: 24,
-                                ),
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(20),
+                                topRight: Radius.circular(20),
                               ),
-                            ],
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.3),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: const Icon(
+                                        Icons.account_balance_wallet,
+                                        color: Colors.black,
+                                        size: 24,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Text(
+                                      'Total Assets',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black.withOpacity(0.7),
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _showBalance = !_showBalance;
+                                    });
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.3),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      _showBalance
+                                          ? Icons.visibility
+                                          : Icons.visibility_off,
+                                      color: Colors.black.withOpacity(0.7),
+                                      size: 20,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                          const SizedBox(height: 16),
-                          Text(
-                            _showBalance
-                                ? _formatCurrency(totalBalance)
-                                : '••••••',
-                            style: const TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
+                          // Dark Green Separator
+                          Container(
+                            height: 3,
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade800,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          // Balance Section with Darker Background
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 28,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade50,
+                              borderRadius: const BorderRadius.only(
+                                bottomLeft: Radius.circular(20),
+                                bottomRight: Radius.circular(20),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Show all currencies if multiple exist
+                                if (_getUniqueCurrencies().length > 1)
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: _getUniqueCurrencies().map((
+                                      currencyId,
+                                    ) {
+                                      final balance =
+                                          _calculateBalanceByCurrency(
+                                            currencyId,
+                                          );
+                                      return Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 16.0,
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              _currencies[currencyId]?['name'] ??
+                                                  currencyId,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w500,
+                                                color: Colors.black.withOpacity(
+                                                  0.6,
+                                                ),
+                                                letterSpacing: 0.3,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              _showBalance
+                                                  ? _formatCurrencyWithSymbol(
+                                                      balance,
+                                                      currencyId,
+                                                    )
+                                                  : '********',
+                                              style: TextStyle(
+                                                fontSize: 28,
+                                                fontWeight: FontWeight.w900,
+                                                color: Colors.green.shade800,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
+                                  )
+                                else
+                                  // Single currency view
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      // Balance Amount
+                                      Text(
+                                        _showBalance
+                                            ? _formatCurrencyWithSymbol(
+                                                totalBalance,
+                                                _accounts.isNotEmpty
+                                                    ? _accounts
+                                                          .first['currencyId']
+                                                    : null,
+                                              )
+                                            : '********',
+                                        style: TextStyle(
+                                          fontSize: 36,
+                                          fontWeight: FontWeight.w900,
+                                          color: Colors.green.shade800,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      // Subtitle
+                                      Text(
+                                        'Available Balance',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.black.withOpacity(0.6),
+                                          letterSpacing: 0.3,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                              ],
                             ),
                           ),
                         ],
@@ -436,6 +651,7 @@ class _AccountPageState extends State<AccountPage> {
                                   final iconImage = account['iconImage'];
                                   final hideBalanceStatus =
                                       account['hideBalanceStatus'] ?? false;
+                                  final currencyId = account['currencyId'];
 
                                   return GestureDetector(
                                     onTap: () {
@@ -448,7 +664,10 @@ class _AccountPageState extends State<AccountPage> {
                                                 userId: widget.userId,
                                               ),
                                         ),
-                                      );
+                                      ).then((_) {
+                                        // Refresh accounts list when returning from account detail
+                                        _fetchAccounts();
+                                      });
                                     },
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(
@@ -543,7 +762,10 @@ class _AccountPageState extends State<AccountPage> {
                                           Text(
                                             hideBalanceStatus
                                                 ? '*****'
-                                                : _formatCurrency(balance),
+                                                : _formatCurrencyWithSymbol(
+                                                    balance,
+                                                    currencyId,
+                                                  ),
                                             style: const TextStyle(
                                               fontSize: 14,
                                               fontWeight: FontWeight.w600,
