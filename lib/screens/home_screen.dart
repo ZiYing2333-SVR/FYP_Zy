@@ -95,7 +95,8 @@ class _HomeScreenState extends State<HomeScreen> {
         0,
       );
 
-      final response = await supabase
+      // Fetch transactions
+      final transactionResponse = await supabase
           .from('Transaction')
           .select('*, Category(name, icon), Account(accountName, iconImage)')
           .eq('ledgerId', _selectedLedgerId ?? '')
@@ -103,10 +104,30 @@ class _HomeScreenState extends State<HomeScreen> {
           .lte('date', endOfMonth.toIso8601String())
           .order('date', ascending: false);
 
+      // Fetch transfers for the same date range (without Account joins to avoid PostgreSQL aliasing issues)
+      final transferResponse = await supabase
+          .from('Transfer')
+          .select('*')
+          .gte('date', startOfMonth.toIso8601String())
+          .lte('date', endOfMonth.toIso8601String())
+          .order('date', ascending: false);
+
+      // Fetch all accounts for enriching transfer data
+      final accountsResponse = await supabase
+          .from('Account')
+          .select('accountId, accountName, iconImage');
+
+      final accountsMap = {
+        for (var account in accountsResponse) account['accountId']: account,
+      };
+
       double income = 0;
       double expense = 0;
+      List<Map<String, dynamic>> allRecords = [];
 
-      for (var transaction in response) {
+      // Process transactions
+      for (var transaction in transactionResponse) {
+        allRecords.add(transaction);
         final amount = double.tryParse(transaction['amount'].toString()) ?? 0;
         final type = transaction['type']?.toString().toLowerCase() ?? 'expense';
 
@@ -117,8 +138,30 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
 
+      // Process transfers - add to income/expense based on which accounts are involved
+      // For now, we're not adding transfers to income/expense totals since they're internal movements
+      for (var transfer in transferResponse) {
+        final enrichedTransfer = Map<String, dynamic>.from(transfer);
+        enrichedTransfer['recordType'] = 'transfer';
+
+        // Add account data for from and to accounts
+        enrichedTransfer['Account!fromAccountId'] =
+            accountsMap[transfer['fromAccountId']] ?? {};
+        enrichedTransfer['Account!toAccountId'] =
+            accountsMap[transfer['toAccountId']] ?? {};
+
+        allRecords.add(enrichedTransfer);
+      }
+
+      // Sort all records by date
+      allRecords.sort((a, b) {
+        final dateA = DateTime.parse(a['date'] ?? '');
+        final dateB = DateTime.parse(b['date'] ?? '');
+        return dateB.compareTo(dateA);
+      });
+
       setState(() {
-        _transactions = List<Map<String, dynamic>>.from(response);
+        _transactions = allRecords;
         _incomeAmount = income;
         _expenseAmount = expense;
         _totalAmount = income - expense;
@@ -927,12 +970,32 @@ class _HomeScreenState extends State<HomeScreen> {
                 double.tryParse(transaction['amount'].toString()) ?? 0;
             final type =
                 transaction['type']?.toString().toLowerCase() ?? 'expense';
-            final categoryData = transaction['Category'] ?? {};
-            final categoryName = categoryData['name'] ?? 'Category';
-            final categoryIcon = categoryData['icon'] ?? 'shopping_bag';
+
+            final isTransfer = transaction['recordType'] == 'transfer';
+
+            String displayName = '';
+            String displayIcon = 'shopping_bag';
+            String displayNote = '';
+
+            if (isTransfer) {
+              final fromAccountName =
+                  (transaction['Account!fromAccountId'] ?? {})['accountName'] ??
+                  'Unknown';
+              final toAccountName =
+                  (transaction['Account!toAccountId'] ?? {})['accountName'] ??
+                  'Unknown';
+              displayName = 'Transfer: $fromAccountName → $toAccountName';
+              displayNote = transaction['note'] ?? '';
+              displayIcon = 'transfer_icon';
+            } else {
+              final categoryData = transaction['Category'] ?? {};
+              displayName = categoryData['name'] ?? 'Category';
+              displayIcon = categoryData['icon'] ?? 'shopping_bag';
+              displayNote = transaction['note'] ?? '';
+            }
+
             final accountData = transaction['Account'] ?? {};
             final accountLogo = accountData['iconImage'] ?? '';
-            final note = transaction['note'] ?? '';
             final isRefunded = transaction['refund'] == true;
             final isLastItem = txnIndex == _selectedDayTransactions.length - 1;
 
@@ -940,20 +1003,23 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 GestureDetector(
                   onTap: () async {
-                    final transactionId =
-                        transaction['transactionId'] as String;
-                    final result = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => TransactionDetailScreen(
-                          transactionId: transactionId,
-                          userId: _currentUserId,
+                    if (!isTransfer) {
+                      final transactionId =
+                          transaction['transactionId'] as String;
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => TransactionDetailScreen(
+                            transactionId: transactionId,
+                            userId: _currentUserId,
+                          ),
                         ),
-                      ),
-                    );
-                    if (result == true) {
-                      _calculateDailyBalances();
+                      );
+                      if (result == true) {
+                        _calculateDailyBalances();
+                      }
                     }
+                    // For transfers, we could add a transfer detail screen in the future
                   },
                   child: Container(
                     padding: const EdgeInsets.all(16),
@@ -968,7 +1034,13 @@ class _HomeScreenState extends State<HomeScreen> {
                             color: const Color(0xFFC8A5D8),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: _buildCategoryImage(categoryIcon),
+                          child: isTransfer
+                              ? const Icon(
+                                  Icons.compare_arrows,
+                                  color: Colors.black,
+                                  size: 28,
+                                )
+                              : _buildCategoryImage(displayIcon),
                         ),
                         const SizedBox(width: 12),
                         // Category Name and Note
@@ -978,16 +1050,16 @@ class _HomeScreenState extends State<HomeScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                categoryName,
+                                displayName,
                                 style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
                                   color: Colors.black,
                                 ),
                               ),
-                              if (note.isNotEmpty)
+                              if (displayNote.isNotEmpty)
                                 Text(
-                                  note,
+                                  displayNote,
                                   style: const TextStyle(
                                     fontSize: 12,
                                     color: Color(0xFFBCBCBC),
@@ -1035,7 +1107,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     child: ClipOval(
                                       child: Image.network(
                                         accountLogo,
-                                        fit: BoxFit.cover,
+                                        fit: BoxFit.contain,
                                         errorBuilder:
                                             (context, error, stackTrace) {
                                               return Container(
@@ -1326,7 +1398,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         child: ClipOval(
                                           child: Image.network(
                                             accountLogo,
-                                            fit: BoxFit.cover,
+                                            fit: BoxFit.contain,
                                             errorBuilder:
                                                 (context, error, stackTrace) {
                                                   return Container(
@@ -1402,56 +1474,152 @@ class _HomeScreenState extends State<HomeScreen> {
         automaticallyImplyLeading: false,
         title: Row(
           children: [
-            // Ledger Dropdown
-            _isLoadingLedgers
-                ? Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFA7E399),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const SizedBox(
-                      width: 100,
-                      child: Text(
-                        'Loading...',
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
+            // Ledger Dropdown - Enhanced
+            if (_isLoadingLedgers)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFA7E399).withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: const Color(0xFFA7E399),
+                    width: 1.5,
+                  ),
+                ),
+                child: const SizedBox(
+                  width: 120,
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Color(0xFFA7E399),
                       ),
                     ),
-                  )
-                : DropdownButton<String>(
-                    value: _selectedLedgerId,
-                    items: _ledgers.map((ledger) {
-                      final ledgerId = ledger['ledgerId'] as String;
-                      final ledgerName = ledger['name'] as String;
-                      return DropdownMenuItem<String>(
-                        value: ledgerId,
-                        child: Text(ledgerName),
-                      );
-                    }).toList(),
-                    onChanged: (newValue) {
-                      if (newValue != null) {
-                        setState(() {
-                          _selectedLedgerId = newValue;
-                        });
-                        _fetchTransactions();
-                      }
-                    },
-                    underline: Container(),
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    dropdownColor: const Color(0xFFA7E399),
-                    borderRadius: BorderRadius.circular(8),
                   ),
+                ),
+              )
+            else
+              PopupMenuButton<String>(
+                onSelected: (newValue) {
+                  setState(() {
+                    _selectedLedgerId = newValue;
+                  });
+                  _fetchTransactions();
+                },
+                itemBuilder: (BuildContext context) {
+                  return _ledgers.map((ledger) {
+                    final ledgerId = ledger['ledgerId'] as String;
+                    final ledgerName = ledger['name'] as String;
+                    final isSelected = ledgerId == _selectedLedgerId;
+                    return PopupMenuItem<String>(
+                      value: ledgerId,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0xFFA7E399).withOpacity(0.2)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.book,
+                              size: 18,
+                              color: isSelected
+                                  ? const Color(0xFFA7E399)
+                                  : Colors.grey[600],
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              ledgerName,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: isSelected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: isSelected
+                                    ? const Color(0xFFA7E399)
+                                    : Colors.black87,
+                              ),
+                            ),
+                            if (isSelected) ...[
+                              const SizedBox(width: 8),
+                              const Icon(
+                                Icons.check,
+                                size: 16,
+                                color: Color(0xFFA7E399),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList();
+                },
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                color: Colors.white,
+                elevation: 8,
+                offset: const Offset(0, 40),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        const Color(0xFFA7E399).withOpacity(0.15),
+                        const Color(0xFFA7E399).withOpacity(0.08),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: const Color(0xFFA7E399),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.book,
+                        size: 18,
+                        color: const Color(0xFFA7E399),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        (_ledgers.firstWhere(
+                                  (l) => l['ledgerId'] == _selectedLedgerId,
+                                  orElse: () => {'name': 'Select Ledger'},
+                                )['name']
+                                as String?) ??
+                            'Select Ledger',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                      const SizedBox(width: 6),
+                      const Icon(
+                        Icons.arrow_drop_down,
+                        size: 18,
+                        color: Color(0xFFA7E399),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             const Spacer(),
             // View Mode Toggle Button in AppBar
             Container(
@@ -1551,136 +1719,286 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     // Date and Summary Card - Only in List View
                     if (!_isCalendarView)
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: const Color(0xFFFFE5B4),
-                            width: 2,
-                          ),
-                        ),
-                        child: Column(
-                          children: [
-                            // Date Row - Only in List View
-                            if (!_isCalendarView)
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  GestureDetector(
-                                    onTap: _previousMonth,
-                                    child: const Icon(
-                                      Icons.arrow_back_ios,
-                                      size: 20,
+                      Column(
+                        children: [
+                          // Date Navigation Row
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              GestureDetector(
+                                onTap: _previousMonth,
+                                child: const Icon(
+                                  Icons.arrow_back_ios,
+                                  size: 20,
+                                  color: Colors.black,
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: _showMonthYearPicker,
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      '${_selectedDate.month} / ${_selectedDate.year}',
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Icon(
+                                      Icons.arrow_drop_down,
                                       color: Colors.black,
                                     ),
-                                  ),
-                                  GestureDetector(
-                                    onTap: _showMonthYearPicker,
-                                    child: Row(
-                                      children: [
-                                        Text(
-                                          '${_selectedDate.month} / ${_selectedDate.year}',
-                                          style: const TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.black,
+                                  ],
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: _nextMonth,
+                                child: const Icon(
+                                  Icons.arrow_forward_ios,
+                                  size: 20,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          // Premium Card Design
+                          Container(
+                            padding: const EdgeInsets.all(24),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  const Color(0xFFA7E399),
+                                  const Color(0xFF90EE90),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(
+                                    0xFFA7E399,
+                                  ).withOpacity(0.4),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 10),
+                                ),
+                                BoxShadow(
+                                  color: const Color(
+                                    0xFFA7E399,
+                                  ).withOpacity(0.2),
+                                  blurRadius: 40,
+                                  offset: const Offset(0, 20),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Card Header with Title and Visibility Toggle
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Balance Overview',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black.withOpacity(0.6),
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                    GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          _showAmounts = !_showAmounts;
+                                        });
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.3),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
                                           ),
                                         ),
-                                        const SizedBox(width: 8),
-                                        const Icon(
-                                          Icons.arrow_drop_down,
-                                          color: Colors.black,
+                                        child: Icon(
+                                          _showAmounts
+                                              ? Icons.visibility
+                                              : Icons.visibility_off,
+                                          color: Colors.black.withOpacity(0.7),
+                                          size: 18,
                                         ),
-                                      ],
+                                      ),
                                     ),
-                                  ),
-                                  GestureDetector(
-                                    onTap: _nextMonth,
-                                    child: const Icon(
-                                      Icons.arrow_forward_ios,
-                                      size: 20,
-                                      color: Colors.black,
+                                  ],
+                                ),
+                                const SizedBox(height: 20),
+                                // Total Balance (Large)
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Total Balance',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.black.withOpacity(0.6),
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                            const SizedBox(height: 16),
-                            // Summary Stats (only show in list view)
-                            if (!_isCalendarView)
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceEvenly,
-                                children: [
-                                  Column(
-                                    children: [
-                                      Text(
-                                        _showAmounts
-                                            ? 'RM${_totalAmount.toStringAsFixed(2)}'
-                                            : '****',
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.black,
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      _showAmounts
+                                          ? 'RM${_totalAmount.toStringAsFixed(2)}'
+                                          : '****',
+                                      style: const TextStyle(
+                                        fontSize: 32,
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 28),
+                                // Income and Expense Row
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    // Income Card
+                                    Expanded(
+                                      child: Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.96),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withOpacity(
+                                                0.08,
+                                              ),
+                                              blurRadius: 8,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(8),
+                                              decoration: BoxDecoration(
+                                                color: const Color(
+                                                  0xFF52C77A,
+                                                ).withOpacity(0.1),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              child: const Icon(
+                                                Icons.arrow_downward,
+                                                color: Color(0xFF52C77A),
+                                                size: 16,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              'Income',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.black.withOpacity(
+                                                  0.6,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              _showAmounts
+                                                  ? 'RM${_incomeAmount.toStringAsFixed(2)}'
+                                                  : '****',
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w800,
+                                                color: Color(0xFF52C77A),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                      const Text(
-                                        'Total',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Color(0xFFBCBCBC),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    // Expense Card
+                                    Expanded(
+                                      child: Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.96),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withOpacity(
+                                                0.08,
+                                              ),
+                                              blurRadius: 8,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(8),
+                                              decoration: BoxDecoration(
+                                                color: const Color(
+                                                  0xFFE74C3C,
+                                                ).withOpacity(0.1),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              child: const Icon(
+                                                Icons.arrow_upward,
+                                                color: Color(0xFFE74C3C),
+                                                size: 16,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              'Expense',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.black.withOpacity(
+                                                  0.6,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              _showAmounts
+                                                  ? 'RM${_expenseAmount.toStringAsFixed(2)}'
+                                                  : '****',
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w800,
+                                                color: Color(0xFFE74C3C),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                    ],
-                                  ),
-                                  Column(
-                                    children: [
-                                      Text(
-                                        _showAmounts
-                                            ? 'RM${_incomeAmount.toStringAsFixed(2)}'
-                                            : '****',
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.bold,
-                                          color: Color(0xFF52C77A),
-                                        ),
-                                      ),
-                                      const Text(
-                                        'Income',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Color(0xFFBCBCBC),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  Column(
-                                    children: [
-                                      Text(
-                                        _showAmounts
-                                            ? 'RM${_expenseAmount.toStringAsFixed(2)}'
-                                            : '****',
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.bold,
-                                          color: Color(0xFFE74C3C),
-                                        ),
-                                      ),
-                                      const Text(
-                                        'Expense',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Color(0xFFBCBCBC),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                          ],
-                        ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     const SizedBox(height: 16),
                     // Conditional View: Calendar or Transactions List
@@ -1841,7 +2159,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 80),
+        padding: const EdgeInsets.only(bottom: 10),
         child: FloatingActionButton(
           heroTag: 'add_transaction_fab',
           backgroundColor: const Color(0xFF90EE90),

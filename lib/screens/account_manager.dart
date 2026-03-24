@@ -318,6 +318,7 @@ class _AccountManagerState extends State<AccountManager> {
                                     builder: (context) => EditAccountPage(
                                       account: account,
                                       userId: widget.userId,
+                                      source: 'manager',
                                     ),
                                   ),
                                 ).then((updated) {

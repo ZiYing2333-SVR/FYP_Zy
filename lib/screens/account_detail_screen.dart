@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'edit_account_page.dart';
 
 class AccountDetailScreen extends StatefulWidget {
   final String accountId;
@@ -19,12 +20,48 @@ class AccountDetailScreen extends StatefulWidget {
 class _AccountDetailScreenState extends State<AccountDetailScreen> {
   late Future<Map<String, dynamic>> _accountDetailsFuture;
   late Future<List<Map<String, dynamic>>> _transactionsFuture;
+  bool _accountUpdated = false;
+  Map<String, dynamic> _currencies = {};
 
   @override
   void initState() {
     super.initState();
+    _fetchCurrencies();
     _accountDetailsFuture = _fetchAccountDetails();
     _transactionsFuture = _fetchTransactions();
+  }
+
+  Future<void> _fetchCurrencies() async {
+    try {
+      final response = await Supabase.instance.client.from('Currency').select();
+
+      final Map<String, dynamic> currencyMap = {};
+      for (var currency in response) {
+        currencyMap[currency['currencyId']] = currency;
+      }
+
+      setState(() {
+        _currencies = currencyMap;
+      });
+    } catch (e) {
+      print('Error fetching currencies: $e');
+    }
+  }
+
+  String _getCurrencySymbol(String? currencyId) {
+    if (currencyId == null || currencyId.isEmpty || currencyId == 'NULL') {
+      return 'RM'; // Default fallback
+    }
+    final currency = _currencies[currencyId];
+    if (currency != null && currency['symbol'] != null) {
+      return currency['symbol'];
+    }
+    return currency?['code'] ?? 'RM';
+  }
+
+  String _formatCurrencyWithSymbol(double amount, String? currencyId) {
+    final symbol = _getCurrencySymbol(currencyId);
+    return '$symbol${amount.toStringAsFixed(2)}';
   }
 
   Future<Map<String, dynamic>> _fetchAccountDetails() async {
@@ -44,7 +81,8 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
 
   Future<List<Map<String, dynamic>>> _fetchTransactions() async {
     try {
-      final response = await Supabase.instance.client
+      // Fetch transactions for this account
+      final transactionResponse = await Supabase.instance.client
           .from('Transaction')
           .select('''
             *,
@@ -54,7 +92,54 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
           .eq('accountId', widget.accountId)
           .order('date', ascending: false);
 
-      return List<Map<String, dynamic>>.from(response);
+      // Fetch transfers where this account is either source or destination
+      // Note: We fetch transfers without complex joins to avoid PostgreSQL table aliasing issues
+      final transferResponse = await Supabase.instance.client
+          .from('Transfer')
+          .select('*')
+          .or(
+            'fromAccountId.eq.${widget.accountId},toAccountId.eq.${widget.accountId}',
+          )
+          .order('date', ascending: false);
+
+      // Fetch all accounts for reference
+      final accountsResponse = await Supabase.instance.client
+          .from('Account')
+          .select('accountId, accountName, iconImage');
+
+      final accountsMap = {
+        for (var account in accountsResponse) account['accountId']: account,
+      };
+
+      // Combine both lists
+      List<Map<String, dynamic>> allRecords = [];
+
+      // Add transactions
+      allRecords.addAll(List<Map<String, dynamic>>.from(transactionResponse));
+
+      // Add transfers with type indicator and enriched account data
+      for (var transfer in transferResponse) {
+        final enrichedTransfer = Map<String, dynamic>.from(transfer);
+        enrichedTransfer['recordType'] =
+            'transfer'; // To distinguish from transaction
+
+        // Add account data for from and to accounts
+        enrichedTransfer['Account!fromAccountId'] =
+            accountsMap[transfer['fromAccountId']] ?? {};
+        enrichedTransfer['Account!toAccountId'] =
+            accountsMap[transfer['toAccountId']] ?? {};
+
+        allRecords.add(enrichedTransfer);
+      }
+
+      // Sort all records by date (descending)
+      allRecords.sort((a, b) {
+        final dateA = DateTime.parse(a['date'] ?? '');
+        final dateB = DateTime.parse(b['date'] ?? '');
+        return dateB.compareTo(dateA);
+      });
+
+      return allRecords;
     } catch (e) {
       print('Error fetching transactions: $e');
       rethrow;
@@ -177,76 +262,167 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
           return SingleChildScrollView(
             child: Column(
               children: [
-                // Account Header Card
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF8E7),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: const Color(0xFFFFE5B4),
-                        width: 2,
+                // Success Message (if account was just updated)
+                if (_accountUpdated)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFA7E399),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFA7E399).withOpacity(0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.check_circle,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Account Updated Successfully!',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'Your account details have been updated.',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _accountUpdated = false;
+                              });
+                            },
+                            child: const Icon(
+                              Icons.close,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    child: Row(
-                      children: [
-                        // Account Icon
-                        if (accountIcon != null && accountIcon.isNotEmpty)
-                          Container(
-                            width: 60,
-                            height: 60,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: const Color(0xFFFFE5B4),
-                                width: 2,
-                              ),
-                            ),
-                            child: ClipOval(
-                              child: Image.network(
-                                accountIcon,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
-                                    color: Colors.grey[300],
-                                    child: const Icon(
-                                      Icons.account_balance,
-                                      size: 30,
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        const SizedBox(width: 16),
-                        // Account Name and Balance
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                accountName,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'RM${balance.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF52C77A),
-                                ),
-                              ),
-                            ],
+                  ),
+                // Account Header Card - Clickable to Edit
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: GestureDetector(
+                    onTap: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => EditAccountPage(
+                            account: accountData,
+                            userId: widget.userId,
+                            source: 'detail',
                           ),
                         ),
-                      ],
+                      );
+                      if (result == true) {
+                        setState(() {
+                          _accountUpdated = true;
+                          _accountDetailsFuture = _fetchAccountDetails();
+                          _transactionsFuture = _fetchTransactions();
+                        });
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF8E7),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: const Color(0xFFFFE5B4),
+                          width: 2,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          // Account Icon
+                          if (accountIcon != null && accountIcon.isNotEmpty)
+                            Container(
+                              width: 60,
+                              height: 60,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(0xFFFFE5B4),
+                                  width: 2,
+                                ),
+                              ),
+                              child: ClipOval(
+                                child: Image.network(
+                                  accountIcon,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Container(
+                                      color: Colors.grey[300],
+                                      child: const Icon(
+                                        Icons.account_balance,
+                                        size: 30,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          const SizedBox(width: 16),
+                          // Account Name and Balance
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  accountName,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _formatCurrencyWithSymbol(
+                                    balance,
+                                    accountData['currencyId'],
+                                  ),
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF52C77A),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -347,7 +523,7 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
                                     children: [
                                       if (dayIncome > 0)
                                         Text(
-                                          'IN RM${dayIncome.toStringAsFixed(2)}',
+                                          'IN ${_getCurrencySymbol(accountData['currencyId'])}${dayIncome.toStringAsFixed(2)}',
                                           style: const TextStyle(
                                             fontSize: 12,
                                             fontWeight: FontWeight.bold,
@@ -358,7 +534,7 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
                                         const SizedBox(width: 12),
                                       if (dayExpense > 0)
                                         Text(
-                                          'OUT RM${dayExpense.toStringAsFixed(2)}',
+                                          'OUT ${_getCurrencySymbol(accountData['currencyId'])}${dayExpense.toStringAsFixed(2)}',
                                           style: const TextStyle(
                                             fontSize: 12,
                                             fontWeight: FontWeight.bold,
@@ -381,22 +557,59 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
                                 final isLastDay =
                                     index == sortedDates.length - 1;
 
-                                final categoryData =
-                                    transaction['Category'] ?? {};
-                                final categoryName =
-                                    categoryData['name'] ?? 'Category';
-                                final categoryIcon =
-                                    categoryData['icon'] ?? 'shopping_bag';
+                                final isTransfer =
+                                    transaction['recordType'] == 'transfer';
 
-                                final accountData =
-                                    transaction['Account'] ?? {};
-                                final accountLogo =
-                                    accountData['iconImage'] ?? '';
-
+                                // Handle both transaction and transfer records
+                                String displayName = '';
+                                String displayNote = '';
+                                String displayIcon = 'shopping_bag';
+                                dynamic accountLogo = '';
                                 final amount = (transaction['amount'] ?? 0)
                                     .toDouble();
+
+                                if (isTransfer) {
+                                  // Transfer record
+                                  final fromAccountData =
+                                      transaction['Account!fromAccountId'] ??
+                                      {};
+                                  final toAccountData =
+                                      transaction['Account!toAccountId'] ?? {};
+                                  final isOutgoing =
+                                      transaction['fromAccountId'] ==
+                                      widget.accountId;
+
+                                  final fromAccountName =
+                                      fromAccountData['accountName'] ??
+                                      'Unknown';
+                                  final toAccountName =
+                                      toAccountData['accountName'] ?? 'Unknown';
+
+                                  displayName = isOutgoing
+                                      ? 'Transfer to $toAccountName'
+                                      : 'Transfer from $fromAccountName';
+                                  displayNote = transaction['note'] ?? '';
+                                  displayIcon =
+                                      'send_icon'; // Use a transfer icon
+                                  accountLogo = isOutgoing
+                                      ? (toAccountData['iconImage'] ?? '')
+                                      : (fromAccountData['iconImage'] ?? '');
+                                } else {
+                                  // Transaction record
+                                  final categoryData =
+                                      transaction['Category'] ?? {};
+                                  final accountData =
+                                      transaction['Account'] ?? {};
+
+                                  displayName =
+                                      categoryData['name'] ?? 'Category';
+                                  displayIcon =
+                                      categoryData['icon'] ?? 'shopping_bag';
+                                  displayNote = transaction['note'] ?? '';
+                                  accountLogo = accountData['iconImage'] ?? '';
+                                }
+
                                 final type = transaction['type'] ?? 'expense';
-                                final note = transaction['note'] ?? '';
                                 final isRefunded =
                                     transaction['refund'] == true;
 
@@ -435,9 +648,15 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
                                                 borderRadius:
                                                     BorderRadius.circular(8),
                                               ),
-                                              child: _buildCategoryImageWidget(
-                                                categoryIcon,
-                                              ),
+                                              child: isTransfer
+                                                  ? const Icon(
+                                                      Icons.compare_arrows,
+                                                      color: Colors.black,
+                                                      size: 28,
+                                                    )
+                                                  : _buildCategoryImageWidget(
+                                                      displayIcon,
+                                                    ),
                                             ),
                                             const SizedBox(width: 12),
                                             // Category Name and Note
@@ -448,7 +667,7 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
                                                   Text(
-                                                    categoryName,
+                                                    displayName,
                                                     style: const TextStyle(
                                                       fontSize: 14,
                                                       fontWeight:
@@ -456,9 +675,9 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
                                                       color: Colors.black,
                                                     ),
                                                   ),
-                                                  if (note.isNotEmpty)
+                                                  if (displayNote.isNotEmpty)
                                                     Text(
-                                                      note,
+                                                      displayNote,
                                                       style: const TextStyle(
                                                         fontSize: 12,
                                                         color: Color(
@@ -486,24 +705,58 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
                                                       MainAxisSize.min,
                                                   children: [
                                                     // Amount
-                                                    Text(
-                                                      '${type == 'income' ? '+' : '-'}RM${amount.toStringAsFixed(2)}',
-                                                      style: TextStyle(
-                                                        fontSize: 14,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        color: type == 'income'
-                                                            ? const Color(
-                                                                0xFF52C77A,
-                                                              )
-                                                            : const Color(
-                                                                0xFFE74C3C,
-                                                              ),
-                                                      ),
+                                                    Builder(
+                                                      builder: (context) {
+                                                        String amountDisplay;
+                                                        Color amountColor;
+
+                                                        if (isTransfer) {
+                                                          final isOutgoing =
+                                                              transaction['fromAccountId'] ==
+                                                              widget.accountId;
+                                                          amountDisplay =
+                                                              '${isOutgoing ? '-' : '+'}RM${amount.toStringAsFixed(2)}';
+                                                          amountColor =
+                                                              isOutgoing
+                                                              ? const Color(
+                                                                  0xFFE74C3C,
+                                                                )
+                                                              : const Color(
+                                                                  0xFF52C77A,
+                                                                );
+                                                        } else {
+                                                          final accountData =
+                                                              transaction['Account'] ??
+                                                              {};
+                                                          amountDisplay =
+                                                              '${type == 'income' ? '+' : '-'}${_getCurrencySymbol(accountData['currencyId'])}${amount.toStringAsFixed(2)}';
+                                                          amountColor =
+                                                              type == 'income'
+                                                              ? const Color(
+                                                                  0xFF52C77A,
+                                                                )
+                                                              : const Color(
+                                                                  0xFFE74C3C,
+                                                                );
+                                                        }
+
+                                                        return Text(
+                                                          amountDisplay,
+                                                          style: TextStyle(
+                                                            fontSize: 14,
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                            color: amountColor,
+                                                          ),
+                                                        );
+                                                      },
                                                     ),
                                                     const SizedBox(width: 8),
                                                     // Account Icon in small circle
-                                                    if (accountLogo.isNotEmpty)
+                                                    if (accountLogo
+                                                            .toString()
+                                                            .isNotEmpty &&
+                                                        accountLogo != '')
                                                       Container(
                                                         width: 24,
                                                         height: 24,
@@ -519,8 +772,9 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
                                                         ),
                                                         child: ClipOval(
                                                           child: Image.network(
-                                                            accountLogo,
-                                                            fit: BoxFit.cover,
+                                                            accountLogo
+                                                                .toString(),
+                                                            fit: BoxFit.contain,
                                                             errorBuilder:
                                                                 (
                                                                   context,

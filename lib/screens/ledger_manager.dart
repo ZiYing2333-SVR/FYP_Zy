@@ -313,7 +313,7 @@ class _LedgerManagerState extends State<LedgerManager> {
                                           ),
                                         ),
                                         child: const Icon(
-                                          Icons.import_export,
+                                          Icons.book,
                                           color: Color(0xFFA7E399),
                                           size: 24,
                                         ),
