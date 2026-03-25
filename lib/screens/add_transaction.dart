@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 
 import '../Challenge/challenge_tracking_service.dart';
 import '../Missions/mission_service.dart';
+import '../OCR/models.dart';
+import '../OCR/receipt_error_dialog.dart';
+import '../OCR/receipt_ocr_service.dart';
 
 class AddTransaction extends StatefulWidget {
   final String userId;
@@ -413,6 +417,116 @@ class _AddTransactionState extends State<AddTransaction> {
     }
   }
 
+  Future<void> _handleScanReceipt() async {
+    try {
+      final picker = ImagePicker();
+
+      final image = await showModalBottomSheet<XFile?>(
+        context: context,
+        builder: (context) {
+          return SafeArea(
+            child: Wrap(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.camera_alt),
+                  title: const Text('Take Photo'),
+                  onTap: () async {
+                    final img = await picker.pickImage(source: ImageSource.camera);
+                    Navigator.pop(context, img);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library),
+                  title: const Text('Choose from Gallery'),
+                  onTap: () async {
+                    final img = await picker.pickImage(source: ImageSource.gallery);
+                    Navigator.pop(context, img);
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+      if (image == null) return;
+
+      /// SAVE IMAGE FOR UPLOAD
+      setState(() {
+        _selectedImage = image;
+      });
+
+      /// OCR
+      final parsed = await ReceiptOCRService.extract(image);
+
+      _applyParsedReceipt(parsed);
+
+      /// AUTO FILL UI
+      _applyParsedReceipt(parsed);
+
+    } catch (e) {
+      print("Scan Error: $e");
+      if (!mounted) return;
+      _showScanError();
+    }
+
+
+  }
+
+  void _applyParsedReceipt(ParsedReceipt parsed) {
+    setState(() {
+      /// 1️⃣ Amount
+      _amountText = parsed.amount;
+
+      /// 2️⃣ Date
+      if (parsed.date != null) {
+        try {
+          if (parsed.date!.contains('-')) {
+            _selectedDate = DateTime.parse(parsed.date!); // yyyy-MM-dd
+          } else {
+            _selectedDate = DateFormat('dd/MM/yyyy').parse(parsed.date!);
+          }
+        } catch (_) {}
+      }
+
+      /// 3️⃣ Category (IMPORTANT 🔥)
+      final categories = _selectedType == 'expense'
+          ? expenseCategories
+          : incomeCategories;
+
+      if (parsed.categoryId != null) {
+        final categories = _selectedType == 'expense'
+            ? expenseCategories
+            : incomeCategories;
+
+        final match = categories.firstWhere(
+              (c) => c['categoryId'] == parsed.categoryId,
+          orElse: () => {},
+        );
+
+        if (match.isNotEmpty) {
+          _selectedCategory = match;
+        }
+      }
+    });
+  }
+
+  void _showScanError() {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => ReceiptErrorDialog(
+        onRetry: () {
+          _handleScanReceipt();
+        },
+      ),
+    );
+  }
+
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -606,8 +720,8 @@ class _AddTransactionState extends State<AddTransaction> {
                   _buildAccountButton(),
                   _buildDateButton(),
                   _buildImageButton(),
-                  _buildIconButton(Icons.qr_code_scanner, 'Scanning', () {
-                    _scanImage();
+                  _buildIconButton(Icons.qr_code_scanner, 'Scan', () {
+                    _handleScanReceipt();
                   }),
                 ],
               ),

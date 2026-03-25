@@ -315,6 +315,20 @@ class FaceAuthService {
     return userId;
   }
 
+
+  static Future<void> removeFace(String faceToken) async {
+    await http.post(
+      Uri.parse("https://api-us.faceplusplus.com/facepp/v3/faceset/removeface"),
+      body: {
+        "api_key": apiKey,
+        "api_secret": apiSecret,
+        "outer_id": faceSetId,
+        "face_tokens": faceToken,
+      },
+    );
+  }
+
+
   /// ==============================
   /// DELETE FACESET (RESET)
   /// ==============================

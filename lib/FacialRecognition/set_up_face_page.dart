@@ -53,17 +53,27 @@ class _SetUpFacePageState
       final supabase = Supabase.instance.client;
 
       if (widget.isUpdate) {
-        /// ✅ UPDATE existing face
-        await supabase
+
+        // 1️⃣ Get old token
+        final old = await supabase
             .from('FaceAuth')
-            .update({
+            .select()
+            .eq('userId', widget.userId)
+            .maybeSingle();
+
+        if (old != null) {
+          await FaceAuthService.removeFace(old['faceToken']);
+        }
+
+        // 2️⃣ Add new face
+        await FaceAuthService.addFaceToSet(faceToken, widget.userId);
+
+        // 3️⃣ Update DB
+        await supabase.from('FaceAuth').update({
           'faceToken': faceToken,
           'faceImagePath': image.path,
-          'createdAt':
-          DateTime.now().toIso8601String(),
-        })
-            .eq('userId', widget.userId);
-
+          'createdAt': DateTime.now().toIso8601String(),
+        }).eq('userId', widget.userId);
       } else {
         /// ✅ INSERT new face
         await FaceAuthService.saveFaceToDatabase(
@@ -80,6 +90,7 @@ class _SetUpFacePageState
       showFailDialog();
     }
   }
+
 
 
 

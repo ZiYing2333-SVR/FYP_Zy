@@ -4,6 +4,7 @@ class ParsedReceipt {
   final String? date;
   final String? categoryId;
   final String categoryName;
+  final String rawText;
 
   ParsedReceipt({
     required this.items,
@@ -11,7 +12,6 @@ class ParsedReceipt {
     this.date,
     this.categoryId,
     required this.categoryName,
+    required this.rawText,
   });
 }
-
-
