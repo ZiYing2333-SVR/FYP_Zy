@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
 import 'face_auth_service.dart';
 
 class SetUpFacePage extends StatefulWidget {
-  const SetUpFacePage({super.key});
+  final String userId;
+  final bool isUpdate;
+
+  const SetUpFacePage({
+    super.key,
+    required this.userId,
+    required this.isUpdate,
+  });
 
   @override
   State<SetUpFacePage> createState() =>
@@ -17,9 +25,7 @@ class _SetUpFacePageState
   /// REGISTER FACE
   /// =====================================================
   Future<void> scanAndRegisterFace() async {
-
     try {
-
       /// 1️⃣ Capture
       File? image =
       await FaceAuthService.captureFace();
@@ -31,8 +37,7 @@ class _SetUpFacePageState
 
       /// 2️⃣ Detect
       String? faceToken =
-      await FaceAuthService.detectFace(
-          image);
+      await FaceAuthService.detectFace(image);
 
       if (faceToken == null) {
         showFailDialog();
@@ -41,15 +46,33 @@ class _SetUpFacePageState
 
       /// 3️⃣ Add to FaceSet
       await FaceAuthService.addFaceToSet(
-          faceToken);
-
-      /// 4️⃣ Save DB
-      await FaceAuthService.saveFaceToDatabase(
-        faceToken: faceToken,
-        imagePath: image.path,
+        faceToken,
+        widget.userId,
       );
 
-      /// SUCCESS
+      final supabase = Supabase.instance.client;
+
+      if (widget.isUpdate) {
+        /// ✅ UPDATE existing face
+        await supabase
+            .from('FaceAuth')
+            .update({
+          'faceToken': faceToken,
+          'faceImagePath': image.path,
+          'createdAt':
+          DateTime.now().toIso8601String(),
+        })
+            .eq('userId', widget.userId);
+
+      } else {
+        /// ✅ INSERT new face
+        await FaceAuthService.saveFaceToDatabase(
+          faceToken: faceToken,
+          imagePath: image.path,
+          userId: widget.userId, // 🔥 IMPORTANT
+        );
+      }
+
       showSuccessDialog();
 
     } catch (e) {
@@ -58,23 +81,7 @@ class _SetUpFacePageState
     }
   }
 
-  /// =====================================================
-  /// LOGIN WITH FACE
-  /// =====================================================
-  Future<void> loginWithFace() async {
 
-    String? userId =
-    await FaceAuthService.loginWithFace();
-
-    if (userId != null) {
-
-      showLoginSuccessDialog(userId);
-
-    } else {
-
-      showLoginFailDialog();
-    }
-  }
 
 
   /// =====================================================
@@ -87,27 +94,21 @@ class _SetUpFacePageState
       builder: (context) {
         return Dialog(
           shape: RoundedRectangleBorder(
-            borderRadius:
-            BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(20),
           ),
           child: Container(
-            padding:
-            const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color:
-              const Color(0xFFF6F3D6),
-              borderRadius:
-              BorderRadius.circular(20),
+              color: const Color(0xFFF6F3D6),
+              borderRadius: BorderRadius.circular(20),
             ),
             child: Column(
-              mainAxisSize:
-              MainAxisSize.min,
+              mainAxisSize: MainAxisSize.min,
               children: [
 
                 const CircleAvatar(
                   radius: 30,
-                  backgroundColor:
-                  Colors.green,
+                  backgroundColor: Colors.green,
                   child: Icon(
                     Icons.check,
                     color: Colors.white,
@@ -117,50 +118,33 @@ class _SetUpFacePageState
 
                 const SizedBox(height: 20),
 
-                const Text(
-                  "Set up Successfully!",
-                  style: TextStyle(
+                Text(
+                  widget.isUpdate
+                      ? "Face ID Updated!"
+                      : "Set up Successfully!",
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
                     fontSize: 20,
-                    fontWeight:
-                    FontWeight.bold,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
 
                 const SizedBox(height: 25),
 
-                /// LOGIN BUTTON
+                /// ✅ DONE BUTTON
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () {
-                      Navigator.pop(
-                          context);
-                      loginWithFace();
+                      Navigator.pop(context); // close dialog
+                      Navigator.pop(context); // go back page
                     },
-                    style:
-                    ElevatedButton
-                        .styleFrom(
-                      backgroundColor:
-                      const Color(
-                          0xFFA7E399),
-                      padding:
-                      const EdgeInsets
-                          .symmetric(
-                          vertical:
-                          14),
-                      shape:
-                      RoundedRectangleBorder(
-                        borderRadius:
-                        BorderRadius
-                            .circular(
-                            30),
-                      ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFA7E399),
                     ),
                     child: const Text(
-                      "Login With Face ID",
-                      style: TextStyle(
-                          color:
-                          Colors.white),
+                      "Done",
+                      style: TextStyle(color: Colors.white),
                     ),
                   ),
                 ),
@@ -396,148 +380,8 @@ class _SetUpFacePageState
     );
   }
 
-  /// =====================================================
-  /// LOGIN SUCCESS DIALOG
-  /// =====================================================
-  void showLoginSuccessDialog(
-      String userId) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius:
-            BorderRadius.circular(20),
-          ),
-          child: Container(
-            padding:
-            const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize:
-              MainAxisSize.min,
-              children: [
 
-                const CircleAvatar(
-                  radius: 30,
-                  backgroundColor:
-                  Colors.green,
-                  child: Icon(
-                    Icons.lock_open,
-                    color: Colors.white,
-                    size: 30,
-                  ),
-                ),
 
-                const SizedBox(height: 20),
-
-                const Text(
-                  "Login Successful",
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight:
-                    FontWeight.bold,
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-
-                Text(
-                  "User ID: $userId",
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight:
-                    FontWeight.w600,
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-
-                    Navigator
-                        .pushReplacementNamed(
-                        context,
-                        "/home");
-                  },
-                  child: const Text(
-                      "Enter"),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  void showLoginFailDialog() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius:
-            BorderRadius.circular(20),
-          ),
-          child: Container(
-            padding:
-            const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize:
-              MainAxisSize.min,
-              children: [
-
-                const CircleAvatar(
-                  radius: 30,
-                  backgroundColor:
-                  Colors.red,
-                  child: Icon(
-                    Icons.close,
-                    color: Colors.white,
-                    size: 30,
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                const Text(
-                  "Face Login Failed",
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight:
-                    FontWeight.bold,
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-
-                const Text(
-                  "Face not recognized.\nPlease try again.",
-                  textAlign:
-                  TextAlign.center,
-                ),
-
-                const SizedBox(height: 20),
-
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(
-                        context);
-                    loginWithFace();
-                  },
-                  child:
-                  const Text("Retry"),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
 
 
   /// =====================================================
@@ -573,8 +417,10 @@ class _SetUpFacePageState
 
             const SizedBox(height: 10),
 
-            const Text(
-              "Set up Face ID",
+            Text(
+              widget.isUpdate
+                  ? "Change Face ID"
+                  : "Set up Face ID",
               style: TextStyle(
                 fontSize: 23,
                 fontWeight:
@@ -652,35 +498,7 @@ class _SetUpFacePageState
 
             const SizedBox(height: 20),
 
-            /// LOGIN DIRECT BUTTON
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  await loginWithFace();
-                },
-                icon: const Icon(
-                  Icons.face,
-                  color: Colors.white,
-                ),
-                label: const Text(
-                  "Login With Face ID",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6EC6FF),
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 10,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                ),
-              ),
-            ),
+
 
           ],
         ),

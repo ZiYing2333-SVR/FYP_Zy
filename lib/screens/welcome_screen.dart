@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../FacialRecognition/face_auth_service.dart';
+import 'home_screen.dart';
 import 'login_screen.dart';
 import 'first_register_page.dart';
 
@@ -66,8 +68,97 @@ class WelcomeScreen extends StatelessWidget {
                     width: double.infinity,
                     height: 52,
                     child: ElevatedButton.icon(
-                      onPressed: () {
-                        // TODO: Implement FaceID login
+                      onPressed: () async {
+
+                        String? userId =
+                        await FaceAuthService.loginWithFace();
+
+                        if (userId != null) {
+
+                          /// ✅ SUCCESS
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => HomeScreen(userId: userId),
+                            ),
+                          );
+
+                        } else {
+
+                          /// ❌ FAIL
+                          showDialog(
+                            context: context,
+                            builder: (_) => Dialog(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Container(
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFF9E6), // 🌼 theme background
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+
+                                    /// ❌ ICON
+                                    const Icon(
+                                      Icons.error_outline,
+                                      color: Colors.red,
+                                      size: 60,
+                                    ),
+
+                                    const SizedBox(height: 12),
+
+                                    /// TITLE
+                                    const Text(
+                                      "Login Failed",
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+
+                                    const SizedBox(height: 8),
+
+                                    /// MESSAGE
+                                    const Text(
+                                      "Face not recognized.\nPlease try again or password login.",
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(fontSize: 14),
+                                    ),
+
+                                    const SizedBox(height: 20),
+
+                                    /// BUTTON
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton(
+                                        onPressed: () {
+                                          Navigator.pop(context);
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFFC8E6C9), // 🌿 green
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          "OK",
+                                          style: TextStyle(
+                                            color: Colors.black,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        }
                       },
                       icon: const Icon(Icons.face),
                       label: const Text('Login With FaceID'),

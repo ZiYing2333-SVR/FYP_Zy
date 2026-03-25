@@ -3,6 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
 
+import '../FacialRecognition/set_up_face_page.dart';
+
 class ProfileSettingsScreen extends StatefulWidget {
   final String userId;
 
@@ -268,6 +270,292 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
             '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
       });
     }
+  }
+
+  Future<void> handleFaceIdClick(
+      BuildContext context,
+      String userId,
+      ) async {
+
+    final supabase = Supabase.instance.client;
+
+    try {
+
+      /// ==============================
+      /// 1️⃣ Check if Face ID exists
+      /// ==============================
+      final record = await supabase
+          .from('FaceAuth')
+          .select()
+          .eq('userId', userId)
+          .maybeSingle();
+
+      bool hasFaceId = record != null;
+
+      /// ==============================
+      /// 2️⃣ Ask for password
+      /// ==============================
+      bool isVerified =
+      await showPasswordDialog(context, userId);
+
+      if (!isVerified) return;
+
+      /// ==============================
+      /// 3️⃣ Navigate
+      /// ==============================
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SetUpFacePage(
+            isUpdate: hasFaceId, // ✅ TRUE = change, FALSE = setup
+            userId: userId,
+          ),
+        ),
+      );
+
+    } catch (e) {
+
+      debugPrint("FaceID Click Error: $e");
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Something went wrong"),
+        ),
+      );
+    }
+  }
+
+  Future<bool> showPasswordDialog(
+      BuildContext parentContext,
+      String userId,
+      ) async {
+
+    int attempts = 0;
+    final controller = TextEditingController();
+    final supabase = Supabase.instance.client;
+
+    return await showDialog<bool>(
+      context: parentContext,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+
+        int attempts = 0; // stays inside dialog
+
+        return StatefulBuilder(
+          builder: (context, setState) {
+
+            return AlertDialog(
+              backgroundColor: const Color(0xFFFFF9E6),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+
+              title: const Text(
+                "Enter Password",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+
+              content: TextField(
+                controller: controller,
+                obscureText: true,
+                decoration: InputDecoration(
+                  hintText: "Password",
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+
+              actions: [
+
+                /// CANCEL
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(dialogContext, false);
+                  },
+                  child: const Text("Cancel"),
+                ),
+
+                /// CONFIRM
+                ElevatedButton(
+                  onPressed: () async {
+
+                    String password = controller.text;
+
+                    final res = await supabase
+                        .from('User')
+                        .select()
+                        .eq('userId', userId)
+                        .eq('password', password)
+                        .limit(1)
+                        .maybeSingle();
+
+                    if (res != null) {
+
+                      Navigator.pop(dialogContext, true);
+
+                    } else {
+
+                      attempts++;
+
+                      if (attempts >= 3) {
+
+                        Navigator.pop(dialogContext, false);
+
+                        /// 🔥 SAFE WAY (NO CRASH)
+                        if (parentContext.mounted) {
+                          showDialog(
+                            context: parentContext,
+                            builder: (_) => Dialog(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Container(
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFF9E6),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+
+                                    const Icon(Icons.error, color: Colors.red),
+
+                                    const SizedBox(height: 10),
+
+                                    const Text(
+                                      "Too many attempts",
+                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+
+                                    const SizedBox(height: 10),
+
+                                    const Text(
+                                      "Please change your password.",
+                                      textAlign: TextAlign.center,
+                                    ),
+
+                                    const SizedBox(height: 20),
+
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        Navigator.pop(parentContext);
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFFC8E6C9),
+                                      ),
+                                      child: const Text(
+                                        "OK",
+                                        style: TextStyle(color: Colors.black),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
+                      } else {
+
+                        ScaffoldMessenger.of(parentContext).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              "Wrong password (${attempts}/3)",
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFC8E6C9),
+                  ),
+                  child: const Text(
+                    "Confirm",
+                    style: TextStyle(color: Colors.black),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ) ?? false;
+  }
+
+  void showErrorDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+
+                const Icon(
+                  Icons.error_outline,
+                  color: Colors.red,
+                  size: 60,
+                ),
+
+                const SizedBox(height: 12),
+
+                const Text(
+                  "Too many attempts",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                const Text(
+                  "Please change your password.",
+                  textAlign: TextAlign.center,
+                ),
+
+                const SizedBox(height: 20),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFC8E6C9), // 🟢 green
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    child: const Text(
+                      "OK",
+                      style: TextStyle(color: Colors.black),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -771,29 +1059,35 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                   // Face ID
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFC8E6C9),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Face ID',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black,
+                    child: GestureDetector(
+                      onTap: () async {
+                        print("Tapped");
+                        await handleFaceIdClick(context, widget.userId);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFC8E6C9),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: const [
+                            Text(
+                              'Face ID',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black,
+                              ),
                             ),
-                          ),
-                          const Icon(
-                            Icons.chevron_right,
-                            color: Colors.black,
-                            size: 24,
-                          ),
-                        ],
+                            Icon(
+                              Icons.chevron_right,
+                              color: Colors.black,
+                              size: 24,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),

@@ -33,9 +33,9 @@ class FaceAuthService {
       preferredCameraDevice: CameraDevice.front,
 
       /// 👇 Compress image
-      imageQuality: 50,   // 0–100
-      maxWidth: 600,
-      maxHeight: 600,
+      imageQuality: 80,   // 0–100
+      maxWidth: 800,
+      maxHeight: 800,
     );
 
     if (image == null) return null;
@@ -135,7 +135,9 @@ class FaceAuthService {
   /// ADD FACE TO FACESET
   /// ==============================
   static Future<void> addFaceToSet(
-      String faceToken) async {
+      String faceToken,
+      String userId,
+      ) async {
 
     final response = await http.post(
       Uri.parse(
@@ -146,6 +148,7 @@ class FaceAuthService {
         "api_secret": apiSecret,
         "outer_id": faceSetId,
         "face_tokens": faceToken,
+        "user_id": userId,
       },
     );
 
@@ -232,6 +235,7 @@ class FaceAuthService {
   static Future<void> saveFaceToDatabase({
     required String faceToken,
     required String imagePath,
+    required String userId,
   }) async {
 
     final supabase =
@@ -249,7 +253,7 @@ class FaceAuthService {
       'faceImagePath': imagePath,
       'createdAt':
       DateTime.now().toIso8601String(),
-      'userId': 'UID0001',
+      'userId': userId,
     });
 
     print("Inserted ID: $faceAuthId");
@@ -257,35 +261,17 @@ class FaceAuthService {
 
   static Future<String?> loginWithFace() async {
 
-    /// ==============================
-    /// 1️⃣ Capture face
-    /// ==============================
+    /// 1️⃣ Capture
     File? image = await captureFace();
+    if (image == null) return null;
 
-    if (image == null) {
-      print("❌ No image captured");
-      return null;
-    }
-
-    /// ==============================
-    /// 2️⃣ Detect face → token
-    /// ==============================
+    /// 2️⃣ Detect
     String? token = await detectFace(image);
+    if (token == null) return null;
 
-    if (token == null) {
-      print("❌ No face detected");
-      return null;
-    }
-
-    print("🧠 Detected Token: $token");
-
-    /// ==============================
-    /// 3️⃣ Search FaceSet
-    /// ==============================
+    /// 3️⃣ Search
     final response = await http.post(
-      Uri.parse(
-        "https://api-us.faceplusplus.com/facepp/v3/search",
-      ),
+      Uri.parse("https://api-us.faceplusplus.com/facepp/v3/search"),
       body: {
         "api_key": apiKey,
         "api_secret": apiSecret,
@@ -296,35 +282,22 @@ class FaceAuthService {
 
     final data = jsonDecode(response.body);
 
-    print("🔎 Search Response: $data");
-
-    if (data["results"] == null ||
-        data["results"].isEmpty) {
-      print("❌ No matching face found");
+    if (data["results"] == null || data["results"].isEmpty) {
+      print("❌ No match");
       return null;
     }
 
-    double confidence =
-    data["results"][0]["confidence"];
+    double confidence = data["results"][0]["confidence"];
 
-    String matchedToken =
-    data["results"][0]["face_token"];
+    if (confidence < 75) return null;
 
-    print("✅ Matched Token: $matchedToken");
-    print("📊 Confidence: $confidence");
+    /// ✅ USE THIS INSTEAD OF user_id
+    String matchedToken = data["results"][0]["face_token"];
 
-    /// Threshold check
-    if (confidence < 80) {
-      print("❌ Confidence too low");
-      return null;
-    }
+    print("Matched Token: $matchedToken");
 
-    /// ==============================
-    /// 4️⃣ Query database
-    /// ==============================
-    final db = Supabase.instance.client;
-
-    final record = await db
+    /// 4️⃣ QUERY SUPABASE
+    final record = await supabase
         .from('FaceAuth')
         .select()
         .eq('faceToken', matchedToken)
@@ -335,52 +308,53 @@ class FaceAuthService {
       return null;
     }
 
-    print("👤 User ID Found: ${record['userId']}");
+    String userId = record['userId'];
 
-    /// Return userId
-    return record['userId'];
+    print("✅ Login success for user: $userId");
+
+    return userId;
   }
 
-  // /// ==============================
-  // /// DELETE FACESET (RESET)
-  // /// ==============================
-  // static Future<void> deleteFaceSet() async {
-  //
-  //   final response = await http.post(
-  //     Uri.parse(
-  //       "https://api-us.faceplusplus.com/facepp/v3/faceset/delete",
-  //     ),
-  //     body: {
-  //       "api_key": apiKey,
-  //       "api_secret": apiSecret,
-  //       "outer_id": faceSetId,
-  //     },
-  //   );
-  //
-  //   print("Delete FaceSet Response:");
-  //   print(response.body);
-  // }
-  //
-  // /// ==============================
-  // /// REMOVE ALL FACES
-  // /// ==============================
-  // static Future<void> removeAllFaces() async {
-  //
-  //   final response = await http.post(
-  //     Uri.parse(
-  //       "https://api-us.faceplusplus.com/facepp/v3/faceset/removeface",
-  //     ),
-  //     body: {
-  //       "api_key": apiKey,
-  //       "api_secret": apiSecret,
-  //       "outer_id": faceSetId,
-  //       "face_tokens": "RemoveAllFaceTokens",
-  //     },
-  //   );
-  //
-  //   print("Remove All Faces Response:");
-  //   print(response.body);
-  // }
+  /// ==============================
+  /// DELETE FACESET (RESET)
+  /// ==============================
+  static Future<void> deleteFaceSet() async {
+
+    final response = await http.post(
+      Uri.parse(
+        "https://api-us.faceplusplus.com/facepp/v3/faceset/delete",
+      ),
+      body: {
+        "api_key": apiKey,
+        "api_secret": apiSecret,
+        "outer_id": faceSetId,
+      },
+    );
+
+    print("Delete FaceSet Response:");
+    print(response.body);
+  }
+
+  /// ==============================
+  /// REMOVE ALL FACES
+  /// ==============================
+  static Future<void> removeAllFaces() async {
+
+    final response = await http.post(
+      Uri.parse(
+        "https://api-us.faceplusplus.com/facepp/v3/faceset/removeface",
+      ),
+      body: {
+        "api_key": apiKey,
+        "api_secret": apiSecret,
+        "outer_id": faceSetId,
+        "face_tokens": "RemoveAllFaceTokens",
+      },
+    );
+
+    print("Remove All Faces Response:");
+    print(response.body);
+  }
 
 
 
