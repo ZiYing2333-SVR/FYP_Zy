@@ -3,9 +3,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 // import 'package:image_picker/image_picker.dart';
 // import 'dart:typed_data';
 import '../Challenge/View_Challenge.dart';
+import '../Challenge/view_achievement.dart';
 import '../FinancialTip/view_tips_page.dart';
 import '../Missions/view_mission.dart';
 import '../Quiz/view_quiz_page.dart';
+import '../pet/pet_home_page.dart';
+import '../pet/pet_main.dart';
 import 'home_screen.dart';
 import 'welcome_screen.dart';
 import 'profile_settings_screen.dart';
@@ -159,6 +162,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (e) {
       print('Error calculating budget usage: $e');
       return 0;
+    }
+  }
+
+  Future<void> _handlePetNavigation() async {
+    try {
+      final supabase = Supabase.instance.client;
+
+      final response = await supabase
+          .from('Pet')
+          .select('petId') // 👈 only get petId
+          .eq('userId', widget.userId)
+          .maybeSingle();
+
+      if (response != null) {
+        final petId = response['petId'];
+
+        // ✅ Navigate with petId
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PetHomePage(
+              userId: widget.userId,
+              petId: petId,
+            ),
+          ),
+        );
+      } else {
+        // ❌ No pet → go create page
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PetMainPage(
+              userId: widget.userId,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error checking pet: $e');
     }
   }
 
@@ -566,6 +608,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   _buildDivider(),
                   _buildMenuItem(
+                    'Achievement',
+                    11,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => AchievementPage(userId: widget.userId),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDivider(),
+                  _buildMenuItem(
                     'Quiz',
                     11,
                     onTap: () {
@@ -626,7 +681,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     builder: (context) => AccountPage(userId: widget.userId),
                   ),
                 );
-              } else if (index == 3) {
+              } else if (index == 2) {
+                // 🐶 PET LOGIC HERE
+                _handlePetNavigation();
+              }else if (index == 3) {
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(

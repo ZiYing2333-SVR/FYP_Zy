@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:fyp_wx/pet/select_pet_page.dart';
 
 class PetMainPage extends StatelessWidget {
-  const PetMainPage({super.key});
+  final String userId;
+  const PetMainPage({super.key,required this.userId,});
 
   @override
   Widget build(BuildContext context) {
@@ -112,7 +113,7 @@ class PetMainPage extends StatelessWidget {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => const SelectPetPage(),
+                          builder: (context) => SelectPetPage(userId: userId),
                         ),
                       );
                     },

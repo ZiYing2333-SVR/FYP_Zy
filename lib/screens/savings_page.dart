@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import '../pet/pet_home_page.dart';
+import '../pet/pet_main.dart';
 import 'home_screen.dart';
 import 'account_page.dart';
 import 'settings_screen.dart';
@@ -347,6 +349,45 @@ class _SavingsPageState extends State<SavingsPage> {
       if (goal.isNotEmpty && goal['status'] != 'inactive') {
         await _updateGoalStatus(goalId, 'inactive', cycleStatus: false);
       }
+    }
+  }
+
+  Future<void> _handlePetNavigation() async {
+    try {
+      final supabase = Supabase.instance.client;
+
+      final response = await supabase
+          .from('Pet')
+          .select('petId') // 👈 only get petId
+          .eq('userId', widget.userId)
+          .maybeSingle();
+
+      if (response != null) {
+        final petId = response['petId'];
+
+        // ✅ Navigate with petId
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PetHomePage(
+              userId: widget.userId,
+              petId: petId,
+            ),
+          ),
+        );
+      } else {
+        // ❌ No pet → go create page
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PetMainPage(
+              userId: widget.userId,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error checking pet: $e');
     }
   }
 
@@ -874,7 +915,10 @@ class _SavingsPageState extends State<SavingsPage> {
                     builder: (context) => AccountPage(userId: widget.userId),
                   ),
                 );
-              } else if (index == 4) {
+              } else if (index == 2) {
+                // 🐶 PET LOGIC HERE
+                _handlePetNavigation();
+              }else if (index == 4) {
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(

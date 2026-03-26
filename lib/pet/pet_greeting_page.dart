@@ -4,12 +4,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 
 class PetGreetingPage extends StatelessWidget {
+  final String userId;
   final String petId;
   final String petName;
   final String imageUrl;
 
   const PetGreetingPage({
     super.key,
+    required this.userId,
     required this.petId,
     required this.petName,
     required this.imageUrl,
@@ -137,6 +139,7 @@ class PetGreetingPage extends StatelessWidget {
                                 context,
                                 MaterialPageRoute(
                                   builder: (_) => PetHomePage(
+                                    userId: userId,
                                     petId: petId,
                                   ),
                                 ),

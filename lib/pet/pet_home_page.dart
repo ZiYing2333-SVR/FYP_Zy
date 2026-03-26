@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:fyp_wx/pet/pet_shop_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fyp_wx/main.dart';
+import 'dart:async';
 
 class PetHomePage extends StatefulWidget {
   final String petId;
+  final String userId;
 
   const PetHomePage({
     required this.petId,
+    required this.userId
   });
 
   @override
@@ -19,6 +22,7 @@ class _PetHomePageState extends State<PetHomePage> {
   List purchasedItems = [];
   bool showInventory = false;
   String selectedInventoryCategory = "Food";
+  Timer? happinessTimer;
 
   List get filteredItems {
     return purchasedItems.where((item) {
@@ -29,16 +33,61 @@ class _PetHomePageState extends State<PetHomePage> {
 
 
   Map<String, dynamic>? petData;
-  int coinBalance = 26; // temporary
+  int coinBalance = 0;
 
   @override
   void initState() {
     super.initState();
-    fetchPet();
-    fetchEquippedItems();
+    initData();
+  }
+
+  Future<void> initData() async {
+    await fetchPet();
+    await fetchUser();
+    await fetchEquippedItems();
+
+    startHappinessDecay();
+  }
+
+  @override
+  void dispose() {
+    happinessTimer?.cancel(); // ✅ stop timer
+    super.dispose();
   }
 
   List equippedItems = [];
+
+  Map<String, Map<String, dynamic>> slotConfig = {
+    "Hat": {
+      "top": 10,
+      "left": 0,
+      "right": 0,
+      "scale": 1.0,
+    },
+    "Clothes": {
+      "top": 60,
+      "left": 0,
+      "right": 0,
+      "scale": 1.0,
+    },
+    "Accessory": {
+      "top": 40,
+      "left": 20,
+      "scale": 0.6,
+    },
+  };
+
+  Future<void> fetchUser() async {
+    final data = await supabase
+        .from('User')
+        .select('coinbalance')
+        .eq('userId', widget.userId)
+        .single();
+
+    setState(() {
+      coinBalance = (data['coinbalance'] as num).toInt();
+    });
+  }
 
   Future<void> fetchEquippedItems() async {
     final data = await supabase
@@ -84,68 +133,139 @@ class _PetHomePageState extends State<PetHomePage> {
     final data = await supabase
         .from('UserPurchasedItem')
         .select('''
-        purchasedItemId,
-        itemId,
-        ShopItem (
-          itemName,
-          category,
-          imagePath,
-          slotType
-        )
-      ''');
-
+      purchasedItemId,
+      itemId,
+      quantity,
+      ShopItem (
+        itemName,
+        category,
+        imagePath,
+        slotType,
+        happinessBoost
+      )
+    ''')
+        .gte('quantity', 1);
 
     setState(() {
       purchasedItems = data;
     });
+
+    print(data);
+  }
+
+  void startHappinessDecay() {
+    happinessTimer = Timer.periodic(
+      const Duration(seconds: 10),
+          (_) async {
+        if (!mounted) return; // 🔥 IMPORTANT
+
+        if (petData == null) return;
+
+        int current =
+        (petData!['happinessScore'] as num).toInt();
+
+        if (current <= 0) return;
+
+        int newScore = current - 1;
+
+        await supabase
+            .from('Pet')
+            .update({'happinessScore': newScore})
+            .eq('petId', widget.petId);
+
+        if (!mounted) return; // 🔥 DOUBLE SAFETY
+
+        setState(() {
+          petData!['happinessScore'] = newScore;
+        });
+      },
+    );
   }
 
   Future<void> removeAllEquipment() async {
     await supabase
         .from('PetCustomization')
-        .update({
-      'isEquipped': false,
-    })
+        .update({'isEquipped': false})
         .eq('petId', widget.petId);
 
-    ScaffoldMessenger.of(context)
-        .showSnackBar(
+    await fetchEquippedItems();
+
+    ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text(
-            "All equipment removed 🚫"),
+        content: Text("All equipment removed 🚫"),
       ),
     );
+  }
+
+  Future<void> removeBySlot(String slotType) async {
+
+    final data = await supabase
+        .from('PetCustomization')
+        .select('''
+        customizationId,
+        UserPurchasedItem (
+          ShopItem (slotType)
+        )
+      ''')
+        .eq('petId', widget.petId)
+        .eq('isEquipped', true);
+
+    for (var item in data) {
+      final itemSlot =
+      item['UserPurchasedItem']?['ShopItem']?['slotType'];
+
+      if (itemSlot == slotType) {
+        await supabase
+            .from('PetCustomization')
+            .update({'isEquipped': false})
+            .eq('customizationId', item['customizationId']);
+      }
+    }
+
+    await fetchEquippedItems();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("$slotType removed 🚫"),
+      ),
+    );
+  }
+
+  Future<List<String>> _getSameSlotItems(String slotType) async {
+    final data = await supabase
+        .from('UserPurchasedItem')
+        .select('''
+        purchasedItemId,
+        ShopItem (slotType)
+      ''');
+
+    return data
+        .where((item) =>
+    item['ShopItem']['slotType'] == slotType)
+        .map<String>((item) => item['purchasedItemId'])
+        .toList();
   }
 
   Future<void> applyItem(Map purchasedItem) async {
     final shopItem = purchasedItem['ShopItem'];
 
-    debugPrint(shopItem.toString());
-
-
     String slotType = shopItem['slotType'];
     int happinessBoost =
         (shopItem['happinessBoost'] as num?)?.toInt() ?? 0;
 
-
     String purchasedItemId =
     purchasedItem['purchasedItemId'];
 
-    /// Generate Customization ID
     String customizationId =
     await generateCustomizationId();
 
-    /// FOOD → consume
-    if (slotType == "Food") {
+    if (slotType == "Consumable") {
       await consumeFood(
         purchasedItemId,
         customizationId,
         happinessBoost,
       );
-    }
-
-    /// ACCESSORIES / CLOTHES → equip
-    else {
+    } else {
       await equipItem(
         purchasedItemId,
         customizationId,
@@ -154,9 +274,10 @@ class _PetHomePageState extends State<PetHomePage> {
       );
     }
 
-    await fetchPet();
+    /// 🔥 MUST refresh AFTER action
     await fetchInventory();
     await fetchEquippedItems();
+    await fetchPet(); // (optional but good)
 
     setState(() {});
   }
@@ -183,7 +304,6 @@ class _PetHomePageState extends State<PetHomePage> {
       int happinessBoost,
       ) async {
 
-    /// Insert customization record
     await supabase.from('PetCustomization').insert({
       'customizationId': customizationId,
       'appliedAt': DateTime.now().toIso8601String(),
@@ -193,7 +313,6 @@ class _PetHomePageState extends State<PetHomePage> {
       'purchasedItemId': purchasedItemId,
     });
 
-    /// Reduce quantity
     final data = await supabase
         .from('UserPurchasedItem')
         .select('quantity')
@@ -201,24 +320,26 @@ class _PetHomePageState extends State<PetHomePage> {
         .single();
 
     int qty = (data['quantity'] as num).toInt();
-    qty--;
 
-    if (qty <= 0) {
+    print("Before consume qty = $qty");
+
+    if (qty > 1) {
       await supabase
           .from('UserPurchasedItem')
-          .delete()
+          .update({'quantity': qty - 1})
           .eq('purchasedItemId', purchasedItemId);
     } else {
       await supabase
           .from('UserPurchasedItem')
-          .update({'quantity': qty})
+          .update({'quantity': 0})
           .eq('purchasedItemId', purchasedItemId);
     }
 
-    /// Increase happiness
     await increaseHappiness(happinessBoost);
 
     showPetMessage("Yum! 🍖 Happiness +$happinessBoost");
+
+    await Future.delayed(const Duration(milliseconds: 300));
   }
 
   Future<void> equipItem(
@@ -228,37 +349,67 @@ class _PetHomePageState extends State<PetHomePage> {
       String slotType,
       ) async {
 
-    /// 1️⃣ Unequip existing items
-    await supabase
+    /// 1️⃣ Unequip same slot
+    final existing = await supabase
         .from('PetCustomization')
-        .update({'isEquipped': false})
-        .eq('petId', widget.petId);
+        .select('''
+        customizationId,
+        UserPurchasedItem (
+          ShopItem (slotType)
+        )
+      ''')
+        .eq('petId', widget.petId)
+        .eq('isEquipped', true);
 
-    /// 2️⃣ Insert new equipped record
-    await supabase.from('PetCustomization').insert({
-      'customizationId': customizationId,
-      'appliedAt': DateTime.now().toIso8601String(),
-      'isConsumed': false,
-      'isEquipped': true,
-      'petId': widget.petId,
-      'purchasedItemId': purchasedItemId,
-    });
+    for (var item in existing) {
+      final existingSlot =
+      item['UserPurchasedItem']?['ShopItem']?['slotType'];
 
-    /// 3️⃣ Increase happiness
-    await supabase
-        .from('Pet')
-        .update({
-      'happinessScore':
-      petData!['happinessScore'] +
-          happinessBoost
-    })
-        .eq('petId', widget.petId);
+      if (existingSlot == slotType) {
+        await supabase
+            .from('PetCustomization')
+            .update({'isEquipped': false})
+            .eq('customizationId', item['customizationId']);
+      }
+    }
+
+    /// 2️⃣ Check duplicate
+    final existingItem = await supabase
+        .from('PetCustomization')
+        .select('customizationId')
+        .eq('petId', widget.petId)
+        .eq('purchasedItemId', purchasedItemId)
+        .maybeSingle();
+
+    if (existingItem != null) {
+      /// ✅ UPDATE
+      await supabase
+          .from('PetCustomization')
+          .update({
+        'isEquipped': true,
+        'isConsumed': false,
+        'appliedAt': DateTime.now().toIso8601String(),
+      })
+          .eq('customizationId', existingItem['customizationId']);
+    } else {
+      /// ✅ INSERT
+      await supabase.from('PetCustomization').insert({
+        'customizationId': customizationId,
+        'appliedAt': DateTime.now().toIso8601String(),
+        'isConsumed': false,
+        'isEquipped': true,
+        'petId': widget.petId,
+        'purchasedItemId': purchasedItemId,
+      });
+    }
+
+    /// 3️⃣ Update happiness
+    await increaseHappiness(happinessBoost);
   }
 
 
   Future<void> increaseHappiness(int boost) async {
-    int current =
-    (petData!['happinessScore'] as num).toInt();
+    int current = (petData!['happinessScore'] as num).toInt();
 
     int newScore = current + boost;
 
@@ -268,6 +419,10 @@ class _PetHomePageState extends State<PetHomePage> {
         .from('Pet')
         .update({'happinessScore': newScore})
         .eq('petId', widget.petId);
+
+    setState(() {
+      petData!['happinessScore'] = newScore;
+    });
   }
 
   void showPetMessage(String msg) {
@@ -366,8 +521,8 @@ class _PetHomePageState extends State<PetHomePage> {
                             MaterialPageRoute(
                               builder: (_) =>
                                   PetShopPage(
-                                    petId:
-                                    widget.petId,
+                                    petId: widget.petId,
+                                    userId: widget.userId,
                                   ),
                             ),
                           );
@@ -404,30 +559,69 @@ class _PetHomePageState extends State<PetHomePage> {
                   child: SizedBox(
                     height: 220,
                     width: 220,
-
                     child: Stack(
-                      alignment: Alignment.center,
                       children: [
 
                         /// 🐾 Base Pet
-                        Image.network(
-                          getPetImage(),
-                          height: 220,
+                        Positioned.fill(
+                          child: Image.network(
+                            getPetImage(),
+                            fit: BoxFit.contain,
+                          ),
                         ),
 
                         /// 👕 Equipped Items
                         ...equippedItems.map((e) {
-                          final item =
-                          e['UserPurchasedItem']['ShopItem'];
+                          final item = e['UserPurchasedItem']['ShopItem'];
 
-                          return Image.network(
-                            item['imagePath'],
-                            height: 220,
+                          /// 👇 MANUAL CONTROL HERE
+                          double offsetX = 0;   // move left/right
+                          double offsetY = 0;   // move up/down
+                          double angle = 0;
+                          double scale = 1.0;   // resize
+
+                          /// Example per type
+                          switch (item['slotType']) {
+                            case "Head":
+                              offsetX = -15;
+                              offsetY = -60;
+                              scale = 0.4;
+                              angle = -0.3;
+                              break;
+
+                            case "Body":
+                              offsetX = 10;
+                              offsetY = 60;
+                              scale = 0.6;
+                              break;
+
+                            case "Accessory":
+                              offsetX = 30;
+                              offsetY = -10;
+                              scale = 0.6;
+                              break;
+                          }
+
+                          return Transform.translate(
+                            offset: Offset(offsetX, offsetY),
+
+                            child: Transform.rotate(
+                              angle: angle,
+
+                              child: Transform.scale(
+                                scale: scale,
+
+                                child: Image.network(
+                                  item['imagePath'],
+                                  height: 220,
+                                ),
+                              ),
+                            ),
                           );
                         }).toList(),
                       ],
                     ),
-                  ),
+                  )
                 ),
 
 
@@ -656,9 +850,9 @@ class _PetHomePageState extends State<PetHomePage> {
                 filteredItems[itemIndex]['ShopItem'];
 
                 return GestureDetector(
-                  onTap: () => applyItem(
-                    purchasedItems[itemIndex],
-                  ),
+                  onTap: () async {
+                    await applyItem(filteredItems[itemIndex]);
+                  },
                   child: inventoryItem(item),
                 );
 
@@ -734,7 +928,19 @@ class _PetHomePageState extends State<PetHomePage> {
 
   Widget restrictItem() {
     return GestureDetector(
-      onTap: removeAllEquipment,
+      onTap: () {
+        String slotType;
+
+        if (selectedInventoryCategory == "Accessories") {
+          slotType = "Head";
+        } else if (selectedInventoryCategory == "Clothes") {
+          slotType = "Body";
+        } else {
+          return; // Food no remove
+        }
+
+        removeBySlot(slotType);
+      },
 
       child: Container(
         decoration: BoxDecoration(
@@ -759,4 +965,3 @@ class _PetHomePageState extends State<PetHomePage> {
 
 
 }
-

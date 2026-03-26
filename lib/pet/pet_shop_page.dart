@@ -3,10 +3,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class PetShopPage extends StatefulWidget {
   final String petId;
+  final String userId;
 
   const PetShopPage({
     super.key,
     required this.petId,
+    required this.userId,
   });
 
   @override
@@ -20,13 +22,14 @@ class _PetShopPageState extends State<PetShopPage> {
   List items = [];
 
   String selectedCategory = "Food";
-  int coinBalance = 26; // temporary
+  int coinBalance = 0;
 
   @override
   void initState() {
     super.initState();
     fetchItems();
     fetchPet();
+    fetchUser();
   }
 
   /// 🐾 Fetch Pet + Mood Paths
@@ -67,6 +70,7 @@ class _PetShopPageState extends State<PetShopPage> {
     }
   }
 
+
   /// 🛒 Fetch Items
   Future<void> fetchItems() async {
     final data = await supabase
@@ -77,6 +81,18 @@ class _PetShopPageState extends State<PetShopPage> {
 
     setState(() {
       items = data;
+    });
+  }
+
+  Future<void> fetchUser() async {
+    final data = await supabase
+        .from('User')
+        .select('coinbalance')
+        .eq('userId', widget.userId)
+        .single();
+
+    setState(() {
+      coinBalance = (data['coinbalance'] as num).toInt();
     });
   }
 
@@ -97,41 +113,71 @@ class _PetShopPageState extends State<PetShopPage> {
     return "UPI${number.toString().padLeft(5, '0')}";
   }
 
+  Future<Map<String, dynamic>?> getExistingItem(String itemId) async {
+    final data = await supabase
+        .from('UserPurchasedItem')
+        .select('purchasedItemId, quantity')
+        .eq('userId', widget.userId)
+        .eq('itemId', itemId)
+        .limit(1);
+
+    if (data.isEmpty) return null;
+    return data.first;
+  }
+
   /// 🛍 Buy Item
   Future<void> buyItem(Map item) async {
     int price = (item['price'] as num).toInt();
+    String slotType = item['slotType'];
 
     if (coinBalance < price) {
-      showMessage(
-        "Coin not enough.",
-        success: false,
-      );
-
+      showMessage("Coin not enough.", success: false);
       return;
     }
 
-    String purchaseId =
-    await generatePurchaseId();
+    final existing = await getExistingItem(item['itemId']);
 
-    await supabase.from('UserPurchasedItem').insert({
-      'purchasedItemId': purchaseId,
-      'quantity': 1,
-      'isUnlocked': true,
-      'acquiredAt':
-      DateTime.now().toIso8601String(),
-      'userId': null,
-      'itemId': item['itemId'],
-    });
+    /// ❌ Non-food already owned → block
+    if (existing != null && slotType != "Consumable") {
+      showMessage("You already own this item!", success: false);
+      return;
+    }
 
-    setState(() {
-      coinBalance -= price;
-    });
+    /// 💰 Deduct coin FIRST
+    int newBalance = coinBalance - price;
 
-    showMessage(
-      "Purchase Success 🎉",
-      success: true,
-    );
+    await supabase
+        .from('User')
+        .update({'coinbalance': newBalance})
+        .eq('userId', widget.userId);
 
+    /// 🍖 FOOD → increase quantity
+    if (existing != null && slotType == "Consumable") {
+      int newQty = (existing['quantity'] as num).toInt() + 1;
+
+      await supabase
+          .from('UserPurchasedItem')
+          .update({'quantity': newQty})
+          .eq('purchasedItemId', existing['purchasedItemId']);
+    }
+
+    /// 🆕 NEW ITEM
+    else {
+      String purchaseId = await generatePurchaseId();
+
+      await supabase.from('UserPurchasedItem').insert({
+        'purchasedItemId': purchaseId,
+        'quantity': 1,
+        'isUnlocked': true,
+        'acquiredAt': DateTime.now().toIso8601String(),
+        'userId': widget.userId,
+        'itemId': item['itemId'],
+      });
+    }
+
+    await fetchUser();
+
+    showMessage("Purchase Success 🎉", success: true);
   }
 
   /// 🔔 Confirm Dialog

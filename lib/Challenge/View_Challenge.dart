@@ -74,23 +74,23 @@ class ViewChallengePage extends StatelessWidget {
                       },
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  Expanded(
-                    child: _buildCard(
-                      imagePath: 'assets/images/createChallenge.png',
-                      title: 'Create Challenge',
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => CustomChallengePage(
-                              userId: userId,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+                  // const SizedBox(height: 20),
+                  // Expanded(
+                  //   child: _buildCard(
+                  //     imagePath: 'assets/images/createChallenge.png',
+                  //     title: 'Create Challenge',
+                  //     onTap: () {
+                  //       Navigator.push(
+                  //         context,
+                  //         MaterialPageRoute(
+                  //           builder: (_) => CustomChallengePage(
+                  //             userId: userId,
+                  //           ),
+                  //         ),
+                  //       );
+                  //     },
+                  //   ),
+                  // ),
                   const SizedBox(height: 20),
                   Expanded(
                     child: _buildCard(

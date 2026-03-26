@@ -35,7 +35,10 @@ class ChallengeTrackingService {
           endDate,
           isComplete,
           coinEarned,
-          isWinner
+          isWinner,
+          Challenge (
+            achievementId
+            )
         ''')
           .eq('userId', userId)
           .not('challengeId', 'is', null)
@@ -77,6 +80,7 @@ class ChallengeTrackingService {
     final endDate = DateTime.parse(participant['endDate']);
     final today = DateTime.now();
     final alreadyRewarded = (participant['coinEarned'] ?? 0) > 0;
+    final achievementId = participant['Challenge']?['achievementId'];
 
     int streak = 0;
 
@@ -135,6 +139,11 @@ class ChallengeTrackingService {
 
     if (isWinner && !alreadyRewarded) {
       await rewardUserCoins(userId, 50);
+
+      await awardAchievement(
+        userId,
+        achievementId,
+      );
     }
   }
 
@@ -148,6 +157,7 @@ class ChallengeTrackingService {
     final endDate = DateTime.parse(participant['endDate']);
     final now = DateTime.now();
     final alreadyRewarded = (participant['coinEarned'] ?? 0) > 0;
+    final achievementId = participant['Challenge']?['achievementId'];
 
     final budgetData = await supabase
         .from('Budget')
@@ -195,6 +205,11 @@ class ChallengeTrackingService {
 
     if (isComplete && isWinner && !alreadyRewarded) {
       await rewardUserCoins(userId, 60);
+
+      await awardAchievement(
+        userId,
+        achievementId,
+      );
     }
   }
 
@@ -208,6 +223,7 @@ class ChallengeTrackingService {
     final endDate = DateTime.parse(participant['endDate']);
     final now = DateTime.now();
     final alreadyRewarded = (participant['coinEarned'] ?? 0) > 0;
+    final achievementId = participant['Challenge']?['achievementId'];
 
     final impulseCategories = [
       'entertainment',
@@ -292,6 +308,10 @@ class ChallengeTrackingService {
 
     if (isComplete && isWinner && !alreadyRewarded) {
       await rewardUserCoins(userId, 40);
+      await awardAchievement(
+        userId,
+        achievementId,
+      );
     }
   }
 
@@ -305,6 +325,7 @@ class ChallengeTrackingService {
     final endDate = DateTime.parse(participant['endDate']);
     final now = DateTime.now();
     final alreadyRewarded = (participant['coinEarned'] ?? 0) > 0;
+    final achievementId = participant['Challenge']?['achievementId'];
 
     final incomeTransactions = await supabase
         .from('Transaction')
@@ -357,6 +378,10 @@ class ChallengeTrackingService {
 
     if (isComplete && isWinner && !alreadyRewarded) {
       await rewardUserCoins(userId, 50);
+      await awardAchievement(
+        userId,
+        achievementId,
+      );
     }
   }
 
@@ -373,5 +398,54 @@ class ChallengeTrackingService {
         .from('User')
         .update({'coinbalance': currentCoins + coins})
         .eq('userId', userId);
+  }
+
+  Future<void> awardAchievement(
+      String userId,
+      String achievementId,
+      ) async {
+
+    if (achievementId == null) return;
+
+    /// 1️⃣ Prevent duplicate
+    final existing = await supabase
+        .from('UserAchievement')
+        .select('userAchievementId')
+        .eq('userId', userId)
+        .eq('achievementId', achievementId)
+        .maybeSingle();
+
+    if (existing != null) {
+      print("Achievement already exists");
+      return;
+    }
+
+    /// 2️⃣ Generate ID
+    final last = await supabase
+        .from('UserAchievement')
+        .select('userAchievementId')
+        .order('userAchievementId', ascending: false)
+        .limit(1);
+
+    String newId;
+
+    if (last.isEmpty) {
+      newId = "UA00001";
+    } else {
+      String lastId = last.first['userAchievementId'];
+      int num = int.parse(lastId.substring(2));
+      num++;
+      newId = "UA${num.toString().padLeft(5, '0')}";
+    }
+
+    /// 3️⃣ Insert
+    await supabase.from('UserAchievement').insert({
+      'userAchievementId': newId,
+      'awardedAt': DateTime.now().toIso8601String(),
+      'userId': userId,
+      'achievementId': achievementId,
+    });
+
+    print("🏆 Achievement awarded: $achievementId");
   }
 }

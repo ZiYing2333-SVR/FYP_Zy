@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 final _formKey = GlobalKey<FormState>();
 
 class NamePetPage extends StatefulWidget {
+  final String userId;
   final String petChoiceId;
   final String category;
   final String imageUrl;
@@ -12,6 +13,7 @@ class NamePetPage extends StatefulWidget {
 
   const NamePetPage({
     super.key,
+    required this.userId,
     required this.petChoiceId,
     required this.category,
     required this.imageUrl,
@@ -46,7 +48,7 @@ class _NamePetPageState extends State<NamePetPage> {
         'happinessScore': 80, // default
         'createdAt': DateTime.now().toIso8601String(),
         'petChoiceId': widget.petChoiceId,
-        'userId': null, // temporary
+        'userId': widget.userId,
       });
 
       /// Navigate to greeting page
@@ -55,6 +57,7 @@ class _NamePetPageState extends State<NamePetPage> {
         MaterialPageRoute(
           builder: (_) => PetGreetingPage(
             petId: newPetId,
+            userId: widget.userId,
             petName: nameController.text.trim(),
             imageUrl: widget.imageUrl,
           ),

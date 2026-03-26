@@ -3,7 +3,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 class AchievementPage extends StatefulWidget {
-  const AchievementPage({super.key});
+  final String userId;
+
+  const AchievementPage({super.key,required this.userId});
 
   @override
   State<AchievementPage> createState() =>
@@ -49,7 +51,8 @@ class _AchievementPageState
           rewardCoins,
           iconName
         )
-      ''');
+      ''')
+    .eq('userId', widget.userId);
 
     debugPrint("ACH DATA: $data");
 

@@ -4,7 +4,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'name_pet_page.dart';
 class SelectPetPage extends StatefulWidget {
-  const SelectPetPage({super.key});
+  final String userId;
+  const SelectPetPage({super.key,required this.userId});
 
   @override
   State<SelectPetPage> createState() => _SelectPetPageState();
@@ -120,6 +121,7 @@ class _SelectPetPageState extends State<SelectPetPage> {
                               context,
                               MaterialPageRoute(
                                 builder: (_) => NamePetPage(
+                                  userId: widget.userId,
                                   petChoiceId: pet['petChoiceId'],
                                   category: pet['category'],
                                   imageUrl: imageUrl,

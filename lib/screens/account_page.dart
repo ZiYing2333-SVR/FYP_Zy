@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../pet/pet_home_page.dart';
+import '../pet/pet_main.dart';
 import '../utils/bank_icon_helper.dart';
 import '../services/budget_forecast_service.dart';
 import 'home_screen.dart';
@@ -219,6 +221,45 @@ class _AccountPageState extends State<AccountPage> {
         ),
         child: const Icon(Icons.account_balance_wallet, size: 20),
       );
+    }
+  }
+
+  Future<void> _handlePetNavigation() async {
+    try {
+      final supabase = Supabase.instance.client;
+
+      final response = await supabase
+          .from('Pet')
+          .select('petId') // 👈 only get petId
+          .eq('userId', widget.userId)
+          .maybeSingle();
+
+      if (response != null) {
+        final petId = response['petId'];
+
+        // ✅ Navigate with petId
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PetHomePage(
+              userId: widget.userId,
+              petId: petId,
+            ),
+          ),
+        );
+      } else {
+        // ❌ No pet → go create page
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PetMainPage(
+              userId: widget.userId,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error checking pet: $e');
     }
   }
 
@@ -636,7 +677,10 @@ class _AccountPageState extends State<AccountPage> {
                     builder: (context) => HomeScreen(userId: widget.userId),
                   ),
                 );
-              } else if (index == 3) {
+              }else if (index == 2) {
+                // 🐶 PET LOGIC HERE
+                _handlePetNavigation();
+              }  else if (index == 3) {
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
