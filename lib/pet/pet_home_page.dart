@@ -145,6 +145,7 @@ class _PetHomePageState extends State<PetHomePage> {
         happinessBoost
       )
     ''')
+        .eq('userId', widget.userId)
         .gte('quantity', 1);
 
     setState(() {
