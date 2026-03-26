@@ -46,7 +46,7 @@ dependencies:
   http: ^1.1.0
   url_launcher: ^6.3.0
 
-  rive: ^0.13.0
+  flame: ^1.14.0
 
 
   # The following adds the Cupertino Icons font to your application.

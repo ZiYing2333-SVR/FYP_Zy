@@ -3,6 +3,7 @@ import 'package:fyp_wx/pet/pet_shop_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fyp_wx/main.dart';
 import 'dart:async';
+import 'package:fyp_wx/pet/pet_game_widget.dart';
 
 class PetHomePage extends StatefulWidget {
   final String petId;
@@ -456,6 +457,8 @@ class _PetHomePageState extends State<PetHomePage> {
   }
 
 
+
+
   /// 🧠 Decide which image to show
   String getPetImage() {
     if (petData == null) return "";
@@ -557,71 +560,16 @@ class _PetHomePageState extends State<PetHomePage> {
                 /// Pet
                 Center(
                   child: SizedBox(
-                    height: 220,
                     width: 220,
-                    child: Stack(
-                      children: [
-
-                        /// 🐾 Base Pet
-                        Positioned.fill(
-                          child: Image.network(
-                            getPetImage(),
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-
-                        /// 👕 Equipped Items
-                        ...equippedItems.map((e) {
-                          final item = e['UserPurchasedItem']['ShopItem'];
-
-                          /// 👇 MANUAL CONTROL HERE
-                          double offsetX = 0;   // move left/right
-                          double offsetY = 0;   // move up/down
-                          double angle = 0;
-                          double scale = 1.0;   // resize
-
-                          /// Example per type
-                          switch (item['slotType']) {
-                            case "Head":
-                              offsetX = -15;
-                              offsetY = -60;
-                              scale = 0.4;
-                              angle = -0.3;
-                              break;
-
-                            case "Body":
-                              offsetX = 10;
-                              offsetY = 60;
-                              scale = 0.6;
-                              break;
-
-                            case "Accessory":
-                              offsetX = 30;
-                              offsetY = -10;
-                              scale = 0.6;
-                              break;
-                          }
-
-                          return Transform.translate(
-                            offset: Offset(offsetX, offsetY),
-
-                            child: Transform.rotate(
-                              angle: angle,
-
-                              child: Transform.scale(
-                                scale: scale,
-
-                                child: Image.network(
-                                  item['imagePath'],
-                                  height: 220,
-                                ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ],
+                    height: 220,
+                    child: ClipRect(
+                      child: PetGameWidget(
+                        key: ValueKey("${petData!['happinessScore']}_${equippedItems.length}"),
+                        petData: petData!,
+                        equippedItems: equippedItems,
+                      ),
                     ),
-                  )
+                  ),
                 ),
 
 
