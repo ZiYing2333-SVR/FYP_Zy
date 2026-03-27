@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:intl/intl.dart';
 import 'home_screen.dart';
 import 'account_page.dart';
 import 'settings_screen.dart';
@@ -259,32 +258,6 @@ class _SavingsPageState extends State<SavingsPage> {
     } catch (e) {
       return 'Unknown';
     }
-  }
-
-  void _navigateTo(int index) {
-    if (index == _selectedNavIndex) return;
-
-    Widget nextPage;
-    switch (index) {
-      case 0:
-        nextPage = HomeScreen(userId: widget.userId);
-        break;
-      case 1:
-        nextPage = AccountPage(userId: widget.userId);
-        break;
-      case 3:
-        return;
-      case 4:
-        nextPage = SettingsScreen(userId: widget.userId);
-        break;
-      default:
-        return;
-    }
-
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => nextPage),
-    );
   }
 
   Future<void> _deleteSavingGoal(String goalId) async {

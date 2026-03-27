@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/ai_service.dart';
+import '../utils/transaction_parser.dart';
 import 'auto_expense_confirmation_screen.dart';
+import 'confirm_bulk_transactions.dart';
+import 'home_screen.dart';
 
 class AutoExpenseCategorization extends StatefulWidget {
   final String userId;
@@ -17,23 +21,37 @@ class AutoExpenseCategorization extends StatefulWidget {
       _AutoExpenseCategorizationState();
 }
 
-class _AutoExpenseCategorizationState extends State<AutoExpenseCategorization> {
+class _AutoExpenseCategorizationState extends State<AutoExpenseCategorization>
+    with WidgetsBindingObserver {
   late TextEditingController _noteController;
   bool _isAnalyzing = false;
   List<Map<String, dynamic>> _categories = [];
   bool _isLoadingCategories = true;
+  List<Map<String, dynamic>> _accounts = [];
 
   @override
   void initState() {
     super.initState();
     _noteController = TextEditingController();
+    WidgetsBinding.instance.addObserver(this);
     _fetchCategories();
+    _fetchAccounts();
   }
 
   @override
   void dispose() {
     _noteController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// Refresh categories when screen comes to focus
+  /// This ensures newly added categories are available
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _fetchCategories();
+    }
   }
 
   Future<void> _fetchCategories() async {
@@ -49,6 +67,21 @@ class _AutoExpenseCategorizationState extends State<AutoExpenseCategorization> {
     }
   }
 
+  Future<void> _fetchAccounts() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('Account')
+          .select()
+          .eq('userId', widget.userId);
+
+      setState(() {
+        _accounts = List<Map<String, dynamic>>.from(response);
+      });
+    } catch (e) {
+      print('Error fetching accounts: $e');
+    }
+  }
+
   Future<void> _analyzeNote() async {
     if (_noteController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -57,11 +90,28 @@ class _AutoExpenseCategorizationState extends State<AutoExpenseCategorization> {
       return;
     }
 
+    final noteText = _noteController.text.trim();
+
+    // **NEW: Check if bulk format (semicolon in note)**
+    print('\n🔍 === AI CATEGORIZATION SCREEN ===');
+    print('Note text: "$noteText"');
+    print('Contains semicolon: ${noteText.contains(";")}');
+
+    final isBulk = TransactionParser.isBulkFormat(noteText);
+
+    if (isBulk) {
+      print('✓ BULK FORMAT DETECTED in AI flow - Routing to bulk handler');
+      _handleBulkInAIFlow(noteText);
+      return;
+    }
+
+    print('✗ Single transaction format - Using AI analysis');
+
     setState(() => _isAnalyzing = true);
 
     try {
       final result = await AIService.analyzeTransactionNote(
-        _noteController.text,
+        noteText,
         _categories,
       );
 
@@ -74,7 +124,7 @@ class _AutoExpenseCategorizationState extends State<AutoExpenseCategorization> {
               builder: (context) => AutoExpenseConfirmation(
                 userId: widget.userId,
                 ledgerId: widget.ledgerId,
-                note: _noteController.text,
+                note: noteText,
                 aiResult: result,
                 allCategories: _categories,
               ),
@@ -99,6 +149,79 @@ class _AutoExpenseCategorizationState extends State<AutoExpenseCategorization> {
         setState(() => _isAnalyzing = false);
       }
     }
+  }
+
+  /// Handle bulk transactions in AI flow
+  void _handleBulkInAIFlow(String noteText) {
+    print('\n📊 === BULK TRANSACTION IN AI FLOW ===');
+    print('Raw input: "$noteText"');
+
+    // Parse bulk format
+    final parsedTransactions = TransactionParser.parseBulk(noteText);
+    print('Parsed ${parsedTransactions.length} transactions');
+
+    // Validate
+    final validationError = TransactionParser.validateTransactions(
+      parsedTransactions,
+    );
+    if (validationError != null) {
+      print('❌ Validation error: $validationError');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Invalid bulk format!',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(validationError),
+              const SizedBox(height: 8),
+              const Text(
+                'Format: "note, amount; note, amount"',
+                style: TextStyle(fontSize: 12),
+              ),
+            ],
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+      return;
+    }
+
+    print('✓ All transactions valid - Routing to bulk confirmation');
+
+    // Navigate to bulk confirmation screen with AI service for categorization
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (context) => ConfirmBulkTransactionsScreen(
+              userId: widget.userId,
+              ledgerId: widget.ledgerId,
+              parsedTransactions: parsedTransactions,
+              selectedType: 'expense', // AI flow is for expenses
+              selectedAccountId: null, // User selects on confirmation screen
+              selectedFromAccountId: null,
+              selectedToAccountId: null,
+              accounts: _accounts,
+              categories: _categories,
+            ),
+          ),
+        )
+        .then((result) {
+          if (result == true) {
+            // Success - navigate back to home page to show updated transactions
+            print('\n✓ Bulk transactions saved successfully');
+            Navigator.of(context)
+              ..pop() // Close AI categorization screen
+              ..pushReplacement(
+                MaterialPageRoute(
+                  builder: (context) => HomeScreen(userId: widget.userId),
+                ),
+              );
+          }
+        });
   }
 
   @override
@@ -146,6 +269,49 @@ class _AutoExpenseCategorizationState extends State<AutoExpenseCategorization> {
                     ),
                   ),
                   const SizedBox(height: 16),
+                  // Format guide
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE3F2FD),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: const Color(0xFF1976D2),
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Format Guide:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1976D2),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          '📌 Single: "breakfast bread 2.80"',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF333333),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          '📌 Bulk (use ;): "bread, 2.80; coffee, 5.50; lunch, 12.00"',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF1976D2),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   // Input Field
                   Container(
                     decoration: BoxDecoration(
@@ -164,10 +330,11 @@ class _AutoExpenseCategorizationState extends State<AutoExpenseCategorization> {
                       minLines: 4,
                       maxLines: 6,
                       decoration: InputDecoration(
-                        hintText: 'e.g., Breakfast bread RM2.80',
+                        hintText:
+                            'Single: "breakfast bread 2.80" or Bulk: "bread, 2.80; coffee, 5.50"',
                         hintStyle: TextStyle(
                           color: Colors.black.withOpacity(0.5),
-                          fontSize: 14,
+                          fontSize: 13,
                         ),
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.all(16),

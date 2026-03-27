@@ -198,6 +198,7 @@ class _AddTransactionState extends State<AddTransaction> {
   }
 
   Future<void> _saveTransaction() async {
+    // Original single transaction logic
     // Validate based on transaction type
     if (_selectedType == 'transfer') {
       if (_selectedFromAccountId == null) {
@@ -1334,13 +1335,20 @@ class _AddTransactionState extends State<AddTransaction> {
               color: Color(0xFFF39C12),
             ),
           ),
-          content: TextField(
-            controller: _noteController,
-            decoration: const InputDecoration(
-              hintText: 'Enter your note',
-              hintStyle: TextStyle(color: Color(0xFF666666)),
-            ),
-            maxLines: 3,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: _noteController,
+                decoration: const InputDecoration(
+                  hintText: 'e.g., Breakfast bread RM2.80',
+                  hintStyle: TextStyle(color: Color(0xFF999999), fontSize: 12),
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 4,
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -1351,7 +1359,11 @@ class _AddTransactionState extends State<AddTransaction> {
               ),
             ),
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () {
+                // Text is already saved in _noteController via controller property
+                print('✓ Note saved: "${_noteController.text}"');
+                Navigator.pop(context);
+              },
               child: const Text(
                 'Save',
                 style: TextStyle(color: Color(0xFFA7E399)),
@@ -1476,47 +1488,6 @@ class _AddTransactionState extends State<AddTransaction> {
           ),
         );
       },
-    );
-  }
-
-  Widget _buildKeyboardButton(String label, {int flex = 1}) {
-    bool isSpecial =
-        label == 'C' ||
-        label == '<' ||
-        label == '✓' ||
-        label == '.' ||
-        label == '+' ||
-        label == '*';
-
-    return Expanded(
-      flex: flex,
-      child: GestureDetector(
-        onTap: () => _handleNumberInput(label),
-        child: Container(
-          height: 35,
-          margin: const EdgeInsets.symmetric(horizontal: 2),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: Colors.grey[300] ?? Colors.grey,
-              width: 1,
-            ),
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: label == '✓' ? 18 : 14,
-                fontWeight: FontWeight.bold,
-                color: isSpecial && label != '✓'
-                    ? const Color(0xFF90EE90)
-                    : Colors.black,
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 

@@ -10,7 +10,7 @@ class AIService {
   static const String huggingFaceModel =
       'facebook/bart-large-mnli'; // Zero-shot classification model
   static const String huggingFaceApiUrl =
-      'https://api-inference.huggingface.co/models/facebook/bart-large-mnli'; // Hugging Face API endpoint
+      'https://router.huggingface.co/hf-inference/models/facebook/bart-large-mnli'; // Inference Providers Router (more reliable)
 
   /// Extracts amount from transaction note
   /// Matches patterns like "RM2.80", "RM 2.80", "2000", "200.50", etc.
@@ -93,6 +93,12 @@ class AIService {
   }
 
   /// Calls Hugging Face API for transaction categorization using zero-shot classification
+  ///
+  /// HYBRID APPROACH:
+  /// 1. 🚀 TRY API FIRST - Uses Hugging Face zero-shot classification
+  ///    Returns rich scoring data for all categories
+  /// 2. ⚠️ FALLBACK ON FAILURE - If API fails/times out, uses keyword matching
+  ///    Provides instant categorization when API is unavailable
   static Future<Map<String, dynamic>> _callHuggingFaceAPI(
     String note,
     List<Map<String, dynamic>> categories,
@@ -102,37 +108,135 @@ class AIService {
       // Prepare candidate labels (category names)
       final candidateLabels = categoryNames;
 
-      // Call Hugging Face API for zero-shot classification
-      final response = await http
-          .post(
-            Uri.parse(huggingFaceApiUrl),
-            headers: {
-              'Authorization': 'Bearer $huggingFaceApiKey',
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode({
-              'inputs': note,
-              'parameters': {
-                'candidate_labels': candidateLabels,
-                'hypothesis_template': 'This text is about {}.',
-              },
-            }),
-          )
-          .timeout(
-            const Duration(seconds: 15),
-            onTimeout: () =>
-                throw Exception('Hugging Face API request timeout'),
-          );
+      // DEBUG: Check if token is loaded
+      final token = huggingFaceApiKey;
+      print('\n📡 === HUGGING FACE API REQUEST ===');
+      print('🔑 Token status: ${token.isEmpty ? "❌ NO TOKEN FOUND" : "✓ Token loaded (${token.length} chars)"}');
+      print('📝 Note to analyze: "$note"');
+      print('🏷️  Categories: ${candidateLabels.length} items');
+      print('🔗 API endpoint: $huggingFaceApiUrl');
+      print('---');
+
+      // Retry logic: try up to 3 times with exponential backoff
+      const maxRetries = 3;
+      int retryCount = 0;
+      late dynamic result; // Can be List or Map depending on endpoint response format
+      late http.Response response;
+
+      while (retryCount < maxRetries) {
+        try {
+          // Call Hugging Face API for zero-shot classification
+          response = await http
+              .post(
+                Uri.parse(huggingFaceApiUrl),
+                headers: {
+                  'Authorization': 'Bearer $token',
+                  'Content-Type': 'application/json',
+                },
+                body: jsonEncode({
+                  'inputs': note,
+                  'parameters': {
+                    'candidate_labels': candidateLabels,
+                    'hypothesis_template': 'This text is about {}.',
+                  },
+                }),
+              )
+              .timeout(
+                const Duration(seconds: 15),
+                onTimeout: () =>
+                    throw Exception('Hugging Face API request timeout'),
+              );
+
+          // If successful, break out of retry loop
+          if (response.statusCode == 200) {
+            print('✓ API request succeeded on attempt ${retryCount + 1}');
+            break;
+          } else if (response.statusCode >= 500) {
+            // Server error - retry
+            retryCount++;
+            if (retryCount < maxRetries) {
+              final delaySeconds = (1 << retryCount); // 2, 4 seconds
+              print('⚠️ Server error (${response.statusCode}) - retrying in ${delaySeconds}s (attempt ${retryCount + 1}/$maxRetries)');
+              await Future.delayed(Duration(seconds: delaySeconds));
+              continue;
+            }
+          }
+          // Other error status codes don't retry
+          break;
+        } on Exception catch (e) {
+          retryCount++;
+          if (retryCount < maxRetries && (e.toString().contains('timeout') || e.toString().contains('Failed to fetch'))) {
+            final delaySeconds = (1 << retryCount);
+            print('⚠️ Network error: $e - retrying in ${delaySeconds}s (attempt ${retryCount + 1}/$maxRetries)');
+            await Future.delayed(Duration(seconds: delaySeconds));
+            continue;
+          }
+          // Max retries reached or non-recoverable error
+          rethrow;
+        }
+      }
 
       if (response.statusCode == 200) {
-        final result = jsonDecode(response.body);
+        try {
+          result = jsonDecode(response.body);
+        } catch (e) {
+          print('❌ JSON decode failed: $e');
+          print('Response body: ${response.body}');
+          print('⚠️ USING FALLBACK: Keyword-based categorization...\n');
+          return _getMockAIResponse(note, categories);
+        }
 
-        print('\n=== Hugging Face API Response ===');
-        print('API Result: $result');
+        print('\n✅ === HUGGING FACE API RESPONSE (SUCCESS) ===');
+        print('Response type: ${result.runtimeType}');
+        print('Response size: ${jsonEncode(result).length} chars');
+
+        // IMPORTANT: Router endpoint returns flat array format: [{label: "Food", score: 0.95}, ...]
+        // NOT the standard API format: {labels: [...], scores: [...]}
+        // Convert router format to standard format
+        if (result is List<dynamic> && result.isNotEmpty) {
+          print('🔄 Converting router array format to standard Hugging Face format...');
+          
+          // Extract labels and scores from array of objects
+          final labels = <String>[];
+          final scores = <double>[];
+          
+          for (var item in result) {
+            if (item is Map<String, dynamic>) {
+              final label = item['label'] as String?;
+              final score = item['score'] as num?;
+              
+              if (label != null && score != null) {
+                labels.add(label);
+                scores.add(score.toDouble());
+              }
+            }
+          }
+          
+          // Reconstruct as standard format
+          if (labels.isNotEmpty && scores.isNotEmpty) {
+            result = <String, dynamic>{
+              'labels': labels,
+              'scores': scores,
+            };
+            print('✓ Converted ${labels.length} items to standard format');
+          } else {
+            print('❌ Could not extract labels/scores from response');
+            print('⚠️ USING FALLBACK: Keyword-based categorization...\n');
+            return _getMockAIResponse(note, categories);
+          }
+        }
+
+        // Ensure result is a Map before accessing fields
+        if (result is! Map<String, dynamic>) {
+          print('❌ Final result is ${result.runtimeType}, expected Map<String, dynamic>');
+          print('⚠️ USING FALLBACK: Keyword-based categorization...\n');
+          return _getMockAIResponse(note, categories);
+        }
 
         // Extract results from Hugging Face response
-        final scores = result['scores'] as List<dynamic>?;
-        final labels = result['labels'] as List<dynamic>?;
+        try {
+          final labels = result['labels'] as List<dynamic>?;
+          final scores = result['scores'] as List<dynamic>?;
 
         if (scores != null && labels != null && scores.isNotEmpty) {
           // Get top result
@@ -160,15 +264,60 @@ class AIService {
           // Extract amount from note
           final amount = extractAmountFromNote(note);
 
+          // CHECK: Does API-suggested category exist in database?
+          final suggestedCategoryExists = categories.any(
+            (cat) =>
+                (cat['name'] as String?)?.toLowerCase() ==
+                topLabel.toLowerCase(),
+          );
+
+          String finalCategory = topLabel;
+          List<Map<String, dynamic>> finalCategoryScores = categoryScores;
+          bool categoryAdjusted = false;
+
+          // If suggested category doesn't exist, find similar ones
+          if (!suggestedCategoryExists) {
+            print('⚠️ API suggested "$topLabel" but NOT in database');
+            print('🔍 Finding TOP 3 similar categories for user to select...');
+
+            // Find top 3 similar categories
+            final similarities = _findSimilarCategories(topLabel, categories);
+
+            if (similarities.isNotEmpty) {
+              // Use the most similar as the default suggestion
+              finalCategory = similarities[0]['name'] as String;
+              categoryAdjusted = true;
+
+              print(
+                '✓ Top similar categories: ${similarities.map((s) => "${s['name']} (${((s['similarity'] as double) * 100).toStringAsFixed(0)}%)").join(", ")}',
+              );
+
+              // Show top 3 similar categories for user selection
+              // User will pick from these options in confirmation screen
+              finalCategoryScores = <Map<String, dynamic>>[];
+              for (var similar in similarities.take(3)) {
+                finalCategoryScores.add({
+                  'category': similar['name'] as String,
+                  'confidence': similar['similarity'] as double,
+                });
+              }
+            }
+          }
+
           final result = {
             'success': true,
-            'suggestedCategory': topLabel,
-            'confidence': topScore,
+            'suggestedCategory': finalCategory,
+            'confidence': categoryAdjusted
+                ? (finalCategoryScores.isNotEmpty
+                    ? finalCategoryScores[0]['confidence'] as double
+                    : topScore)
+                : topScore,
             'transactionType': transactionType,
             'allCategoryScores':
-                categoryScores, // ALL scores for confirmation page
-            'reasoning':
-                'Analyzed using Hugging Face natural language processing (facebook/bart-large-mnli)',
+                finalCategoryScores, // Show top 3 for user selection
+            'reasoning': categoryAdjusted
+                ? 'API-suggested "$topLabel" not in database. Showing TOP 3 similar categories - please select one.'
+                : 'Analyzed using Hugging Face natural language processing (facebook/bart-large-mnli)',
           };
 
           // Add extracted amount if found
@@ -178,16 +327,27 @@ class AIService {
 
           return result;
         }
+        } catch (e) {
+          print('❌ Error extracting scores/labels from response: $e');
+          print('Response object: $result');
+          print('⚠️ USING FALLBACK: Keyword-based categorization...\n');
+          return _getMockAIResponse(note, categories);
+        }
       } else {
-        print('Hugging Face API error: ${response.statusCode}');
+        print('❌ Hugging Face API HTTP error: ${response.statusCode}');
         print('Response body: ${response.body}');
-        // Fallback to keyword-based categorization
+        print('Response headers: ${response.headers}');
+        print('\n⚠️ USING FALLBACK: Keyword-based categorization...\n');
+        // FALLBACK: API failed, use keyword matching instead
         return _getMockAIResponse(note, categories);
       }
     } catch (e) {
-      print('Error calling Hugging Face API: $e');
+      print('❌ Hugging Face API failed with exception: $e');
+      print('Exception type: ${e.runtimeType}');
       print('Note: "$note"');
-      // Fallback to keyword-based categorization
+      print('Token loaded: ${huggingFaceApiKey.isNotEmpty ? "Yes" : "No"}');
+      print('\n⚠️ USING FALLBACK: Keyword-based categorization...\n');
+      // FALLBACK: API failed (timeout, network error, etc.), use keyword matching instead
       return _getMockAIResponse(note, categories);
     }
 
@@ -246,6 +406,7 @@ class AIService {
     // Mapping rules: common category name -> list of possible database matches
     final mappings = {
       'food': [
+        'food', // Try exact match first
         'groceries',
         'snack',
         'food delivery',
@@ -340,9 +501,10 @@ class AIService {
     double confidence = 0.5;
     String transactionType = 'expense';
 
-    print('\n=== AI Categorization Debug ===');
+    print('\n🔍 === KEYWORD-BASED CATEGORIZATION (FALLBACK) ===');
     print('Note: "$note" (lowercase: "$lowerNote")');
     print('Available categories: ${categories.map((c) => c['name']).toList()}');
+    print('---');
 
     // First, check if the note matches any existing category name from database
     for (var category in categories) {
@@ -396,10 +558,57 @@ class AIService {
       'snack',
       'dessert',
       'bakery',
+      'eat',
+      'meal',
+      'chicken',
+      'seafood',
+      'drinks',
+      'beverage',
+      'grocery',
+      'supermarket',
+      'market',
+      // Additional food items
+      'pasta',
+      'egg',
+      'salted egg',
+      'ramen',
+      'curry',
+      'soup',
+      'stew',
+      'meat',
+      'beef',
+      'pork',
+      'fish',
+      'fruit',
+      'vegetable',
+      'salad',
+      'sandwich',
+      'taco',
+      'fries',
+      'chips',
+      'donut',
+      'cookie',
+      'chocolate',
+      'ice cream',
+      'yogurt',
+      'tofu',
+      'dumpling',
+      'spring roll',
+      'hotpot',
+      'barbecue',
+      'grill',
+      'korean',
+      'japanese',
+      'chinese',
+      'thai',
+      'indian',
+      'meals',
+      'cuisines',
     ])) {
       suggestedCategory = 'Food';
       confidence = 0.95;
       transactionType = 'expense';
+      print('✓ Matched FOOD keywords');
 
       // Map to actual database category if exists
       suggestedCategory = _mapCommonCategoryToDatabase(
@@ -438,6 +647,7 @@ class AIService {
       suggestedCategory = 'Transportation';
       confidence = 0.92;
       transactionType = 'expense';
+      print('✓ Matched TRANSPORTATION keywords');
       suggestedCategory = _mapCommonCategoryToDatabase(
         suggestedCategory,
         categories,
@@ -455,6 +665,7 @@ class AIService {
       suggestedCategory = 'Credit Card Payment';
       confidence = 0.95;
       transactionType = 'expense';
+      print('✓ Matched CREDIT CARD PAYMENT keywords');
       suggestedCategory = _mapCommonCategoryToDatabase(
         suggestedCategory,
         categories,
@@ -471,6 +682,7 @@ class AIService {
       suggestedCategory = 'Loan Payment';
       confidence = 0.94;
       transactionType = 'expense';
+      print('✓ Matched LOAN PAYMENT keywords');
       suggestedCategory = _mapCommonCategoryToDatabase(
         suggestedCategory,
         categories,
@@ -498,6 +710,7 @@ class AIService {
       suggestedCategory = 'Salary';
       confidence = 0.98;
       transactionType = 'income';
+      print('✓ Matched INCOME keywords');
       suggestedCategory = _mapCommonCategoryToDatabase(
         suggestedCategory,
         categories,
@@ -527,6 +740,7 @@ class AIService {
       suggestedCategory = 'Entertainment';
       confidence = 0.90;
       transactionType = 'expense';
+      print('✓ Matched ENTERTAINMENT keywords');
       suggestedCategory = _mapCommonCategoryToDatabase(
         suggestedCategory,
         categories,
@@ -555,6 +769,7 @@ class AIService {
       suggestedCategory = 'Shopping';
       confidence = 0.88;
       transactionType = 'expense';
+      print('✓ Matched SHOPPING keywords');
       suggestedCategory = _mapCommonCategoryToDatabase(
         suggestedCategory,
         categories,
@@ -576,6 +791,7 @@ class AIService {
       suggestedCategory = 'Healthcare';
       confidence = 0.93;
       transactionType = 'expense';
+      print('✓ Matched HEALTHCARE keywords');
       suggestedCategory = _mapCommonCategoryToDatabase(
         suggestedCategory,
         categories,
@@ -597,6 +813,7 @@ class AIService {
       suggestedCategory = 'Utilities';
       confidence = 0.94;
       transactionType = 'expense';
+      print('✓ Matched UTILITIES keywords');
       suggestedCategory = _mapCommonCategoryToDatabase(
         suggestedCategory,
         categories,
@@ -619,6 +836,7 @@ class AIService {
       suggestedCategory = 'Education';
       confidence = 0.91;
       transactionType = 'expense';
+      print('✓ Matched EDUCATION keywords');
       suggestedCategory = _mapCommonCategoryToDatabase(
         suggestedCategory,
         categories,
@@ -629,11 +847,13 @@ class AIService {
       suggestedCategory = 'Others';
       confidence = 0.65;
       transactionType = 'expense';
+      print('✓ Matched AMBIGUOUS keywords: pay/expense/cost/spend');
     } else {
       // Default case for no keyword match
       suggestedCategory = 'Others';
       confidence = 0.50;
       transactionType = 'expense';
+      print('✓ NO KEYWORDS MATCHED - using default category: "Others"');
     }
 
     // Extract amount from note
@@ -666,6 +886,20 @@ class AIService {
         'confidence': topAlternatives[i]['confidence'] as double,
       });
     }
+
+    // DEBUG: Show what was categorized
+    print('');
+    print('✓ AI SUGGESTED CATEGORY: "$suggestedCategory" (${(confidence * 100).toStringAsFixed(1)}%)');
+    if (topAlternatives.isNotEmpty) {
+      print('✓ ALTERNATIVE SUGGESTIONS (for user to choose from):');
+      for (var i = 0; i < topAlternatives.length && i < 3; i++) {
+        final conf = ((topAlternatives[i]['confidence'] as double) * 100).toStringAsFixed(1);
+        print('  ${i + 1}. ${topAlternatives[i]['category']} ($conf%)');
+      }
+    } else {
+      print('⚠️ No alternative suggestions available');
+    }
+    print('');
 
     final result = {
       'success': true,
@@ -770,6 +1004,105 @@ class AIService {
       }
     }
     return false;
+  }
+
+  /// Find top 3 categories similar to the suggested category
+  /// Uses string similarity matching (Levenshtein distance)
+  static List<Map<String, dynamic>> _findSimilarCategories(
+    String suggestedCategory,
+    List<Map<String, dynamic>> allCategories,
+  ) {
+    final suggestions = <Map<String, dynamic>>[];
+    final lowerSuggested = suggestedCategory.toLowerCase();
+
+    // Calculate similarity score for each database category
+    for (var category in allCategories) {
+      final dbCategoryName = (category['name'] as String?)?.toLowerCase() ?? '';
+      if (dbCategoryName.isEmpty) continue;
+
+      // Calculate similarity using multiple methods
+      double similarity = 0.0;
+
+      // Method 1: Substring match (highest weight)
+      if (dbCategoryName.contains(lowerSuggested) ||
+          lowerSuggested.contains(dbCategoryName)) {
+        similarity = 0.95;
+      }
+      // Method 2: Semantic similarity (keyword overlap)
+      else if (_haveSimilarKeywords(lowerSuggested, dbCategoryName)) {
+        similarity = 0.85;
+      }
+      // Method 3: Levenshtein distance (character similarity)
+      else {
+        final distance = _levenshteinDistance(lowerSuggested, dbCategoryName);
+        final maxLength = lowerSuggested.length > dbCategoryName.length
+            ? lowerSuggested.length
+            : dbCategoryName.length;
+        similarity = 1.0 - (distance / maxLength);
+      }
+
+      if (similarity > 0.60) {
+        // Only include if 60%+ similar
+        suggestions.add({
+          'name': category['name'] as String?,
+          'similarity': similarity,
+          'categoryId': category['categoryId'] as String?,
+        });
+      }
+    }
+
+    // Sort by similarity (highest first) and return top 3
+    suggestions.sort(
+      (a, b) =>
+          (b['similarity'] as double).compareTo(a['similarity'] as double),
+    );
+
+    return suggestions.take(3).toList();
+  }
+
+  /// Check if two category names share similar keywords
+  static bool _haveSimilarKeywords(String cat1, String cat2) {
+    final words1 = cat1.split(' ');
+    final words2 = cat2.split(' ');
+
+    for (var word1 in words1) {
+      for (var word2 in words2) {
+        if (word1 == word2 && word1.length > 3) {
+          // Shared word longer than 3 chars
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /// Calculate Levenshtein distance (edit distance between two strings)
+  /// Used for fuzzy string matching
+  static int _levenshteinDistance(String s1, String s2) {
+    final List<List<int>> distances = List.generate(
+      s1.length + 1,
+      (i) => List.generate(s2.length + 1, (j) => 0),
+    );
+
+    for (var i = 0; i <= s1.length; i++) {
+      distances[i][0] = i;
+    }
+    for (var j = 0; j <= s2.length; j++) {
+      distances[0][j] = j;
+    }
+
+    for (var i = 1; i <= s1.length; i++) {
+      for (var j = 1; j <= s2.length; j++) {
+        final cost = s1[i - 1] == s2[j - 1] ? 0 : 1;
+        distances[i][j] = [
+          distances[i - 1][j] + 1, // deletion
+          distances[i][j - 1] + 1, // insertion
+          distances[i - 1][j - 1] + cost, // substitution
+        ].reduce((a, b) => a < b ? a : b);
+      }
+    }
+
+    return distances[s1.length][s2.length];
   }
 
   static String _generateReasoning(String note, String category) {

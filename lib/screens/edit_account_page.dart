@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/bank_icon_helper.dart';
-import 'dart:io';
 import 'dart:typed_data';
 import 'account_manager.dart';
 
@@ -32,7 +31,6 @@ class _EditAccountPageState extends State<EditAccountPage> {
   String? _selectedCurrency;
   bool _countInAsset = true;
   bool _hideBalance = false;
-  File? _customIcon;
   Uint8List? _customIconBytes;
   String? _uploadedIconPath;
   bool _isLoading = false;
@@ -138,9 +136,6 @@ class _EditAccountPageState extends State<EditAccountPage> {
       if (pickedFile != null) {
         final bytes = await pickedFile.readAsBytes();
         setState(() {
-          if (!kIsWeb) {
-            _customIcon = File(pickedFile.path);
-          }
           _customIconBytes = bytes;
         });
       }

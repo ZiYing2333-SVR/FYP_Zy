@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'screens/welcome_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load environment variables from .env file
+  await dotenv.load();
 
   const supabaseUrl = 'https://drohtvfhklvqoeokopey.supabase.co';
   const anonKey = 'sb_publishable_G7rzmuNmAifrbXyuEFgbSg_PaKY75mW';

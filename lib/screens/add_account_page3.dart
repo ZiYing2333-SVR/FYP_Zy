@@ -6,7 +6,6 @@ import '../utils/bank_icon_helper.dart';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
-import 'account_page.dart';
 import 'account_manager.dart';
 
 class CurrencySelectionPage extends StatefulWidget {

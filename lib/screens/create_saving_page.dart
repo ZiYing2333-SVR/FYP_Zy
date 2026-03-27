@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'free_saving_page.dart';
 import 'circle_saving_page.dart';
 import 'saving_goal_assistant_screen.dart';

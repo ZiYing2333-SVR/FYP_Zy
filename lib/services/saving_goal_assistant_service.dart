@@ -321,7 +321,6 @@ class SavingGoalAssistantService {
 
     // Find destination account (typically a savings account)
     Map<String, dynamic>? destAccount;
-    final accountType = sourceAccount?['accountType']?.toString().toLowerCase();
 
     // Look for savings account
     for (final account in accounts) {

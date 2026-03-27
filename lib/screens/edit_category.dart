@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 import 'dart:typed_data';
 
 class EditCategory extends StatefulWidget {
@@ -26,7 +25,6 @@ class _EditCategoryState extends State<EditCategory> {
   bool _isDefaultCategory = false;
   bool _isLoading = false;
   late Map<String, dynamic> _originalCategory;
-  File? _selectedIcon;
   Uint8List? _selectedIconBytes;
   String? _newIconUrl;
   final ImagePicker _imagePicker = ImagePicker();
@@ -67,9 +65,6 @@ class _EditCategoryState extends State<EditCategory> {
     if (pickedFile != null) {
       final bytes = await pickedFile.readAsBytes();
       setState(() {
-        if (!kIsWeb) {
-          _selectedIcon = File(pickedFile.path);
-        }
         _selectedIconBytes = bytes;
       });
     }

@@ -1361,14 +1361,15 @@ class _HomeScreenState extends State<HomeScreen> {
       final date = transaction['date'] != null
           ? DateTime.parse(transaction['date'])
           : DateTime.now();
-      final dateKey = '${date.year}-${date.month}-${date.day}';
+      final dateKey =
+          '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
       if (!groupedByDate.containsKey(dateKey)) {
         groupedByDate[dateKey] = [];
       }
       groupedByDate[dateKey]!.add(transaction);
     }
 
-    // Sort dates in descending order
+    // Sort dates in descending order (latest first)
     final sortedDates = groupedByDate.keys.toList()
       ..sort((a, b) => b.compareTo(a));
 

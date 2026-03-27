@@ -32,11 +32,27 @@ class _AutoExpenseConfirmationState extends State<AutoExpenseConfirmation> {
   late String _transactionType;
   late double _amount;
   late DateTime _selectedDate;
+  late TextEditingController _noteController;
+  late String _currencySymbol;
 
   List<Map<String, dynamic>> _categoryScores = [];
   List<Map<String, dynamic>> _accounts = [];
   bool _isLoadingAccounts = true;
   bool _isSaving = false;
+
+  /// Extract item description from note (removes amount part)
+  /// Example: "breakfast bread 2.80" -> "breakfast bread"
+  String _extractItemDescription(String note) {
+    // Remove amount patterns: "RM2.80", "2.80", "RM 2.80", etc.
+    String itemDescription = note
+        .replaceAll(
+          RegExp(r'\bRM\s*\d+(?:\.\d{1,2})?\b', caseSensitive: false),
+          '',
+        )
+        .replaceAll(RegExp(r'\b\d+(?:\.\d{1,2})?\b'), '')
+        .trim();
+    return itemDescription.isNotEmpty ? itemDescription : note;
+  }
 
   /// Helper function to parse hex color strings
   /// Handles both "#4CAF50" and "0xFF4CAF50" formats
@@ -64,10 +80,21 @@ class _AutoExpenseConfirmationState extends State<AutoExpenseConfirmation> {
     _amount = widget.aiResult['extractedAmount'] ?? 0.0;
     _selectedDate = DateTime.now();
     _selectedAccountId = '';
+    _currencySymbol = 'RM';
+
+    // Extract item description from the full note
+    final itemDescription = _extractItemDescription(widget.note);
+    _noteController = TextEditingController(text: itemDescription);
 
     // Parse category scores from AI result
     _parseAIResults();
     _fetchAccounts();
+  }
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
   }
 
   void _parseAIResults() {
@@ -123,6 +150,13 @@ class _AutoExpenseConfirmationState extends State<AutoExpenseConfirmation> {
         // Auto-select first account if available
         if (accounts.isNotEmpty) {
           _selectedAccountId = accounts[0]['accountId'] as String;
+
+          // Set currency symbol from the default account
+          final currencySymbol =
+              (accounts[0]['Currency'] as Map?)?['symbol'] as String?;
+          if (currencySymbol != null && currencySymbol.isNotEmpty) {
+            _currencySymbol = currencySymbol;
+          }
         }
       });
     } catch (e) {
@@ -155,7 +189,7 @@ class _AutoExpenseConfirmationState extends State<AutoExpenseConfirmation> {
         type: _transactionType,
         transactionDate: _selectedDate,
         categoryId: _selectedCategoryId,
-        note: widget.note,
+        note: _noteController.text,
         ledgerId: widget.ledgerId,
       );
 
@@ -304,34 +338,6 @@ class _AutoExpenseConfirmationState extends State<AutoExpenseConfirmation> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Transaction Note Section
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Transaction Note',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.withOpacity(0.3)),
-                    ),
-                    child: Text(
-                      widget.note,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
                   // AI Confidence Indicator
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -388,7 +394,7 @@ class _AutoExpenseConfirmationState extends State<AutoExpenseConfirmation> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Category Selection Section
+                  // Category Selection Section - Smart Display
                   const Text(
                     'Category',
                     style: TextStyle(
@@ -398,16 +404,43 @@ class _AutoExpenseConfirmationState extends State<AutoExpenseConfirmation> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  if (isHighConfidence)
-                    // Show Auto-Selected Category
-                    _buildCategoryCard(
-                      _selectedCategoryName,
-                      _selectedCategoryConfidence,
-                      true,
-                    )
-                  else
-                    // Show Category Selection with All Options
-                    _buildCategorySelector(),
+                  _buildSmartCategorySelector(),
+                  const SizedBox(height: 24),
+
+                  // Transaction Note Section (Editable)
+                  const Text(
+                    'Transaction Note',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                    ),
+                    child: TextField(
+                      controller: _noteController,
+                      decoration: InputDecoration(
+                        hintText: 'Enter transaction description',
+                        hintStyle: TextStyle(
+                          color: Colors.black.withOpacity(0.5),
+                          fontSize: 14,
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.all(12),
+                      ),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.black87,
+                      ),
+                      maxLines: 2,
+                    ),
+                  ),
                   const SizedBox(height: 24),
 
                   // Amount Section
@@ -432,27 +465,53 @@ class _AutoExpenseConfirmationState extends State<AutoExpenseConfirmation> {
                         ),
                       ],
                     ),
-                    child: TextField(
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: 'Enter amount (e.g., 2.80)',
-                        hintStyle: TextStyle(
-                          color: Colors.black.withOpacity(0.5),
-                          fontSize: 14,
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(
+                            _currencySymbol,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black,
+                            ),
+                          ),
                         ),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.all(12),
-                        prefixText: 'RM ',
-                      ),
-                      style: const TextStyle(color: Colors.black, fontSize: 16),
-                      onChanged: (value) {
-                        _amount = double.tryParse(value) ?? 0.0;
-                      },
-                      controller: TextEditingController(
-                        text: _amount > 0 ? _amount.toStringAsFixed(2) : '',
-                      ),
+                        Expanded(
+                          child: TextField(
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: '0.00',
+                              hintStyle: TextStyle(
+                                color: Colors.black.withOpacity(0.5),
+                                fontSize: 14,
+                              ),
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 12,
+                              ),
+                            ),
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 16,
+                            ),
+                            onChanged: (value) {
+                              setState(() {
+                                _amount = double.tryParse(value) ?? 0.0;
+                              });
+                            },
+                            controller: TextEditingController(
+                              text: _amount > 0
+                                  ? _amount.toStringAsFixed(2)
+                                  : '',
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -533,27 +592,94 @@ class _AutoExpenseConfirmationState extends State<AutoExpenseConfirmation> {
                         underline: const SizedBox(),
                         onChanged: (newValue) {
                           if (newValue != null) {
-                            setState(() => _selectedAccountId = newValue);
+                            setState(() {
+                              _selectedAccountId = newValue;
+
+                              // Update currency symbol when account changes
+                              final selectedAccount = _accounts.firstWhere(
+                                (acc) => acc['accountId'] == newValue,
+                                orElse: () => <String, dynamic>{},
+                              );
+
+                              if (selectedAccount.isNotEmpty) {
+                                final currencySymbol =
+                                    (selectedAccount['Currency']
+                                            as Map?)?['symbol']
+                                        as String?;
+                                if (currencySymbol != null &&
+                                    currencySymbol.isNotEmpty) {
+                                  _currencySymbol = currencySymbol;
+                                }
+                              }
+                            });
                           }
                         },
                         items: _accounts.map((account) {
+                          final iconImage = account['iconImage'] as String?;
+                          final iconUrl =
+                              iconImage != null && iconImage.isNotEmpty
+                              ? AIService.getAccountIconUrl(iconImage)
+                              : null;
+                          final currencySymbol =
+                              (account['Currency'] as Map?)?['symbol']
+                                  as String? ??
+                              'RM';
+
                           return DropdownMenuItem<String>(
                             value: account['accountId'] as String,
                             child: Padding(
                               padding: const EdgeInsets.only(left: 12),
                               child: Row(
                                 children: [
-                                  Container(
-                                    width: 24,
-                                    height: 24,
-                                    decoration: BoxDecoration(
-                                      color: _parseHexColor(
-                                        account['chartColor'] as String? ??
-                                            '#000000',
+                                  // Bank icon or fallback colored circle
+                                  if (iconUrl != null && iconUrl.isNotEmpty)
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: Image.network(
+                                        iconUrl,
+                                        width: 28,
+                                        height: 28,
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) {
+                                              return Container(
+                                                width: 28,
+                                                height: 28,
+                                                decoration: BoxDecoration(
+                                                  color: _parseHexColor(
+                                                    account['chartColor']
+                                                            as String? ??
+                                                        '#A7E399',
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                ),
+                                                child: const Icon(
+                                                  Icons.account_balance,
+                                                  color: Colors.white,
+                                                  size: 16,
+                                                ),
+                                              );
+                                            },
                                       ),
-                                      shape: BoxShape.circle,
+                                    )
+                                  else
+                                    Container(
+                                      width: 28,
+                                      height: 28,
+                                      decoration: BoxDecoration(
+                                        color: _parseHexColor(
+                                          account['chartColor'] as String? ??
+                                              '#A7E399',
+                                        ),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: const Icon(
+                                        Icons.account_balance,
+                                        color: Colors.white,
+                                        size: 16,
+                                      ),
                                     ),
-                                  ),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: Column(
@@ -570,7 +696,7 @@ class _AutoExpenseConfirmationState extends State<AutoExpenseConfirmation> {
                                           ),
                                         ),
                                         Text(
-                                          'RM ${(account['balance'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                                          '$currencySymbol ${(account['balance'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
                                           style: TextStyle(
                                             fontSize: 12,
                                             color: Colors.grey[600],
@@ -750,53 +876,286 @@ class _AutoExpenseConfirmationState extends State<AutoExpenseConfirmation> {
     );
   }
 
-  Widget _buildCategorySelector() {
+  Widget _buildSmartCategorySelector() {
+    if (_categoryScores.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.orange.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.orange.withOpacity(0.3)),
+        ),
+        child: const Text(
+          '⚠️ No categories found.',
+          style: TextStyle(color: Colors.orange, fontSize: 12),
+        ),
+      );
+    }
+
+    final topScore = _categoryScores.isNotEmpty
+        ? (_categoryScores[0]['confidence'] as double)
+        : 0.0;
+    final hasHighConfidence = topScore >= 0.80;
+    final topThree = _categoryScores.take(3).toList();
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_categoryScores.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.orange.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.orange.withOpacity(0.3)),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: hasHighConfidence
+                ? Colors.green.withOpacity(0.1)
+                : Colors.orange.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: hasHighConfidence
+                  ? Colors.green.withOpacity(0.3)
+                  : Colors.orange.withOpacity(0.3),
             ),
-            child: const Text(
-              '⚠️ No categories found. Please check your categories.',
-              style: TextStyle(color: Colors.orange, fontSize: 12),
-            ),
-          )
-        else
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _categoryScores.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final category = _categoryScores[index]['category'] as String;
-              final confidence = _categoryScores[index]['confidence'] as double;
-              final isSelected = category == _selectedCategoryName;
-
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedCategoryName = category;
-                    _selectedCategoryConfidence = confidence;
-
-                    // Find category ID
-                    final categoryDetails = widget.allCategories.firstWhere(
-                      (cat) => (cat['name'] as String?) == category,
-                      orElse: () => <String, dynamic>{'categoryId': ''},
-                    );
-                    _selectedCategoryId =
-                        categoryDetails['categoryId'] as String? ?? '';
-                  });
-                },
-                child: _buildCategoryCard(category, confidence, isSelected),
-              );
-            },
           ),
+          child: Row(
+            children: [
+              Icon(
+                hasHighConfidence ? Icons.check_circle : Icons.info,
+                color: hasHighConfidence ? Colors.green : Colors.orange,
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  hasHighConfidence
+                      ? 'Strong Match (${(topScore * 100).toStringAsFixed(0)}%)'
+                      : 'Weak Match (${(topScore * 100).toStringAsFixed(0)}%) - Choose below',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: hasHighConfidence
+                        ? Colors.green[700]
+                        : Colors.orange[700],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: topThree.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (_, index) {
+            final category = topThree[index]['category'] as String;
+            final confidence = topThree[index]['confidence'] as double;
+            final isSelected = category == _selectedCategoryName;
+            return GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedCategoryName = category;
+                  _selectedCategoryConfidence = confidence;
+                  final categoryDetails = widget.allCategories.firstWhere(
+                    (cat) => (cat['name'] as String?) == category,
+                    orElse: () => <String, dynamic>{'categoryId': ''},
+                  );
+                  _selectedCategoryId =
+                      categoryDetails['categoryId'] as String? ?? '';
+                });
+              },
+              child: _buildCategoryCard(category, confidence, isSelected),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        ElevatedButton.icon(
+          onPressed: () => _showAllCategoriesDialog(),
+          icon: const Icon(Icons.category),
+          label: const Text('Browse All Categories'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black87,
+            side: const BorderSide(color: Color(0xFFA7E399)),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
       ],
+    );
+  }
+
+  void _showAllCategoriesDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: const Color(0xFFFEFFD3),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: Color(0xFFA7E399),
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'All Categories',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: const Icon(Icons.close, color: Colors.black),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: widget.allCategories.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final category = widget.allCategories[index];
+                  final categoryName = category['name'] as String;
+                  final categoryId = category['categoryId'] as String;
+                  final iconPath = category['icon'] as String?;
+                  final isSelected = categoryName == _selectedCategoryName;
+                  final categoryIconUrl =
+                      iconPath != null && iconPath.isNotEmpty
+                      ? AIService.getCategoryIconUrl(iconPath)
+                      : null;
+                  final scoreData = _categoryScores.firstWhere(
+                    (score) => (score['category'] as String) == categoryName,
+                    orElse: () => <String, dynamic>{},
+                  );
+                  final confidence = scoreData.isNotEmpty
+                      ? (scoreData['confidence'] as double? ?? 0.0)
+                      : 0.0;
+
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedCategoryName = categoryName;
+                        _selectedCategoryId = categoryId;
+                        _selectedCategoryConfidence = confidence;
+                      });
+                      Navigator.pop(context);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? const Color(0xFFA7E399).withOpacity(0.3)
+                            : Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isSelected
+                              ? const Color(0xFFA7E399)
+                              : Colors.grey.withOpacity(0.3),
+                          width: isSelected ? 2 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          if (categoryIconUrl != null &&
+                              categoryIconUrl.isNotEmpty)
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: Image.network(
+                                categoryIconUrl,
+                                width: 40,
+                                height: 40,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(6),
+                                      color: const Color(0xFFA7E399),
+                                    ),
+                                    child: const Icon(
+                                      Icons.category,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  );
+                                },
+                              ),
+                            )
+                          else
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(6),
+                                color: const Color(0xFFA7E399),
+                              ),
+                              child: const Icon(
+                                Icons.category,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  categoryName,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                                if (confidence > 0)
+                                  Text(
+                                    '${(confidence * 100).toStringAsFixed(0)}% match',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          if (isSelected)
+                            Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFA7E399),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.check,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

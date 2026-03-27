@@ -74,7 +74,7 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
           .eq('accountId', widget.accountId)
           .single();
 
-      return response as Map<String, dynamic>;
+      return response;
     } catch (e) {
       print('Error fetching account details: $e');
       rethrow;

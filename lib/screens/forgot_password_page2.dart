@@ -23,7 +23,6 @@ class _ForgotPasswordPage2State extends State<ForgotPasswordPage2> {
   bool _obscureNewPassword = true;
   bool _obscureConfirmPassword = true;
   String _errorMessage = '';
-  String _successMessage = '';
   bool _isLoading = false;
 
   Future<void> _updatePassword(String newPassword) async {
@@ -304,7 +303,6 @@ class _ForgotPasswordPage2State extends State<ForgotPasswordPage2> {
                                   setState(() {
                                     _isLoading = true;
                                     _errorMessage = '';
-                                    _successMessage = '';
                                   });
 
                                   try {
@@ -433,7 +431,6 @@ class _ForgotPasswordPage2State extends State<ForgotPasswordPage2> {
                                       setState(() {
                                         _errorMessage =
                                             'An error occurred. Please try again.';
-                                        _successMessage = '';
                                       });
                                     }
                                   } finally {

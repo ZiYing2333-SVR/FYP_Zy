@@ -39,11 +39,6 @@ class _AddAccountEWalletState extends State<AddAccountEWallet> {
       final ewallets = await EWalletService.getEWalletsWithSections();
       print('📊 Loaded ${ewallets.length} items');
 
-      // Check if we have actual e-wallets (not just the customize option)
-      final hasActualEWallets = ewallets.any(
-        (item) => item is! Map || item['type'] != 'section',
-      );
-
       setState(() {
         allEWalletsWithSections = ewallets;
         filteredEWalletsWithSections = ewallets;
