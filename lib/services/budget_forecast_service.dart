@@ -1,4 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import 'dart:math';
 
 /// Data model for forecast results
@@ -9,6 +11,10 @@ class ForecastResult {
   final double upperBound;
   final bool isAnomaly;
   final bool isLimitedData; // True when forecast is based on <3 months data
+  final double mae; // Mean Absolute Error
+  final bool hasSufficientData; // Whether model has >= 3 months data
+  final String alertStatus; // 'normal', 'warning', 'critical'
+  final String alertMessage; // Alert description
 
   ForecastResult({
     required this.date,
@@ -17,6 +23,10 @@ class ForecastResult {
     required this.upperBound,
     this.isAnomaly = false,
     this.isLimitedData = false,
+    this.mae = 0.0,
+    this.hasSufficientData = true,
+    this.alertStatus = 'normal',
+    this.alertMessage = '',
   });
 }
 
@@ -28,13 +38,24 @@ class HistoricalSpending {
   HistoricalSpending({required this.date, required this.amount});
 }
 
-/// Service for budget forecasting using Facebook Prophet algorithm
-/// This service analyzes historical spending patterns and forecasts future expenses
+/// Service for budget forecasting using Facebook Prophet algorithm via API
+/// Communicates with Python FastAPI backend for accurate time-series forecasting
 class BudgetForecastService {
   static const String _tag = '[BudgetForecastService]';
-  static const int _minHistoricalMonths = 3; // Minimum months of data needed
-  static const double _anomalyThreshold =
-      2.0; // Z-score threshold for anomalies
+  static const int _minHistoricalMonths = 3;
+
+  // Backend API configuration - CHANGE THIS for production
+  //
+  // LOCAL DEVELOPMENT (default):
+  static const String _backendUrl = 'http://127.0.0.1:8000';
+  //
+  // CLOUD DEPLOYMENT (uncomment one):
+  // static const String _backendUrl = 'https://your-app.up.railway.app';  // Railway (recommended)
+  // static const String _backendUrl = 'https://your-app.onrender.com';     // Render
+  // static const String _backendUrl = 'https://your-replit.replit.dev';    // Replit
+  //
+  // See RAILWAY_DEPLOYMENT_GUIDE.md for step-by-step cloud setup!
+  static const Duration _timeout = Duration(seconds: 30);
 
   /// Fetches historical spending data for a budget
   Future<List<HistoricalSpending>> _fetchHistoricalData(
@@ -116,202 +137,110 @@ class BudgetForecastService {
     }
   }
 
-  /// Implements a simplified Facebook Prophet-like algorithm
-  /// Uses trend analysis and seasonality detection for forecasting
-  List<ForecastResult> _forecastWithProphet(
-    List<HistoricalSpending> historicalData,
-    int forecastMonths, {
-    double budgetAmount = 0,
-  }) {
-    if (historicalData.length < _minHistoricalMonths) {
-      print('$_tag Insufficient historical data for forecasting');
-      return [];
-    }
-
-    final results = <ForecastResult>[];
-    final amounts = historicalData.map((h) => h.amount).toList();
-
-    // Calculate trend using linear regression
-    final trend = _calculateTrend(amounts);
-
-    // Calculate seasonality (month-over-month variation)
-    final seasonality = _calculateSeasonality(amounts);
-
-    // Calculate statistics for anomaly detection
-    final mean = amounts.reduce((a, b) => a + b) / amounts.length;
-    final stdDev = _calculateStdDev(amounts, mean);
-
-    // Generate forecasts for future months
-    final lastDate = historicalData.last.date;
-
-    // Extract trend values with null safety
-    final trendSlope = (trend['slope'] ?? 0.0);
-    final trendIntercept = (trend['intercept'] ?? 0.0);
-
-    for (int i = 1; i <= forecastMonths; i++) {
-      final forecastDate = DateTime(lastDate.year, lastDate.month + i, 1);
-
-      // Calculate base forecast using trend
-      final trendValue =
-          trendSlope * (historicalData.length + i) + trendIntercept;
-
-      // Apply seasonality factor
-      final seasonalFactor = seasonality[(forecastDate.month - 1) % 12] ?? 1.0;
-      final forecastedAmount = max(0.0, trendValue * seasonalFactor);
-
-      // Calculate confidence bounds (95% confidence interval)
-      final margin = 1.96 * stdDev;
-      final lowerBound = max(0.0, forecastedAmount - margin);
-      final upperBound = forecastedAmount + margin;
-
-      // Determine if forecast is anomalous (significantly different from historical pattern)
-      final isAnomaly =
-          (forecastedAmount - mean).abs() > (_anomalyThreshold * stdDev);
-
-      results.add(
-        ForecastResult(
-          date: forecastDate,
-          forecastedAmount: forecastedAmount.toDouble(),
-          lowerBound: lowerBound.toDouble(),
-          upperBound: upperBound.toDouble(),
-          isAnomaly: isAnomaly,
-        ),
-      );
-    }
-
-    return results;
-  }
-
-  /// Generates forecast using limited transaction data (<3 months)
-  /// Analyzes recent transactions and provides basic pattern insights
-  List<ForecastResult> _forecastWithLimitedData(
+  /// Calls the Prophet forecasting API
+  /// Returns forecast with predictions, confidence intervals, and alerts
+  Future<List<ForecastResult>> _callForecastAPI(
     List<HistoricalSpending> historicalData,
     int forecastMonths,
-  ) {
-    if (historicalData.isEmpty) {
-      return [];
-    }
+    double budgetAmount,
+  ) async {
+    try {
+      if (historicalData.isEmpty) {
+        print('$_tag No historical data to forecast');
+        return [];
+      }
 
-    final results = <ForecastResult>[];
-    final amounts = historicalData.map((h) => h.amount).toList();
+      // Prepare request payload
+      final List<Map<String, dynamic>> histData = historicalData.map((h) {
+        return {
+          'date': h.date.toIso8601String().split('T')[0], // YYYY-MM-DD
+          'amount': h.amount,
+        };
+      }).toList();
 
-    // Calculate average spending
-    final mean = amounts.reduce((a, b) => a + b) / amounts.length;
+      final requestBody = {
+        'historical_data': histData,
+        'forecast_periods': forecastMonths,
+        'budget_amount': budgetAmount,
+      };
 
-    // Calculate trend if we have at least 2 data points
-    late double trendSlope;
-    late double trendIntercept;
+      print('$_tag Calling Prophet API at $_backendUrl/forecast');
+      print('$_tag Request: ${jsonEncode(requestBody)}');
 
-    if (amounts.length >= 2) {
-      final trend = _calculateTrend(amounts);
-      trendSlope = (trend['slope'] ?? 0.0);
-      trendIntercept = (trend['intercept'] ?? 0.0);
-    } else {
-      trendSlope = 0.0;
-      trendIntercept = mean;
-    }
+      // Make API request
+      final response = await http
+          .post(
+            Uri.parse('$_backendUrl/forecast'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(requestBody),
+          )
+          .timeout(_timeout);
 
-    // Calculate standard deviation for confidence bounds
-    final stdDev = _calculateStdDev(amounts, mean);
+      print('$_tag API Response Status: ${response.statusCode}');
 
-    // Generate forecast for future months using available trend
-    final lastDate = historicalData.last.date;
+      if (response.statusCode == 200) {
+        final decodedResponse =
+            jsonDecode(response.body) as Map<String, dynamic>;
 
-    for (int i = 1; i <= forecastMonths; i++) {
-      final forecastDate = DateTime(lastDate.year, lastDate.month + i, 1);
+        print('$_tag API Response: ${response.body}');
 
-      // Use simple average with trend adjustment (conservative approach for limited data)
-      final trendValue =
-          trendSlope * (historicalData.length + i) + trendIntercept;
-      final forecastedAmount = max(0.0, trendValue);
+        // Parse forecast results
+        final List<dynamic> forecastList = decodedResponse['forecast'] ?? [];
+        final double mae = (decodedResponse['mae'] ?? 0.0).toDouble();
+        final bool hasSufficientData =
+            decodedResponse['has_sufficient_data'] ?? false;
+        final String alertStatus = decodedResponse['alert_status'] ?? 'normal';
+        final String alertMessage = decodedResponse['alert_message'] ?? '';
 
-      // Wider confidence bounds for limited data (1.96 * stdDev * 1.5 for less certainty)
-      final margin = 1.96 * stdDev * 1.5;
-      final lowerBound = max(0.0, forecastedAmount - margin);
-      final upperBound = forecastedAmount + margin;
+        final results = forecastList.asMap().entries.map((entry) {
+          final index = entry.key;
+          final forecast = entry.value as Map<String, dynamic>;
 
-      // Mark as potential anomaly if significantly different from mean
-      final isAnomaly =
-          (forecastedAmount - mean).abs() > (_anomalyThreshold * stdDev);
+          return ForecastResult(
+            date: DateTime.parse(forecast['date'] as String),
+            forecastedAmount: (forecast['predicted_amount'] ?? 0.0).toDouble(),
+            lowerBound: (forecast['lower_bound'] ?? 0.0).toDouble(),
+            upperBound: (forecast['upper_bound'] ?? 0.0).toDouble(),
+            isAnomaly: forecast['is_anomaly'] ?? false,
+            mae: mae,
+            hasSufficientData: hasSufficientData,
+            // Only first forecast has alert status/message
+            alertStatus: index == 0 ? alertStatus : 'normal',
+            alertMessage: index == 0 ? alertMessage : '',
+          );
+        }).toList();
 
-      results.add(
-        ForecastResult(
-          date: forecastDate,
-          forecastedAmount: forecastedAmount.toDouble(),
-          lowerBound: lowerBound.toDouble(),
-          upperBound: upperBound.toDouble(),
-          isAnomaly: isAnomaly,
-          isLimitedData: true, // Mark as limited data forecast
-        ),
+        print('$_tag Successfully parsed ${results.length} forecast points');
+        return results;
+      } else {
+        print('$_tag API Error: ${response.statusCode} - ${response.body}');
+        throw Exception(
+          'Prophet API Error: ${response.statusCode} - ${response.body}',
+        );
+      }
+    } on http.ClientException catch (e) {
+      print('$_tag Network Error: $e');
+      throw Exception(
+        'Network Error: Could not connect to Prophet API at $_backendUrl. '
+        'Make sure the backend is running.',
       );
+    } catch (e) {
+      print('$_tag Error calling forecast API: $e');
+      throw Exception('Forecast API Error: $e');
     }
-
-    return results;
   }
 
-  /// Calculates trend using simple linear regression
-  Map<String, double> _calculateTrend(List<double> amounts) {
-    final n = amounts.length;
-    double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-
-    for (int i = 0; i < n; i++) {
-      sumX += i;
-      sumY += amounts[i];
-      sumXY += i * amounts[i];
-      sumX2 += i * i;
+  /// Checks backend health before making forecast
+  Future<bool> _checkBackendHealth() async {
+    try {
+      final response = await http
+          .get(Uri.parse('$_backendUrl/health'))
+          .timeout(const Duration(seconds: 5));
+      return response.statusCode == 200;
+    } catch (e) {
+      print('$_tag Backend health check failed: $e');
+      return false;
     }
-
-    final slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-    final intercept = (sumY - slope * sumX) / n;
-
-    return {'slope': slope, 'intercept': intercept};
-  }
-
-  /// Calculates seasonality factors for each month
-  Map<int, double> _calculateSeasonality(List<double> amounts) {
-    if (amounts.length < 12) {
-      // Not enough data for full seasonality, return neutral factors
-      return {for (int i = 0; i < 12; i++) i: 1.0};
-    }
-
-    // Group by month and calculate average for each month
-    Map<int, List<double>> monthlyAmounts = {};
-    for (int i = 0; i < amounts.length; i++) {
-      final monthIndex = i % 12;
-      monthlyAmounts.putIfAbsent(monthIndex, () => []).add(amounts[i]);
-    }
-
-    // Calculate seasonality factor as ratio of monthly average to overall average
-    double overallAverage = amounts.reduce((a, b) => a + b) / amounts.length;
-
-    final seasonality = <int, double>{};
-    monthlyAmounts.forEach((month, values) {
-      final monthAverage = values.reduce((a, b) => a + b) / values.length;
-      seasonality[month] = monthAverage / overallAverage;
-    });
-
-    return seasonality;
-  }
-
-  /// Calculates standard deviation
-  double _calculateStdDev(List<double> amounts, double mean) {
-    final variance =
-        amounts.fold(0.0, (sum, value) {
-          return sum + pow(value - mean, 2).toDouble();
-        }) /
-        amounts.length;
-    return sqrt(variance);
-  }
-
-  /// Calculates Mean Absolute Error (MAE) between predicted and actual values
-  double _calculateMAE(List<double> actual, List<double> predicted) {
-    if (actual.length != predicted.length) return -1;
-
-    double total = 0;
-    for (int i = 0; i < actual.length; i++) {
-      total += (actual[i] - predicted[i]).abs();
-    }
-    return total / actual.length;
   }
 
   /// Determines if a budget is at high risk based on forecast
@@ -335,10 +264,16 @@ class BudgetForecastService {
         12,
       );
 
-      // Generate forecast (uses fallback for <3 months data)
-      final forecast = historicalData.length < _minHistoricalMonths
-          ? _forecastWithLimitedData(historicalData, 3)
-          : _forecastWithProphet(historicalData, 3, budgetAmount: budgetAmount);
+      if (historicalData.isEmpty) {
+        return false;
+      }
+
+      // Generate forecast via API
+      final forecast = await _callForecastAPI(
+        historicalData,
+        3, // 3 month forecast
+        budgetAmount,
+      );
 
       if (forecast.isEmpty) {
         return false;
@@ -347,24 +282,16 @@ class BudgetForecastService {
       // Check if next month's forecast significantly exceeds budget
       final nextMonthForecast = forecast.first;
 
-      // High risk if:
-      // 1. Forecasted amount exceeds budget
-      // 2. Upper confidence bound significantly exceeds budget (>120%)
-      final exceedsBasicBudget =
-          nextMonthForecast.forecastedAmount > budgetAmount;
-      final exceedsWithMargin =
-          nextMonthForecast.upperBound > (budgetAmount * 1.2);
-
-      // For limited data forecasts, be more conservative - require higher confidence
-      final isHighRisk = nextMonthForecast.isLimitedData
-          ? exceedsBasicBudget &&
-                exceedsWithMargin &&
-                nextMonthForecast.forecastedAmount > (budgetAmount * 1.5)
-          : exceedsBasicBudget && exceedsWithMargin;
+      // High risk if predicted amount exceeds 120% of budget
+      final isHighRisk =
+          nextMonthForecast.alertStatus == 'warning' ||
+          nextMonthForecast.alertStatus == 'critical';
 
       print(
-        '$_tag High Risk Check - Forecast: ${nextMonthForecast.forecastedAmount.toStringAsFixed(2)}, '
-        'Budget: $budgetAmount, High Risk: $isHighRisk, Limited Data: ${nextMonthForecast.isLimitedData}',
+        '$_tag High Risk Check - '
+        'Forecast: ${nextMonthForecast.forecastedAmount.toStringAsFixed(2)}, '
+        'Budget: $budgetAmount, High Risk: $isHighRisk, '
+        'Alert: ${nextMonthForecast.alertStatus}',
       );
 
       return isHighRisk;
@@ -394,22 +321,33 @@ class BudgetForecastService {
         12,
       );
 
-      if (historicalData.length < _minHistoricalMonths) {
-        print('$_tag Insufficient monthly data, using limited data fallback');
-        // Use fallback forecast with available data
-        final limitedForecast = _forecastWithLimitedData(
-          historicalData,
-          forecastMonths,
-        );
-        return limitedForecast;
+      if (historicalData.isEmpty) {
+        print('$_tag No historical data available for forecast');
+        return [];
       }
 
-      // Generate forecast
-      final forecast = _forecastWithProphet(historicalData, forecastMonths);
+      print('$_tag Fetched ${historicalData.length} months of history');
+
+      // Check backend health first
+      final isHealthy = await _checkBackendHealth();
+      if (!isHealthy) {
+        throw Exception(
+          'Prophet backend is not available. '
+          'Please ensure the backend server is running at $_backendUrl',
+        );
+      }
+
+      // Call Prophet API for forecast
+      final forecast = await _callForecastAPI(
+        historicalData,
+        forecastMonths,
+        0, // Budget amount not needed for basic forecast
+      );
 
       return forecast;
     } catch (e) {
       print('$_tag Error getting forecast: $e');
+      // Return empty list on error - UI will show appropriate message
       return [];
     }
   }
@@ -459,24 +397,15 @@ class BudgetForecastService {
       final trainingData = historicalData
           .take(historicalData.length ~/ 2)
           .toList();
-      final testingData = historicalData
-          .skip(historicalData.length ~/ 2)
-          .toList();
 
-      // Forecast on testing period
-      final forecasts = _forecastWithProphet(trainingData, testingData.length);
+      // Get forecast which includes MAE
+      final forecast = await _callForecastAPI(trainingData, 12, 0);
 
-      if (forecasts.length != testingData.length) {
+      if (forecast.isEmpty) {
         return -1;
       }
 
-      // Calculate MAE
-      final actualAmounts = testingData.map((h) => h.amount).toList();
-      final forecastedAmounts = forecasts
-          .map((f) => f.forecastedAmount)
-          .toList();
-
-      final mae = _calculateMAE(actualAmounts, forecastedAmounts);
+      final mae = forecast.first.mae;
       print('$_tag Forecast Accuracy (MAE): ${mae.toStringAsFixed(2)}');
 
       return mae;

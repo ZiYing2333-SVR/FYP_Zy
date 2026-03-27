@@ -149,21 +149,10 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
                   const SizedBox(height: 24),
 
                   if (_showForecast && _forecastResults != null) ...[
-                    // High Risk Alert (Display only when high risk)
-                    FutureBuilder<bool>(
-                      future: _checkHighRisk(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const SizedBox.shrink();
-                        }
-
-                        if (snapshot.data == true) {
-                          return _buildHighRiskAlert();
-                        }
-                        return const SizedBox.shrink();
-                      },
-                    ),
+                    // Alert (Display based on forecast - normal, warning, or critical)
+                    if (_forecastResults!.isNotEmpty) _buildHighRiskAlert(),
+                    if (_forecastResults!.isNotEmpty)
+                      const SizedBox(height: 16),
 
                     // Forecast Summary
                     _buildForecastSummary(),
@@ -239,40 +228,137 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
   }
 
   Widget _buildHighRiskAlert() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFEBEE),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE53935), width: 2),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.warning_rounded, color: Color(0xFFE53935), size: 32),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'High Risk Alert',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFFE53935),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Forecasted expenses may exceed your budget next month',
-                  style: TextStyle(fontSize: 14, color: Colors.grey[700]),
-                ),
-              ],
+    if (_forecastResults == null || _forecastResults!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final forecast = _forecastResults![0];
+    final alertStatus = forecast.alertStatus;
+    final alertMessage = forecast.alertMessage;
+
+    if (alertStatus == 'normal') {
+      // Show green success alert
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F8E9),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF7CB342), width: 2),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.check_circle_rounded,
+              color: Color(0xFF7CB342),
+              size: 32,
             ),
-          ),
-        ],
-      ),
-    );
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'On Track',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF7CB342),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    alertMessage,
+                    style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    } else if (alertStatus == 'warning') {
+      // Show orange warning alert
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF8E1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFF39C12), width: 2),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.warning_rounded,
+              color: Color(0xFFF39C12),
+              size: 32,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Budget Warning',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFF39C12),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    alertMessage,
+                    style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // Critical alert
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFEBEE),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE53935), width: 2),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.error_rounded, color: Color(0xFFE53935), size: 32),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Critical Alert',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFE53935),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    alertMessage,
+                    style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Widget _buildForecastSummary() {
