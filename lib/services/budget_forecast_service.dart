@@ -47,7 +47,7 @@ class BudgetForecastService {
   // Backend API configuration - CHANGE THIS for production
   //
   // LOCAL DEVELOPMENT (default):
-  static const String _backendUrl = 'http://127.0.0.1:8000';
+  static const String _backendUrl = 'https://fyp-zy.onrender.com';
   //
   // CLOUD DEPLOYMENT (uncomment one):
   // static const String _backendUrl = 'https://your-app.up.railway.app';  // Railway (recommended)
