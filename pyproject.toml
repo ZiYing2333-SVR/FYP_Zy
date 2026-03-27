@@ -1,0 +1,12 @@
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[project]
+name = "smart-budgeting-api"
+version = "1.0.0"
+description = "API for expense forecasting using Facebook Prophet"
+requires-python = ">=3.11,<3.12"
+
+[project.optional-dependencies]
+dev = ["pytest"]
