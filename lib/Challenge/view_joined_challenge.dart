@@ -206,16 +206,23 @@ class _ViewJoinedChallengePageState
   Future<void> loadJoinedChallenges() async {
     final supabase = Supabase.instance.client;
 
+    final now = DateTime.now().toIso8601String();
+
     final participants = await supabase
         .from('ChallengeParticipant')
-        .select('challengeParticipantId, challengeId, customChallengeId, userId')
-        .eq('userId', widget.userId);
+        .select('challengeParticipantId, challengeId, customChallengeId, userId, endDate, hasViewedResult, hasClaimedReward')
+        .eq('userId', widget.userId)
+        .or('hasViewedResult.eq.false,hasClaimedReward.eq.false');
 
     List<Map<String, dynamic>> tempList = [];
 
     for (var p in participants) {
       /// PRESET challenge
       if (p['challengeId'] != null) {
+
+        print("DEBUG participant loop");
+        print("participant: $p");
+        print("challengeId: ${p['challengeId']}");
         final preset = await supabase
             .from('Challenge')
             .select('title')
@@ -253,33 +260,22 @@ class _ViewJoinedChallengePageState
 
     for (var i in invitations) {
       if (i['challengeId'] != null) {
+
+        print("DEBUG invitation loop");
+        print("invitation: $i");
+        print("challengeId: ${i['challengeId']}");
+
         final preset = await supabase
             .from('Challenge')
             .select('title')
             .eq('challengeId', i['challengeId'])
-            .single();
+            .maybeSingle();
 
         tempList.add({
-          "title": preset['title'],
+          "title": preset?['title'] ?? 'Unknown Challenge',
           "challengeInvitationId": i['challengeInvitationId'],
           "challengeId": i['challengeId'],
           "customChallengeId": null,
-          "isInvitation": true,
-        });
-      }
-
-      if (i['customChallengeId'] != null) {
-        final custom = await supabase
-            .from('CustomChallenge')
-            .select('title')
-            .eq('customChallengeId', i['customChallengeId'])
-            .single();
-
-        tempList.add({
-          "title": custom['title'],
-          "challengeInvitationId": i['challengeInvitationId'],
-          "challengeId": null,
-          "customChallengeId": i['customChallengeId'],
           "isInvitation": true,
         });
       }
@@ -371,6 +367,7 @@ class _ViewJoinedChallengePageState
                   return InkWell(
                     borderRadius: BorderRadius.circular(20),
                     onTap: () {
+                      print("🔥 CLICKED ITEM: $c");
                       if (c['isInvitation'] == true) {
                         _showInvitationActionDialog(c);
                       } else {

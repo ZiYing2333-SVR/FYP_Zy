@@ -70,7 +70,7 @@ class _ChallengeDetailsPageState extends State<ChallengeDetailsPage> {
       final participantId = await generateParticipantId();
 
       final startDate = DateTime.now();
-      final endDate = startDate.add(Duration(days: widget.duration));
+      final endDate = startDate.add(Duration(days: widget.duration - 1));
 
       await supabase.from('ChallengeParticipant').insert({
         "challengeParticipantId": participantId,

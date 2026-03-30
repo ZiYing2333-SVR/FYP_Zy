@@ -63,17 +63,12 @@ class _AchievementPageState
 
     for (var e in data) {
 
-      DateTime utc =
-      DateTime.parse(e['awardedAt']);
+      DateTime utc = DateTime.parse(e['awardedAt']);
 
-      DateTime local =
-      utc.toLocal();
-
-      DateTime cleanDate =
-      DateTime(
-        local.year,
-        local.month,
-        local.day,
+      DateTime cleanDate = DateTime(
+        utc.year,
+        utc.month,
+        utc.day,
       );
 
       achievementMap[cleanDate] =

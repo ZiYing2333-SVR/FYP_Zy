@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:fyp_wx/Challenge/view_achievement.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:percent_indicator/percent_indicator.dart';
 
+import 'challenge_tracking_service.dart';
 import 'leaderboard_page.dart';
 
 class JoinedChallengeProgressPage extends StatefulWidget {
@@ -35,9 +37,28 @@ class _JoinedChallengeProgressPageState
   final TextEditingController _phoneController = TextEditingController();
 
   @override
+  @override
   void initState() {
     super.initState();
-    loadProgress();
+    _init();
+  }
+
+  Future<void> _init() async {
+    final supabase = Supabase.instance.client;
+
+    final participant = await supabase
+        .from('ChallengeParticipant')
+        .select('userId')
+        .eq('challengeParticipantId', widget.participantId)
+        .single();
+
+    final userId = participant['userId'];
+
+    /// ✅ FIRST: calculate result
+    await ChallengeTrackingService().updateUserChallenges(userId);
+
+    /// ✅ THEN load UI (this will trigger popup)
+    await loadProgress();
   }
 
   @override
@@ -54,6 +75,12 @@ class _JoinedChallengeProgressPageState
         .select()
         .eq('challengeParticipantId', widget.participantId)
         .single();
+
+    final isWinner = participant['isWinner'] ?? false;
+    final isComplete = participant['isComplete'] ?? false;
+    final coinEarned = participant['coinEarned'] ?? 0;
+
+    final hasClaimed = participant['hasClaimedReward'] ?? false;
 
     challengeId = participant['challengeId'];
     customChallengeId = participant['customChallengeId'];
@@ -76,15 +103,19 @@ class _JoinedChallengeProgressPageState
           targetValue = 7;
           break;
         case 'PC0002':
-          final budgetData = await supabase
+          final budgets = await supabase
               .from('Budget')
               .select('amount')
-              .eq('userId', participant['userId'])
-              .maybeSingle();
+              .eq('userId', participant['userId']);
 
-          targetValue = budgetData != null
-              ? (budgetData['amount'] as num).toDouble()
-              : 0;
+          double totalBudget = 0;
+
+          for (var b in budgets) {
+            final amount = (b['amount'] as num?)?.toDouble() ?? 0;
+            totalBudget += amount;
+          }
+
+          targetValue = totalBudget;
           break;
         case 'PC0003':
           targetValue = 3;
@@ -127,6 +158,18 @@ class _JoinedChallengeProgressPageState
       };
       isLoading = false;
     });
+
+    if (isComplete && isWinner && !hasClaimed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showWinnerDialog(coinEarned);
+      });
+    }
+
+    if (isComplete && !isWinner && !(participant['hasViewedResult'] ?? false)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showLoserDialog();
+      });
+    }
   }
 
   bool isWithinRange(DateTime day) {
@@ -429,6 +472,211 @@ class _JoinedChallengeProgressPageState
         SnackBar(content: Text('Error sending invitation: $e')),
       );
     }
+  }
+
+  void _showWinnerDialog(int coins) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          contentPadding: const EdgeInsets.all(24),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.emoji_events,
+                color: Colors.orange,
+                size: 60,
+              ),
+              const SizedBox(height: 16),
+
+              const Text(
+                "🎉 Congratulations!",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+
+              const SizedBox(height: 10),
+
+              Text(
+                "You completed the challenge!\nYou earned $coins coins 🪙",
+                textAlign: TextAlign.center,
+              ),
+
+              const SizedBox(height: 20),
+
+              SizedBox(
+                width: 200,
+                child: ElevatedButton(
+                    onPressed: () async {
+                      final supabase = Supabase.instance.client;
+
+                      // 🚨 1. Check already claimed
+                      final participant = await supabase
+                          .from('ChallengeParticipant')
+                          .select('hasClaimedReward')
+                          .eq('challengeParticipantId', widget.participantId)
+                          .single();
+
+                      if (participant['hasClaimedReward'] == true) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Reward already claimed')),
+                        );
+                        return;
+                      }
+
+                      // 🚨 2. Get achievementId (IMPORTANT FIX)
+                      final challengeData = await supabase
+                          .from('ChallengeParticipant')
+                          .select('Challenge(achievementId)')
+                          .eq('challengeParticipantId', widget.participantId)
+                          .single();
+
+                      final achievementId =
+                      challengeData['Challenge']?['achievementId'];
+
+                      print("achievementId: $achievementId"); // DEBUG
+
+                      // 3️⃣ Add coins
+                      final user = await supabase
+                          .from('User')
+                          .select('coinbalance')
+                          .eq('userId', data!['userId'])
+                          .single();
+
+                      final currentBalance = (user['coinbalance'] ?? 0) as num;
+
+                      await supabase
+                          .from('User')
+                          .update({'coinbalance': currentBalance + coins})
+                          .eq('userId', data!['userId']);
+
+                      // 4️⃣ Insert achievement
+                      if (achievementId != null) {
+                        final existing = await supabase
+                            .from('UserAchievement')
+                            .select('userAchievementId')
+                            .eq('userId', data!['userId'])
+                            .eq('achievementId', achievementId)
+                            .maybeSingle();
+
+                        if (existing == null) {
+                          final last = await supabase
+                              .from('UserAchievement')
+                              .select('userAchievementId')
+                              .order('userAchievementId', ascending: false)
+                              .limit(1);
+
+                          String newId;
+
+                          if (last.isEmpty) {
+                            newId = "UA00001";
+                          } else {
+                            String lastId = last.first['userAchievementId'];
+                            int num = int.parse(lastId.substring(2));
+                            num++;
+                            newId = "UA${num.toString().padLeft(5, '0')}";
+                          }
+
+                          await supabase.from('UserAchievement').insert({
+                            'userAchievementId': newId,
+                            'awardedAt': DateTime.now().toIso8601String(),
+                            'userId': data!['userId'],
+                            'achievementId': achievementId,
+                          });
+
+                          print("🏆 Achievement inserted!");
+                        }
+                      }
+
+                      // 5️⃣ Mark claimed
+                      await supabase
+                          .from('ChallengeParticipant')
+                          .update({
+                        'hasClaimedReward': true,
+                        'hasViewedResult': true,
+                      })
+                          .eq('challengeParticipantId', widget.participantId);
+
+                      Navigator.pop(context);
+
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => AchievementPage(
+                            userId: data!['userId'],
+                          ),
+                        ),
+                      );
+                    },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF9ED39E),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                  ),
+                  child: const Text(
+                    "View Achievement",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showLoserDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.sentiment_dissatisfied, size: 50, color: Colors.grey),
+              const SizedBox(height: 10),
+              const Text(
+                "Challenge Completed",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text("Better luck next time! 💪"),
+
+              const SizedBox(height: 20),
+
+              ElevatedButton(
+                onPressed: () async {
+                  await Supabase.instance.client
+                      .from('ChallengeParticipant')
+                      .update({'hasViewedResult': true,
+                                'hasClaimedReward': true,})
+                      .eq('challengeParticipantId', widget.participantId);
+
+                  Navigator.pop(context);
+                },
+                child: const Text("OK"),
+              )
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override

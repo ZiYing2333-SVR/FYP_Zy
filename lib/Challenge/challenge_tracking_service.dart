@@ -84,7 +84,11 @@ class ChallengeTrackingService {
 
     int streak = 0;
 
-    for (int i = 0; i < 7; i++) {
+    final duration = DateTime.parse(participant['endDate'])
+        .difference(DateTime.parse(participant['startDate']))
+        .inDays + 1;
+
+    for (int i = 0; i < duration; i++) {
       final day = startDate.add(Duration(days: i));
 
       final onlyDay = DateTime(day.year, day.month, day.day);
@@ -114,7 +118,7 @@ class ChallengeTrackingService {
       }
     }
 
-    final isWinner = streak >= 7;
+    final isWinner = streak >= duration;
     final isComplete = isWinner;
 
     print('final streak: $streak');
@@ -159,17 +163,16 @@ class ChallengeTrackingService {
     final alreadyRewarded = (participant['coinEarned'] ?? 0) > 0;
     final achievementId = participant['Challenge']?['achievementId'];
 
-    final budgetData = await supabase
+    final budgets = await supabase
         .from('Budget')
         .select('amount')
-        .eq('userId', userId)
-        .order('createdAt', ascending: false)
-        .limit(1)
-        .maybeSingle();
+        .eq('userId', userId);
 
-    if (budgetData == null) return;
+    double budgetAmount = 0;
 
-    final budgetAmount = (budgetData['amount'] as num).toDouble();
+    for (var b in budgets) {
+      budgetAmount += (b['amount'] as num?)?.toDouble() ?? 0;
+    }
 
     final transactions = await supabase
         .from('Transaction')
@@ -188,7 +191,7 @@ class ChallengeTrackingService {
     bool isComplete = false;
     bool isWinner = false;
 
-    if (now.isAfter(endDate) || now.isAtSameMomentAs(endDate)) {
+    if (!now.isBefore(endDate)) {
       isComplete = true;
       isWinner = totalExpense <= budgetAmount;
     }
@@ -203,14 +206,6 @@ class ChallengeTrackingService {
     })
         .eq('challengeParticipantId', participantId);
 
-    if (isComplete && isWinner && !alreadyRewarded) {
-      await rewardUserCoins(userId, 60);
-
-      await awardAchievement(
-        userId,
-        achievementId,
-      );
-    }
   }
 
   Future<void> trackNoImpulseSpending(
@@ -306,13 +301,7 @@ class ChallengeTrackingService {
     })
         .eq('challengeParticipantId', participantId);
 
-    if (isComplete && isWinner && !alreadyRewarded) {
-      await rewardUserCoins(userId, 40);
-      await awardAchievement(
-        userId,
-        achievementId,
-      );
-    }
+
   }
 
   Future<void> trackSavingGoal(
@@ -376,13 +365,7 @@ class ChallengeTrackingService {
     })
         .eq('challengeParticipantId', participantId);
 
-    if (isComplete && isWinner && !alreadyRewarded) {
-      await rewardUserCoins(userId, 50);
-      await awardAchievement(
-        userId,
-        achievementId,
-      );
-    }
+
   }
 
   Future<void> rewardUserCoins(String userId, int coins) async {
@@ -400,11 +383,7 @@ class ChallengeTrackingService {
         .eq('userId', userId);
   }
 
-  Future<void> awardAchievement(
-      String userId,
-      String achievementId,
-      ) async {
-
+  Future<void> awardAchievement(String userId, String? achievementId) async {
     if (achievementId == null) return;
 
     /// 1️⃣ Prevent duplicate
