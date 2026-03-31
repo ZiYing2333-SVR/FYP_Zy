@@ -52,16 +52,18 @@ class _ChallengeDetailsPageState extends State<ChallengeDetailsPage> {
       /// optional: prevent duplicate join
       final existing = await supabase
           .from('ChallengeParticipant')
-          .select('challengeParticipantId')
+          .select()
           .eq('userId', widget.userId)
           .eq('challengeId', widget.challengeId)
+          .eq('isComplete', false)
+          .gt('endDate', DateTime.now().toIso8601String())
           .maybeSingle();
 
       if (existing != null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('You already joined this challenge'),
+            content: Text('You are already participating in this challenge'),
           ),
         );
         return;
