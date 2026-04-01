@@ -1,12 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/saving_goal_assistant_service.dart';
+import '../services/intelligent_savings_goal_assistant_service.dart';
 import 'saving_goal_plan_screen.dart';
+import 'saving_goal_confirmation_screen.dart';
+import 'add_transaction.dart';
+import 'free_saving_page.dart';
 
 class SavingGoalAssistantScreen extends StatefulWidget {
   final String userId;
+  final String? ledgerId;
 
-  const SavingGoalAssistantScreen({super.key, required this.userId});
+  const SavingGoalAssistantScreen({
+    super.key,
+    required this.userId,
+    this.ledgerId,
+  });
 
   @override
   State<SavingGoalAssistantScreen> createState() =>
@@ -97,118 +106,283 @@ class _SavingGoalAssistantScreenState extends State<SavingGoalAssistantScreen> {
     });
 
     try {
-      // Fetch financial data
-      final financialData =
-          await SavingGoalAssistantService.getUserFinancialData(widget.userId);
-
-      if (!financialData['success']) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(financialData['error'] ?? 'Unknown error')),
+      // STEP 1: Check if user has recent income (any salary in past 3 months)
+      final recentIncomeCheck =
+          await IntelligentSavingsGoalAssistant.checkRecentIncomeExists(
+            widget.userId,
           );
-        }
+
+      if (!recentIncomeCheck.hasRecentIncome) {
+        // ❌ NO RECENT INCOME - Show dialog with two options
         setState(() {
           _isLoading = false;
         });
+
+        if (mounted) {
+          _showIncomeOptionsDialog(recentIncomeCheck);
+        }
         return;
       }
 
-      // Forecast future expenses
-      final forecast = SavingGoalAssistantService.forecastFutureExpenses(
-        financialData['monthlyData'],
-        12,
-      );
+      // ✅ HAS RECENT INCOME - Proceed directly to confirmation screen (skip suggestion dialog)
 
-      // Show warning if data is limited
-      if (forecast['hasLimitedData'] == true && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Limited transaction data. We\'ll use estimated values for your analysis.',
-            ),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-
-      // Analyze feasibility
+      // STEP 2: Get savings suggestion
       final targetAmount = double.parse(_targetAmountController.text);
-      final feasibility =
-          SavingGoalAssistantService.analyzeSavingGoalFeasibility(
+      final suggestion =
+          await IntelligentSavingsGoalAssistant.generateSavingsSuggestion(
+            userId: widget.userId,
             targetAmount: targetAmount,
-            startDate: _selectedStartDate!,
-            endDate: _selectedEndDate!,
-            predictedMonthlyIncome: forecast['predictedMonthlyIncome'],
-            predictedMonthlyExpense: forecast['predictedMonthlyExpense'],
+            targetDate: _selectedEndDate!,
           );
-
-      if (!feasibility['success']) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(feasibility['error'] ?? 'Unknown error')),
-          );
-        }
-        setState(() {
-          _isLoading = false;
-        });
-        return;
-      }
-
-      // Generate saving plan
-      final monthlyNetSavings = feasibility['monthlyNetIncome'];
-      final plan = SavingGoalAssistantService.generateSavingPlan(
-        savingGoalName: _nameController.text,
-        targetAmount: targetAmount,
-        startDate: _selectedStartDate!,
-        endDate: _selectedEndDate!,
-        monthlyIncome: forecast['predictedMonthlyIncome'],
-        monthlyExpense: forecast['predictedMonthlyExpense'],
-        monthlyNetSavings: monthlyNetSavings,
-      );
-
-      // Suggest accounts
-      final accountSuggestions = SavingGoalAssistantService.suggestAccounts(
-        List<Map<String, dynamic>>.from(financialData['accounts'] ?? []),
-        List<Map<String, dynamic>>.from(
-          financialData['incomeTransactions'] ?? [],
-        ),
-        List<Map<String, dynamic>>.from(
-          financialData['expenseTransactions'] ?? [],
-        ),
-      );
 
       setState(() {
         _isLoading = false;
       });
 
-      // Navigate to plan screen
+      if (!suggestion.success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(suggestion.feasibilityMessage)),
+          );
+        }
+        return;
+      }
+
+      // STEP 3: Go directly to confirmation screen (skip suggestion dialog)
       if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => SavingGoalPlanScreen(
-              userId: widget.userId,
-              plan: plan,
-              feasibility: feasibility,
-              accountSuggestions: accountSuggestions,
-              accounts: List<Map<String, dynamic>>.from(
-                financialData['accounts'] ?? [],
-              ),
-            ),
-          ),
-        );
+        _proceedToConfirmation(suggestion);
       }
     } catch (e) {
       print('Error analyzing saving goal: $e');
+      setState(() {
+        _isLoading = false;
+      });
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Error: $e')));
-        setState(() {
-          _isLoading = false;
-        });
       }
     }
+  }
+
+  /// Dialog: "Key in Income" or "Free Saving" when no consistent income
+  void _showIncomeOptionsDialog(IncomeCheckResult incomeCheck) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        titlePadding: const EdgeInsets.fromLTRB(24, 16, 16, 0),
+        title: Stack(
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(right: 32),
+              child: Text('Record Your Income First'),
+            ),
+            Positioned(
+              right: 0,
+              top: -8,
+              child: GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: const Icon(Icons.close, color: Colors.black54, size: 28),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'To get accurate savings suggestions, please record your salary income. Choose one of the options below:',
+        ),
+        actions: [
+          // Option 1: Go to Free Saving
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => FreeSavingPage(userId: widget.userId),
+                ),
+              );
+            },
+            child: const Text('Free Saving'),
+          ),
+          // Option 2: Key in Income
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              _navigateToAddIncomeTransaction(incomeCheck.salaryCategoryId);
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Key in Income'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Navigate to Add Transaction screen with salary category pre-selected
+  Future<void> _navigateToAddIncomeTransaction(String? salaryCategoryId) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            AddTransaction(userId: widget.userId, ledgerId: widget.ledgerId),
+      ),
+    );
+
+    // If transaction was added, refresh the income check
+    if (result == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Income recorded! Now you can create your savings goal.',
+          ),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  /// Dialog: Show calculated savings suggestion before confirmation
+  void _showSuggestionConfirmationDialog(SavingsSuggestionResult suggestion) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Savings Goal Suggestion'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Suggested monthly savings (highlighted)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Suggested Monthly Savings',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'RM ${suggestion.suggestedMonthlySavings.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'per month to reach RM ${suggestion.targetAmount.toStringAsFixed(2)} in ${suggestion.timelineMonths} months',
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Analysis
+              Text('Analysis', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              Text(
+                suggestion.analysis,
+                style: const TextStyle(fontSize: 12, height: 1.5),
+              ),
+              const SizedBox(height: 16),
+              // Feasibility status
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    suggestion.isFeasible ? Icons.check_circle : Icons.warning,
+                    color: suggestion.isFeasible ? Colors.green : Colors.orange,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      suggestion.feasibilityMessage,
+                      style: const TextStyle(fontSize: 12, height: 1.5),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Adjust Goal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _proceedToConfirmation(suggestion);
+            },
+            child: const Text('Confirm & Continue'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Proceed to confirmation screen with suggestion data
+  Future<void> _proceedToConfirmation(
+    SavingsSuggestionResult suggestion,
+  ) async {
+    // Prepare plan data as a Map
+    final plan = {
+      'savingGoalName': _nameController.text,
+      'targetAmount': suggestion.targetAmount,
+      'startDate': DateFormat('yyyy-MM-dd').format(_selectedStartDate!),
+      'endDate': DateFormat(
+        'yyyy-MM-dd',
+      ).format(suggestion.targetDate), // Convert DateTime to String
+      'totalMonths': suggestion.timelineMonths,
+      'plannedMonthlySaving':
+          suggestion.requiredMonthlySavings, // Actual required amount
+    };
+
+    // Prepare feasibility data as a Map
+    final feasibility = {
+      'isFeasible': suggestion.isFeasible,
+      'analysis': suggestion.analysis,
+      'feasibilityMessage': suggestion.feasibilityMessage,
+      'averageMonthlyIncome': suggestion.averageMonthlyIncome,
+      // Determine stage from analysis
+      'stage': suggestion.analysis.contains('IMPOSSIBLE')
+          ? 'impossible'
+          : suggestion.analysis.contains('CHALLENGING')
+          ? 'challenging'
+          : 'achievable',
+    };
+
+    // TODO: Prepare account suggestions and accounts list
+    // For now, pass empty data - you may need to fetch this from your service
+    final accountSuggestions = {
+      'suggestedSourceAccountId': null,
+      'suggestedDestAccountId': null,
+    };
+    final List<Map<String, dynamic>> accounts = [];
+
+    // Navigate to confirmation screen with the suggestion
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SavingGoalConfirmationScreen(
+          userId: widget.userId,
+          plan: plan,
+          feasibility: feasibility,
+          accountSuggestions: accountSuggestions,
+          accounts: accounts,
+        ),
+      ),
+    );
   }
 
   @override

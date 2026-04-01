@@ -9,8 +9,9 @@ import 'saving_goal_assistant_screen.dart';
 
 class SavingsPage extends StatefulWidget {
   final String userId;
+  final String? ledgerId;
 
-  const SavingsPage({super.key, required this.userId});
+  const SavingsPage({super.key, required this.userId, this.ledgerId});
 
   @override
   State<SavingsPage> createState() => _SavingsPageState();
@@ -381,8 +382,10 @@ class _SavingsPageState extends State<SavingsPage> {
                 final result = await Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        CreateSavingPage(userId: widget.userId),
+                    builder: (context) => CreateSavingPage(
+                      userId: widget.userId,
+                      ledgerId: widget.ledgerId,
+                    ),
                   ),
                 );
                 // Refresh the data if a saving goal was created
@@ -481,6 +484,7 @@ class _SavingsPageState extends State<SavingsPage> {
                           MaterialPageRoute(
                             builder: (context) => SavingGoalAssistantScreen(
                               userId: widget.userId,
+                              ledgerId: widget.ledgerId,
                             ),
                           ),
                         );

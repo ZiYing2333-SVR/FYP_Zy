@@ -30,6 +30,15 @@ class _SavingGoalPlanScreenState extends State<SavingGoalPlanScreen> {
     final suggestions =
         (widget.feasibility['suggestions'] as List<dynamic>?)?.cast<String>() ??
         [];
+    final double targetAmount = widget.plan['targetAmount'] ?? 0;
+    final int totalMonths = widget.plan['totalMonths'] ?? 1;
+    final double requiredMonthlySaving = targetAmount / totalMonths;
+
+    final double monthlyNetSavings = widget.plan['monthlyNetSavings'] ?? 0;
+    final bool exceedsSavings = requiredMonthlySaving > monthlyNetSavings;
+    final double plannedMonthlySaving = exceedsSavings
+        ? monthlyNetSavings
+        : requiredMonthlySaving;
 
     return Scaffold(
       backgroundColor: const Color(0xFFFFFFFB),
@@ -55,6 +64,33 @@ class _SavingGoalPlanScreenState extends State<SavingGoalPlanScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Add this warning block near the top of your build method
+            if (exceedsSavings)
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline, color: Colors.red),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Warning: Required savings (RM${requiredMonthlySaving.toStringAsFixed(2)}) '
+                        'exceeds your monthly net savings (RM${monthlyNetSavings.toStringAsFixed(2)})!',
+                        style: TextStyle(
+                          color: Colors.red.shade900,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             // Feasibility Status Card
             Container(
               padding: const EdgeInsets.all(16),
@@ -120,6 +156,7 @@ class _SavingGoalPlanScreenState extends State<SavingGoalPlanScreen> {
                 color: Colors.green.shade50,
                 borderRadius: BorderRadius.circular(12),
               ),
+
               child: Column(
                 children: [
                   _buildSummaryRow(
@@ -136,6 +173,17 @@ class _SavingGoalPlanScreenState extends State<SavingGoalPlanScreen> {
                     'Monthly Net Savings',
                     'RM${(widget.plan['monthlyNetSavings'] ?? 0).toStringAsFixed(2)}',
                   ),
+
+                  _buildSummaryRow(
+                    'Planned Monthly Saving',
+                    'RM${plannedMonthlySaving.toStringAsFixed(2)}',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildSummaryRow(
+                    'Your Saving Capacity',
+                    'RM${(widget.plan['monthlyNetSavings'] ?? 0).toStringAsFixed(2)}',
+                  ),
+
                   const SizedBox(height: 12),
                   _buildSummaryRow(
                     'Monthly Income',
@@ -258,12 +306,15 @@ class _SavingGoalPlanScreenState extends State<SavingGoalPlanScreen> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
+                  final newPlan = Map<String, dynamic>.from(widget.plan);
+                  newPlan['plannedMonthlySaving'] = plannedMonthlySaving;
+
                   Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (context) => SavingGoalConfirmationScreen(
                         userId: widget.userId,
-                        plan: widget.plan,
+                        plan: newPlan,
                         feasibility: widget.feasibility,
                         accountSuggestions: widget.accountSuggestions,
                         accounts: widget.accounts,

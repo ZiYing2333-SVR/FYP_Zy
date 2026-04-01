@@ -90,11 +90,27 @@ class SavingGoalAssistantService {
       var date = txn['date'];
       final amount = (txn['amount'] ?? 0).toDouble().abs();
       if (date != null) {
-        final dateStr = date is DateTime
-            ? DateFormat('yyyy-MM-dd').format(date)
-            : date.toString();
-        final month = dateStr.substring(0, 7); // YYYY-MM
-        monthlyIncome[month] = (monthlyIncome[month] ?? 0) + amount;
+        try {
+          String dateStr;
+          if (date is DateTime) {
+            dateStr = DateFormat('yyyy-MM-dd').format(date);
+          } else if (date is String) {
+            dateStr = date;
+          } else {
+            dateStr = date.toString();
+            if (dateStr.contains('T')) {
+              dateStr = dateStr.split('T')[0];
+            }
+          }
+          if (dateStr.length >= 7) {
+            final month = dateStr.substring(0, 7);
+            monthlyIncome[month] = (monthlyIncome[month] ?? 0) + amount;
+          }
+        } catch (e) {
+          print(
+            '[SavingGoalAssistant] Warning: Failed to parse income date "$date": $e',
+          );
+        }
       }
     }
 
@@ -103,11 +119,27 @@ class SavingGoalAssistantService {
       var date = txn['date'];
       final amount = (txn['amount'] ?? 0).toDouble().abs();
       if (date != null) {
-        final dateStr = date is DateTime
-            ? DateFormat('yyyy-MM-dd').format(date)
-            : date.toString();
-        final month = dateStr.substring(0, 7); // YYYY-MM
-        monthlyExpense[month] = (monthlyExpense[month] ?? 0) + amount;
+        try {
+          String dateStr;
+          if (date is DateTime) {
+            dateStr = DateFormat('yyyy-MM-dd').format(date);
+          } else if (date is String) {
+            dateStr = date;
+          } else {
+            dateStr = date.toString();
+            if (dateStr.contains('T')) {
+              dateStr = dateStr.split('T')[0];
+            }
+          }
+          if (dateStr.length >= 7) {
+            final month = dateStr.substring(0, 7);
+            monthlyExpense[month] = (monthlyExpense[month] ?? 0) + amount;
+          }
+        } catch (e) {
+          print(
+            '[SavingGoalAssistant] Warning: Failed to parse expense date "$date": $e',
+          );
+        }
       }
     }
 

@@ -13,6 +13,7 @@ class AddAccountPage1 extends StatelessWidget {
     final accountTypes = [
       {'type': 'Debit Card', 'icon': Icons.credit_card},
       {'type': 'Credit Card', 'icon': Icons.credit_card},
+      {'type': 'Savings', 'icon': Icons.savings},
       {'type': 'E-Wallet', 'icon': Icons.account_balance_wallet},
       {'type': 'Others', 'icon': Icons.more_horiz},
     ];
@@ -120,6 +121,21 @@ class AddAccountPage1 extends StatelessWidget {
           MaterialPageRoute(
             builder: (context) =>
                 AddAccountEWallet(accountType: accountType, userId: userId),
+          ),
+        );
+        break;
+
+      case 'Savings':
+        // Redirect to form page for savings account
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => AddAccountPage3(
+              accountType: accountType,
+              bankName: 'Savings Account',
+              bankImage: null,
+              userId: userId,
+            ),
           ),
         );
         break;

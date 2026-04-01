@@ -5,8 +5,9 @@ import 'saving_goal_assistant_screen.dart';
 
 class CreateSavingPage extends StatefulWidget {
   final String userId;
+  final String? ledgerId;
 
-  const CreateSavingPage({super.key, required this.userId});
+  const CreateSavingPage({super.key, required this.userId, this.ledgerId});
 
   @override
   State<CreateSavingPage> createState() => _CreateSavingPageState();
@@ -123,8 +124,10 @@ class _CreateSavingPageState extends State<CreateSavingPage> {
                 final result = await Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        SavingGoalAssistantScreen(userId: widget.userId),
+                    builder: (context) => SavingGoalAssistantScreen(
+                      userId: widget.userId,
+                      ledgerId: widget.ledgerId,
+                    ),
                   ),
                 );
                 // If a goal was created successfully, pop back to savings_page with result

@@ -33,6 +33,227 @@ class _AccountPageState extends State<AccountPage> {
     _checkBudgetAlerts();
   }
 
+  Future<Map<String, dynamic>?> _fetchGoalForAccount(String accountId) async {
+    try {
+      // Find goal linked to this savings account
+      final goalAccountResult = await Supabase.instance.client
+          .from('goalAccount')
+          .select()
+          .eq('accountId', accountId)
+          .maybeSingle();
+
+      if (goalAccountResult == null) {
+        return null;
+      }
+
+      final goalId = goalAccountResult['goalId'];
+
+      // Fetch the goal details
+      final goalResult = await Supabase.instance.client
+          .from('SavingGoal')
+          .select()
+          .eq('goalId', goalId)
+          .single();
+
+      return goalResult as Map<String, dynamic>?;
+    } catch (e) {
+      print('Error fetching goal for account $accountId: $e');
+      return null;
+    }
+  }
+
+  double _calculateGoalProgress(double currentAmount, double targetAmount) {
+    if (targetAmount <= 0) return 0;
+    final progress = (currentAmount / targetAmount) * 100;
+    return progress > 100 ? 100 : progress;
+  }
+
+  Widget _buildSavingsAccountCard(
+    BuildContext context,
+    Map<String, dynamic> account,
+    Map<String, dynamic>? goal,
+  ) {
+    final accountId = account['accountId'] ?? '';
+    final accountName = account['accountName'] ?? 'Savings';
+    final iconImage = account['iconImage'];
+    final balance = (account['balance'] ?? 0).toDouble();
+    final currencyId = account['currencyId'];
+
+    double progress = 0;
+    double targetAmount = 0;
+    if (goal != null) {
+      targetAmount = (goal['targetAmount'] ?? 0).toDouble();
+      final currentAmount = (goal['currentAmount'] ?? 0).toDouble();
+      progress = _calculateGoalProgress(currentAmount, targetAmount);
+    }
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => AccountDetailScreen(
+              accountId: accountId,
+              userId: widget.userId,
+            ),
+          ),
+        ).then((_) {
+          _fetchAccounts();
+        });
+      },
+      child: Container(
+        width: 200,
+        margin: const EdgeInsets.only(right: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF9E6),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header with icon and name
+            Row(
+              children: [
+                if (iconImage != null && iconImage.isNotEmpty)
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[200]!),
+                    ),
+                    child: Image.network(
+                      _getIconUrl(iconImage),
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.savings, size: 20),
+                        );
+                      },
+                    ),
+                  )
+                else
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.savings, size: 20),
+                  ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    accountName,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // Progress bar section
+            if (goal != null)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Progress bar
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: progress / 100,
+                      minHeight: 6,
+                      backgroundColor: Colors.grey[300],
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Colors.green.shade400,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Progress percentage
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '${progress.toStringAsFixed(1)}%',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.green,
+                        ),
+                      ),
+                      Text(
+                        _formatCurrencyWithSymbol(targetAmount, currencyId),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              )
+            else
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // No goal message
+                  Text(
+                    'No set goal yet',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Current balance
+                  Text(
+                    'Balance: ${_formatCurrencyWithSymbol(balance, currencyId)}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getIconUrl(String imagePath) {
+    if (imagePath.startsWith('http')) {
+      return imagePath;
+    } else if (imagePath.startsWith('AccountLogo/')) {
+      return BankIconHelper.getBankIconUrl(imagePath);
+    } else if (imagePath.startsWith('assets/')) {
+      return imagePath;
+    }
+    return imagePath;
+  }
+
   Future<void> _fetchCurrencies() async {
     try {
       final response = await Supabase.instance.client.from('Currency').select();
@@ -301,6 +522,11 @@ class _AccountPageState extends State<AccountPage> {
       accountsByType.putIfAbsent(type, () => []);
       accountsByType[type]!.add(account);
     }
+
+    // Filter savings accounts
+    final savingsAccounts = _accounts
+        .where((acc) => acc['accountType'] == 'Savings')
+        .toList();
 
     return Scaffold(
       backgroundColor: const Color(0xFFFEFFD3),
@@ -589,8 +815,88 @@ class _AccountPageState extends State<AccountPage> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Account Categories
-                    ...accountsByType.entries.map((entry) {
+                    // Savings Accounts Section
+                    if (savingsAccounts.isNotEmpty)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12.0),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Savings Accounts',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) =>
+                                            SavingsPage(userId: widget.userId),
+                                      ),
+                                    );
+                                  },
+                                  child: Text(
+                                    'View all',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.green.shade600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(
+                            height: 170,
+                            child: FutureBuilder<List<Map<String, dynamic>?>?>(
+                              future: Future.wait(
+                                savingsAccounts.map(
+                                  (account) => _fetchGoalForAccount(
+                                    account['accountId'],
+                                  ),
+                                ),
+                              ),
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState ==
+                                    ConnectionState.waiting) {
+                                  return const Center(
+                                    child: CircularProgressIndicator(),
+                                  );
+                                }
+
+                                final goals = snapshot.data ?? [];
+
+                                return ListView.builder(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: savingsAccounts.length,
+                                  itemBuilder: (context, index) {
+                                    return _buildSavingsAccountCard(
+                                      context,
+                                      savingsAccounts[index],
+                                      goals[index],
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                        ],
+                      ),
+
+                    // Account Categories (excluding Savings)
+                    ...accountsByType.entries.where((entry) => entry.key != 'Savings').map((
+                      entry,
+                    ) {
                       final accountType = entry.key;
                       final accounts = entry.value;
                       final categoryBalance =

@@ -72,8 +72,10 @@ class AIFeaturesScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        SavingGoalAssistantScreen(userId: userId),
+                    builder: (context) => SavingGoalAssistantScreen(
+                      userId: userId,
+                      ledgerId: ledgerId,
+                    ),
                   ),
                 );
               },
