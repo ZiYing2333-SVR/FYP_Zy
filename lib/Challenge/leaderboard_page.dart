@@ -45,8 +45,9 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
 
       data = await supabase
           .from('ChallengeParticipant')
-          .select('progressValue, userId')
+          .select('progressValue, userId, isComplete')
           .eq('challengeId', widget.challengeId!)
+          .eq('isComplete', false)
           .order('progressValue', ascending: false);
     } else if (widget.customChallengeId != null) {
       loadedChallengeId = null;
@@ -61,8 +62,9 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
 
       data = await supabase
           .from('ChallengeParticipant')
-          .select('progressValue, userId')
+          .select('progressValue, userId, isComplete')
           .eq('customChallengeId', widget.customChallengeId!)
+          .eq('isComplete', false)
           .order('progressValue', ascending: false);
     } else {
       data = [];
