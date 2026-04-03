@@ -38,24 +38,20 @@ class HistoricalSpending {
   HistoricalSpending({required this.date, required this.amount});
 }
 
-/// Service for budget forecasting using Facebook Prophet algorithm via API
-/// Communicates with Python FastAPI backend for accurate time-series forecasting
+/// Service for budget forecasting using Forecast API
+/// Communicates with forecastapi.com for accurate expense predictions
 class BudgetForecastService {
   static const String _tag = '[BudgetForecastService]';
   static const int _minHistoricalMonths = 3;
 
-  // Backend API configuration - CHANGE THIS for production
-  //
-  // LOCAL DEVELOPMENT (default):
-  static const String _backendUrl = 'https://fyp-zy.onrender.com';
-  //
-  // CLOUD DEPLOYMENT (uncomment one):
-  // static const String _backendUrl = 'https://your-app.up.railway.app';  // Railway (recommended)
-  // static const String _backendUrl = 'https://your-app.onrender.com';     // Render
-  // static const String _backendUrl = 'https://your-replit.replit.dev';    // Replit
-  //
-  // See RAILWAY_DEPLOYMENT_GUIDE.md for step-by-step cloud setup!
-  static const Duration _timeout = Duration(seconds: 30);
+  // Forecast API configuration
+  static const String _forecastApiUrl = 'https://forecastapi.com/v2/forecast';
+  // API Key from Forecast API (free tier available)
+  static const String _apiKey =
+      'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiIwMTk4YTgxMC0xM2JhLTcxZjktYWNjMS0wYzQ5MDA5ZDE2NWIiLCJqdGkiOiJmMjQ1NzJkNWUzY2IxMmIyODRlODkyYjg0ODY1ZjgyMWQ4ZDRhYTBlYWQ3YzZlYTE5ZjAzMTdkMjA5MGM1NDA2OThiODk2MzAzNGNkNTI4MyIsImlhdCI6MTc3NTA3NTk3OC40NjM2OCwibmJmIjoxNzc1MDc1OTc4LjQ2MzY4NCwiZXhwIjoxODM4MjM0Mzc4LjQ1NTcxNiwic3ViIjoiOTEiLCJzY29wZXMiOltdfQ.EdzgtFRbifJWMZ6zLwspMGuS3lm4bGQ_rGrz9oF0P7r2uCY9toNyvQsGP6nj9Zsw7xaRvrBaeJAlAwkbsoyPLClq6F3sD19AN5mdkpVdsm09PIe9wTUGGFrWyoMB9qqvpT_RkuidoR8bf0MOpre8FBW0kIA42Olkzqlg-Af0G6oBZ9_qs4xkSDO30wKaVdu5ULjsD4UfXq46lX0XFx0_kmSf40pomuh7kw21NDmWEaCS_jvam_B42PDTgjdSy_tvsPjR4-5VXd_tcDxWcZDGQQaKKlN3j-2DGP37GiO3EdUKI_UH7svKSzx-ZdGauEjL6YVf8rYEWEU7IrNIDf11PnirquRCFZSo0ELp3ZuilaqwKG-nPxp6qy0JLxyfFuJ2MwH8YEac6GmY3DZPPUx9M1Rzp6nEUvold6r2wPm2F8B8xRY0lNBSD2OzELKPvbxMXHglQln-Ac5H246HnzwIuLuHI5ywSe6Xim_HnKMhQ5DKT-Yhu0gsk6Y8Ahd2dINLWqSQEIu6ysjxSFrhV2VubZUJW_s2mfsoz0tag84PlypZnBLjKE5auzgS6d8AZYZAPhGppOrKyMMKHaVjYwRPYzgztybNsC9J5jK85yRgV1_MndtyzuBQbL2BXd0f9APeoX0EALWg2IfD1O8qgLTBSXKFmEP_ngTRj4eZBcS9_-0';
+
+  // API timeout (Forecast API is fast, 15 seconds is enough)
+  static const Duration _timeout = Duration(seconds: 15);
 
   /// Fetches historical spending data for a budget
   Future<List<HistoricalSpending>> _fetchHistoricalData(
@@ -150,28 +146,30 @@ class BudgetForecastService {
         return [];
       }
 
-      // Prepare request payload
+      // Prepare request payload for Forecast API
       final List<Map<String, dynamic>> histData = historicalData.map((h) {
         return {
-          'date': h.date.toIso8601String().split('T')[0], // YYYY-MM-DD
-          'amount': h.amount,
+          'date': h.date
+              .toIso8601String()
+              .split('T')[0]
+              .substring(0, 7), // YYYY-MM format
+          'value': h.amount,
         };
       }).toList();
 
-      final requestBody = {
-        'historical_data': histData,
-        'forecast_periods': forecastMonths,
-        'budget_amount': budgetAmount,
-      };
+      final requestBody = {'data': histData, 'periods': forecastMonths};
 
-      print('$_tag Calling Prophet API at $_backendUrl/forecast');
+      print('$_tag Calling Forecast API at $_forecastApiUrl');
       print('$_tag Request: ${jsonEncode(requestBody)}');
 
       // Make API request
       final response = await http
           .post(
-            Uri.parse('$_backendUrl/forecast'),
-            headers: {'Content-Type': 'application/json'},
+            Uri.parse(_forecastApiUrl),
+            headers: {
+              'Authorization': 'Bearer $_apiKey',
+              'Content-Type': 'application/json',
+            },
             body: jsonEncode(requestBody),
           )
           .timeout(_timeout);
@@ -184,29 +182,40 @@ class BudgetForecastService {
 
         print('$_tag API Response: ${response.body}');
 
-        // Parse forecast results
+        // Parse forecast results from Forecast API
         final List<dynamic> forecastList = decodedResponse['forecast'] ?? [];
-        final double mae = (decodedResponse['mae'] ?? 0.0).toDouble();
-        final bool hasSufficientData =
-            decodedResponse['has_sufficient_data'] ?? false;
-        final String alertStatus = decodedResponse['alert_status'] ?? 'normal';
-        final String alertMessage = decodedResponse['alert_message'] ?? '';
+
+        if (forecastList.isEmpty) {
+          print('$_tag No forecast data received');
+          return [];
+        }
 
         final results = forecastList.asMap().entries.map((entry) {
           final index = entry.key;
           final forecast = entry.value as Map<String, dynamic>;
 
+          // Determine alert status based on forecast value vs budget
+          final forecastedAmount = (forecast['value'] ?? 0.0).toDouble();
+          final alertStatus = forecastedAmount > budgetAmount
+              ? 'warning'
+              : forecastedAmount > (budgetAmount * 1.2)
+              ? 'critical'
+              : 'normal';
+
           return ForecastResult(
-            date: DateTime.parse(forecast['date'] as String),
-            forecastedAmount: (forecast['predicted_amount'] ?? 0.0).toDouble(),
-            lowerBound: (forecast['lower_bound'] ?? 0.0).toDouble(),
-            upperBound: (forecast['upper_bound'] ?? 0.0).toDouble(),
-            isAnomaly: forecast['is_anomaly'] ?? false,
-            mae: mae,
-            hasSufficientData: hasSufficientData,
-            // Only first forecast has alert status/message
-            alertStatus: index == 0 ? alertStatus : 'normal',
-            alertMessage: index == 0 ? alertMessage : '',
+            date: DateTime.parse('${forecast['date']}-01'),
+            forecastedAmount: forecastedAmount,
+            lowerBound: forecastedAmount * 0.85, // 15% lower bound estimate
+            upperBound: forecastedAmount * 1.15, // 15% upper bound estimate
+            isAnomaly: false,
+            mae: 0.0,
+            hasSufficientData: historicalData.length >= _minHistoricalMonths,
+            alertStatus: alertStatus,
+            alertMessage: alertStatus == 'normal'
+                ? 'Expenses within expected range'
+                : alertStatus == 'warning'
+                ? 'Expenses trending above budget. Consider reducing.'
+                : 'Expenses significantly above budget. Take action now.',
           );
         }).toList();
 
@@ -215,31 +224,18 @@ class BudgetForecastService {
       } else {
         print('$_tag API Error: ${response.statusCode} - ${response.body}');
         throw Exception(
-          'Prophet API Error: ${response.statusCode} - ${response.body}',
+          'Forecast API Error: ${response.statusCode} - ${response.body}',
         );
       }
     } on http.ClientException catch (e) {
       print('$_tag Network Error: $e');
       throw Exception(
-        'Network Error: Could not connect to Prophet API at $_backendUrl. '
+        'Network Error: Could not connect to Forecast API. '
         'Make sure the backend is running.',
       );
     } catch (e) {
       print('$_tag Error calling forecast API: $e');
       throw Exception('Forecast API Error: $e');
-    }
-  }
-
-  /// Checks backend health before making forecast
-  Future<bool> _checkBackendHealth() async {
-    try {
-      final response = await http
-          .get(Uri.parse('$_backendUrl/health'))
-          .timeout(const Duration(seconds: 5));
-      return response.statusCode == 200;
-    } catch (e) {
-      print('$_tag Backend health check failed: $e');
-      return false;
     }
   }
 
@@ -328,16 +324,7 @@ class BudgetForecastService {
 
       print('$_tag Fetched ${historicalData.length} months of history');
 
-      // Check backend health first
-      final isHealthy = await _checkBackendHealth();
-      if (!isHealthy) {
-        throw Exception(
-          'Prophet backend is not available. '
-          'Please ensure the backend server is running at $_backendUrl',
-        );
-      }
-
-      // Call Prophet API for forecast
+      // Call Forecast API for forecast
       final forecast = await _callForecastAPI(
         historicalData,
         forecastMonths,

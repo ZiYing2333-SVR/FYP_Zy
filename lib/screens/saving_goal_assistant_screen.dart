@@ -109,7 +109,7 @@ class _SavingGoalAssistantScreenState extends State<SavingGoalAssistantScreen> {
       // STEP 1: Check if user has recent income (any salary in past 3 months)
       final recentIncomeCheck =
           await IntelligentSavingsGoalAssistant.checkRecentIncomeExists(
-            widget.userId,
+            widget.ledgerId ?? '',
           );
 
       if (!recentIncomeCheck.hasRecentIncome) {
@@ -130,7 +130,7 @@ class _SavingGoalAssistantScreenState extends State<SavingGoalAssistantScreen> {
       final targetAmount = double.parse(_targetAmountController.text);
       final suggestion =
           await IntelligentSavingsGoalAssistant.generateSavingsSuggestion(
-            userId: widget.userId,
+            ledgerId: widget.ledgerId ?? '',
             targetAmount: targetAmount,
             targetDate: _selectedEndDate!,
           );

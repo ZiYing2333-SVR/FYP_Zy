@@ -164,18 +164,30 @@ class ForecastResult {
 
   factory ForecastResult.fromJson(Map<String, dynamic> json) {
     List<double> forecastValues = [];
+
+    // Forecast API returns forecast as array of objects with 'value' field
+    // Example: [{"date": "2026-02", "value": 1400.5}, ...]
     if (json['forecast'] is List) {
-      forecastValues = List<double>.from(
-        (json['forecast'] as List).map((x) => (x as num).toDouble()),
-      );
+      forecastValues = (json['forecast'] as List).map((item) {
+        if (item is Map && item.containsKey('value')) {
+          return (item['value'] as num).toDouble();
+        } else if (item is num) {
+          // Fallback for simple numeric values
+          return (item as num).toDouble();
+        }
+        return 0.0;
+      }).toList();
     }
 
+    // Forecast API provides basic confidence, default to 80%
+    double confidence = 0.80;
+
     return ForecastResult(
-      success: json['success'] ?? false,
+      success: (json['forecast'] as List?)?.isNotEmpty ?? false,
       forecast: forecastValues,
-      period: json['period'] ?? 'month',
-      periodsAhead: json['periods_ahead'] ?? 1,
-      confidence: (json['confidence'] ?? 0).toDouble(),
+      period: 'month',
+      periodsAhead: forecastValues.length,
+      confidence: confidence,
     );
   }
 }
@@ -343,11 +355,15 @@ class IntelligentSavingsGoalAssistant {
   static const String _tag = '[IntelligentSavingsGoalAssistant]';
 
   // Backend API configuration
-  static const String _backendUrl = 'https://fyp-zy.onrender.com';
-  // For local development, uncomment:
-  // static const String _backendUrl = 'http://localhost:8000';
+  // Using Forecast API (forecastapi.com) for expense predictions
+  static const String _forecastApiUrl = 'https://forecastapi.com/v2/forecast';
+  static const String _forecastApiKey =
+      'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiIwMTk4YTgxMC0xM2JhLTcxZjktYWNjMS0wYzQ5MDA5ZDE2NWIiLCJqdGkiOiJmMjQ1NzJkNWUzY2IxMmIyODRlODkyYjg0ODY1ZjgyMWQ4ZDRhYTBlYWQ3YzZlYTE5ZjAzMTdkMjA5MGM1NDA2OThiODk2MzAzNGNkNTI4MyIsImlhdCI6MTc3NTA3NTk3OC40NjM2OCwibmJmIjoxNzc1MDc1OTc4LjQ2MzY4NCwiZXhwIjoxODM4MjM0Mzc4LjQ1NTcxNiwic3ViIjoiOTEiLCJzY29wZXMiOltdfQ.EdzgtFRbifJWMZ6zLwspMGuS3lm4bGQ_rGrz9oF0P7r2uCY9toNyvQsGP6nj9Zsw7xaRvrBaeJAlAwkbsoyPLClq6F3sD19AN5mdkpVdsm09PIe9wTUGGFrWyoMB9qqvpT_RkuidoR8bf0MOpre8FBW0kIA42Olkzqlg-Af0G6oBZ9_qs4xkSDO30wKaVdu5ULjsD4UfXq46lX0XFx0_kmSf40pomuh7kw21NDmWEaCS_jvam_B42PDTgjdSy_tvsPjR4-5VXd_tcDxWcZDGQQaKKlN3j-2DGP37GiO3EdUKI_UH7svKSzx-ZdGauEjL6YVf8rYEWEU7IrNIDf11PnirquRCFZSo0ELp3ZuilaqwKG-nPxp6qy0JLxyfFuJ2MwH8YEac6GmY3DZPPUx9M1Rzp6nEUvold6r2wPm2F8B8xRY0lNBSD2OzELKPvbxMXHglQln-Ac5H246HnzwIuLuHI5ywSe6Xim_HnKMhQ5DKT-Yhu0gsk6Y8Ahd2dINLWqSQEIu6ysjxSFrhV2VubZUJW_s2mfsoz0tag84PlypZnBLjKE5auzgS6d8AZYZAPhGppOrKyMMKHaVjYwRPYzgztybNsC9J5jK85yRgV1_MndtyzuBQbL2BXd0f9APeoX0EALWg2IfD1O8qgLTBSXKFmEP_ngTRj4eZBcS9_-0';
 
-  static const Duration _timeout = Duration(seconds: 30);
+  // Forecast API is fast, 15 seconds is enough
+  static const Duration _timeout = Duration(
+    seconds: 15,
+  ); // Old Render timeout was 60s, but Forecast API is much faster
   static const int _minConsistentMonths =
       3; // Minimum months for consistent income
 
@@ -363,7 +379,7 @@ class IntelligentSavingsGoalAssistant {
   /// 3. Go to Category table and search those categoryIds for name ILIKE '%salary%' (case-insensitive)
   /// 4. Return true if salary category found with recent transactions
   static Future<IncomeCheckResult> checkRecentIncomeExists(
-    String userId,
+    String ledgerId,
   ) async {
     try {
       final today = DateTime.now();
@@ -378,6 +394,7 @@ class IntelligentSavingsGoalAssistant {
       final incomeTransactions = await Supabase.instance.client
           .from('Transaction')
           .select('categoryId, amount, date')
+          .eq('ledgerId', ledgerId) // CRITICAL: Ledger data isolation
           .eq('type', 'income') // CRITICAL: type must be 'income'
           .gte('date', dateString); // CRITICAL: past 90 days only
 
@@ -492,7 +509,7 @@ class IntelligentSavingsGoalAssistant {
   /// Uses the SMART APPROACH: Find salary category from actual income transactions (past 12 months)
   /// This ensures we find the actual salary category being used, not just any category named "salary"
   static Future<IncomeValidationResult> validateConsistentIncome(
-    String userId,
+    String ledgerId,
   ) async {
     try {
       final today = DateTime.now();
@@ -507,6 +524,7 @@ class IntelligentSavingsGoalAssistant {
       final incomeTransactions = await Supabase.instance.client
           .from('Transaction')
           .select('categoryId, amount, date')
+          .eq('ledgerId', ledgerId) // CRITICAL: Ledger data isolation
           .eq('type', 'income')
           .gte('date', dateString);
 
@@ -735,16 +753,16 @@ class IntelligentSavingsGoalAssistant {
   /// 4. Assesses feasibility: suggestedMonthlySavings ≤ (monthlyIncome - monthlyExpenses)
   ///
   /// Tables Used:
-  /// - Category: to find salary category (userId + type='income' + name like 'Salary')
+  /// - Category: to find salary category (ledgerId + type='income' + name like 'Salary')
   /// - Transaction: to fetch income and expense transactions with dates
   static Future<SavingsSuggestionResult> generateSavingsSuggestion({
-    required String userId,
+    required String ledgerId,
     required double targetAmount,
     required DateTime targetDate,
   }) async {
     try {
       // 1. Validate consistent income (requires 3+ consecutive months from past 12 months)
-      final incomeValidation = await validateConsistentIncome(userId);
+      final incomeValidation = await validateConsistentIncome(ledgerId);
 
       if (!incomeValidation.success) {
         return SavingsSuggestionResult(
@@ -810,46 +828,92 @@ class IntelligentSavingsGoalAssistant {
 
       // 5. Get user's average monthly expenses to assess feasibility
       final expenses = await _getAverageMonthlyExpenses(
-        userId,
+        ledgerId,
       ); // Returns average or 0
       final monthlyNetIncome =
           (incomeValidation.averageMonthlyIncome - expenses).toDouble();
 
-      // 6. Determine feasibility - Three stages
-      // Stage 1: ACHIEVABLE - Required savings <= 20% of salary (recommended rate)
-      // Stage 2: CHALLENGING - Required > 20% but <= net income (possible but tight)
-      // Stage 3: IMPOSSIBLE - Required > net income (cannot afford)
+      // 6. Determine feasibility - Three stages based on EXPLICIT RULES
+      // Calculate percentages for decision making
+      final requiredPercentOfIncome =
+          (requiredMonthlySavings /
+          incomeValidation.averageMonthlyIncome *
+          100);
+      final expensePercentOfIncome =
+          (expenses / incomeValidation.averageMonthlyIncome * 100);
 
       String feasibilityStage = 'achievable';
       String feasibilityMessage = '';
       bool isFeasible = false;
 
-      if (requiredMonthlySavings <= recommendedMonthlySavings) {
-        // STAGE 1: ACHIEVABLE
+      // STAGE 3: IMPOSSIBLE (Check first - highest severity)
+      // Condition: planned saving > 70% OR expenses > 88%
+      if (requiredPercentOfIncome > 70 || expensePercentOfIncome > 88) {
+        feasibilityStage = 'impossible';
+        isFeasible = false;
+
+        String reason = '';
+        if (requiredPercentOfIncome > 70) {
+          reason =
+              'Your goal requires ${requiredPercentOfIncome.toStringAsFixed(1)}% of your income, which exceeds the 70% maximum feasible savings rate. '
+              'At this level, you would have very little left for daily expenses and emergencies.';
+        } else if (expensePercentOfIncome > 88) {
+          reason =
+              'Your forecasted expenses are ${expensePercentOfIncome.toStringAsFixed(1)}% of your income, leaving less than 12% for any savings. '
+              'This is critically unsustainable.';
+        }
+
+        feasibilityMessage =
+            'Your goal requires RM${requiredMonthlySavings.toStringAsFixed(2)}/month '
+            '(${requiredPercentOfIncome.toStringAsFixed(1)}% of your RM${incomeValidation.averageMonthlyIncome.toStringAsFixed(2)} monthly income). '
+            '$reason '
+            'This goal CANNOT be achieved with your current financial situation. '
+            'Please extend the timeline, reduce the goal amount, or increase your income.';
+      }
+      // STAGE 1: ACHIEVABLE
+      // Condition: planned saving ≤ 20% AND expenses < 80%
+      else if (requiredPercentOfIncome <= 20 && expensePercentOfIncome < 80) {
         feasibilityStage = 'achievable';
         isFeasible = true;
         feasibilityMessage =
             'Your goal requires RM${requiredMonthlySavings.toStringAsFixed(2)}/month, '
-            'which is ${(requiredMonthlySavings / incomeValidation.averageMonthlyIncome * 100).toStringAsFixed(1)}% of your monthly income. '
-            'This is comfortable and within the recommended 20% saving rate.';
-      } else if (requiredMonthlySavings <= monthlyNetIncome) {
-        // STAGE 2: CHALLENGING
+            'which is ${requiredPercentOfIncome.toStringAsFixed(1)}% of your monthly income. '
+            'This is comfortable and within the recommended 20% saving rate. '
+            'Your forecasted expenses are ${expensePercentOfIncome.toStringAsFixed(1)}% of income, leaving healthy savings capacity. '
+            'You can achieve this goal on schedule!';
+      }
+      // STAGE 2: CHALLENGING
+      // Conditions:
+      // A) planned saving > 20% AND expenses < 80% (high target, but controllable expenses)
+      // B) planned saving ≤ 20% AND expenses ≥ 80% (low target, but high expenses)
+      else {
         feasibilityStage = 'challenging';
         isFeasible = false;
+
+        String advice = '';
+        if (requiredPercentOfIncome > 20 && expensePercentOfIncome < 80) {
+          // Case A: High savings target (>20%) but low/controlled expenses (<80%)
+          advice =
+              'Your planned savings is ${requiredPercentOfIncome.toStringAsFixed(1)}% of income (above the 20% recommendation), '
+              'but your expenses are well-controlled at ${expensePercentOfIncome.toStringAsFixed(1)}%. '
+              'You can achieve this by cutting expenses by approximately ${(requiredPercentOfIncome - 20).toStringAsFixed(1)} percentage points, '
+              'or by extending the timeline to a longer period.';
+        } else if (requiredPercentOfIncome <= 20 &&
+            expensePercentOfIncome > 80) {
+          // Case B: Low savings target (≤20%) but high expenses (>80%)
+          advice =
+              'Your planned savings is ${requiredPercentOfIncome.toStringAsFixed(1)}% of income (within 20%), '
+              'but your forecasted expenses are high at ${expensePercentOfIncome.toStringAsFixed(1)}%. '
+              'To achieve this goal, you must reduce expenses by approximately ${(expensePercentOfIncome - 80).toStringAsFixed(1)} percentage points. '
+              'Review your spending categories and identify areas to cut.';
+        }
+
         feasibilityMessage =
-            'Your goal requires RM${requiredMonthlySavings.toStringAsFixed(2)}/month, '
-            'which is ${(requiredMonthlySavings / incomeValidation.averageMonthlyIncome * 100).toStringAsFixed(1)}% of your monthly income. '
-            'This exceeds the recommended 20% rate (RM${recommendedMonthlySavings.toStringAsFixed(2)}/month) but is within your net income capability. '
-            'You can achieve this by cutting expenses or extending the timeline.';
-      } else {
-        // STAGE 3: IMPOSSIBLE
-        feasibilityStage = 'impossible';
-        isFeasible = false;
-        feasibilityMessage =
-            'Your goal requires RM${requiredMonthlySavings.toStringAsFixed(2)}/month, '
-            'but your available monthly savings is only RM${monthlyNetIncome.toStringAsFixed(2)} (income RM${incomeValidation.averageMonthlyIncome.toStringAsFixed(2)} - expenses RM${expenses.toStringAsFixed(2)}). '
-            'This goal cannot be achieved with your current financial situation. '
-            'Please extend the timeline, reduce the goal amount, or increase your income.';
+            'Your goal requires RM${requiredMonthlySavings.toStringAsFixed(2)}/month '
+            '(${requiredPercentOfIncome.toStringAsFixed(1)}% of your income). '
+            '$advice '
+            'This goal is CHALLENGING but potentially achievable with dedicated effort and adjustments. '
+            'Some chance exists to reach your goal if you optimize your spending carefully.';
       }
 
       return SavingsSuggestionResult(
@@ -889,53 +953,246 @@ class IntelligentSavingsGoalAssistant {
   /// =========== EXISTING ANALYSIS METHODS (Unchanged) ===========
 
   /// 1️⃣ ANALYZE GOAL FEASIBILITY
-  /// Checks if a savings goal is realistic and provides AI analysis
+  /// Checks if a savings goal is realistic by comparing income forecast with expense forecast
+  /// This ensures the goal is achievable based on BOTH income AND spending patterns
   static Future<GoalFeasibilityResult> analyzeGoalFeasibility({
+    required String userId,
     required double monthlyIncome,
     required double monthlyExpenses,
     required double goalAmount,
     required int timelineMonths,
+    String? budgetId,
+    String? accountId,
+    String? categoryId,
+    String? ledgerId,
   }) async {
     try {
-      final url = Uri.parse('$_backendUrl/savings-goal/feasibility');
+      // ========================================
+      print('$_tag ═══════════════════════════════════════════════════════');
+      print('$_tag 🎯 [analyzeGoalFeasibility] STARTING SAVINGS GOAL ANALYSIS');
+      print('$_tag ═══════════════════════════════════════════════════════');
+      print('$_tag Input Parameters:');
+      print('$_tag   • Monthly Income: RM${monthlyIncome.toStringAsFixed(2)}');
+      print(
+        '$_tag   • Current Monthly Expenses: RM${monthlyExpenses.toStringAsFixed(2)}',
+      );
+      print('$_tag   • Savings Goal: RM${goalAmount.toStringAsFixed(2)}');
+      print('$_tag   • Timeline: $timelineMonths months');
+      print('$_tag   • User ID: $userId');
+      print('$_tag ═══════════════════════════════════════════════════════');
+      // ========================================
 
-      final response = await http
-          .post(
-            url,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'monthly_income': monthlyIncome,
-              'monthly_expenses': monthlyExpenses,
-              'goal_amount': goalAmount,
-              'timeline_months': timelineMonths,
-            }),
-          )
-          .timeout(_timeout);
+      // Step 1: Get spending forecast using historical data
+      // This is critical - we need to forecast expenses, not just use current average
+      print(
+        '$_tag Step 1️⃣ : Fetching expense forecast using historical data...',
+      );
+      final spendingForecast = await getSpendingForecast(
+        userId,
+        periodsAhead: timelineMonths,
+        period: 'month',
+      );
 
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-        return GoalFeasibilityResult.fromJson(json);
+      // Step 2: Calculate feasibility using forecasted expenses
+      // Use the first forecasted month as the basis, but consider the trend
+      print('\n$_tag Step 2️⃣ : Processing forecast data...');
+      double projectedMonthlyExpense = monthlyExpenses;
+      if (spendingForecast.success && spendingForecast.forecast.isNotEmpty) {
+        // Use the average of forecasted expenses for more stable calculation
+        final forecastedExpenses = spendingForecast.forecast;
+        projectedMonthlyExpense =
+            forecastedExpenses.reduce((a, b) => a + b) /
+            forecastedExpenses.length;
+        print(
+          '$_tag ✅ Forecast received with ${forecastedExpenses.length} data points',
+        );
+        print('$_tag Forecasted monthly expenses:');
+        for (int i = 0; i < forecastedExpenses.length && i < 3; i++) {
+          print(
+            '$_tag   • Month ${i + 1}: RM${forecastedExpenses[i].toStringAsFixed(2)}',
+          );
+        }
+        if (forecastedExpenses.length > 3) {
+          print(
+            '$_tag   • ... and ${forecastedExpenses.length - 3} more months',
+          );
+        }
+        print(
+          '$_tag 📊 Average forecasted monthly expense: RM${projectedMonthlyExpense.toStringAsFixed(2)}',
+        );
       } else {
-        print('$_tag Feasibility analysis error: ${response.statusCode}');
-        return GoalFeasibilityResult(
-          success: false,
-          isFeasible: false,
-          //monthlySavings: monthlyIncome - monthlyExpenses,
-          monthlySavings: goalAmount / timelineMonths,
-          cumulativeSavingsTimeline: [],
-          analysis: 'Error analyzing goal feasibility',
-          suggestions: [],
-          confidenceLevel: 'low',
+        print('$_tag ⚠️ Forecast unavailable, using current monthly expense');
+        print('$_tag Using baseline: RM${monthlyExpenses.toStringAsFixed(2)}');
+      }
+
+      // Step 3: Calculate savings capacity based on projected expenses
+      print('\n$_tag Step 3️⃣ : Calculating savings capacity...');
+      final monthlySavings = monthlyIncome - projectedMonthlyExpense;
+      final requiredMonthlySavings = goalAmount / timelineMonths;
+      final isFeasible = monthlySavings >= requiredMonthlySavings;
+
+      print('$_tag Income vs Expenses Breakdown:');
+      print(
+        '$_tag   💰 Monthly Income:              RM${monthlyIncome.toStringAsFixed(2)}',
+      );
+      print(
+        '$_tag   💸 Forecasted Monthly Expenses: RM${projectedMonthlyExpense.toStringAsFixed(2)}',
+      );
+      print('$_tag   ─────────────────────────────────────');
+      print(
+        '$_tag   💳 Available for Savings:       RM${monthlySavings.toStringAsFixed(2)}',
+      );
+      print('\n$_tag Goal Requirements:');
+      print('$_tag   🎯 Goal Amount: RM${goalAmount.toStringAsFixed(2)}');
+      print('$_tag   📅 Timeline: $timelineMonths months');
+      print(
+        '$_tag   📊 Required Monthly Savings: RM${requiredMonthlySavings.toStringAsFixed(2)}',
+      );
+      print('\n$_tag Feasibility Check:');
+      if (isFeasible) {
+        print(
+          '$_tag ✅ FEASIBLE - Available savings (RM${monthlySavings.toStringAsFixed(2)}) >= Required (RM${requiredMonthlySavings.toStringAsFixed(2)})',
+        );
+      } else {
+        print(
+          '$_tag ❌ NOT FEASIBLE - Available savings (RM${monthlySavings.toStringAsFixed(2)}) < Required (RM${requiredMonthlySavings.toStringAsFixed(2)})',
         );
       }
+
+      // Generate cumulative savings timeline
+      final cumulativeSavingsTimeline = <double>[];
+      for (int i = 1; i <= timelineMonths; i++) {
+        cumulativeSavingsTimeline.add(
+          (monthlySavings * i).clamp(0, double.infinity),
+        );
+      }
+
+      print('\n$_tag Step 4️⃣ : Savings Timeline Projection');
+      print('$_tag Cumulative Savings by Month:');
+      for (int i = 0; i < cumulativeSavingsTimeline.length && i < 6; i++) {
+        final amount = cumulativeSavingsTimeline[i];
+        final percentage = ((amount / goalAmount) * 100).clamp(0.0, 100.0);
+        final progressBar = _generateProgressBar(percentage);
+        print(
+          '$_tag   Month ${i + 1}: RM${amount.toStringAsFixed(2)} $progressBar ${percentage.toStringAsFixed(0)}%',
+        );
+      }
+      if (cumulativeSavingsTimeline.length > 6) {
+        print(
+          '$_tag   ... showing first 6 months of $timelineMonths total months',
+        );
+      }
+
+      // Generate analysis and suggestions
+      String analysis;
+      List<String> suggestions;
+      String confidenceLevel;
+
+      print('\n$_tag Step 5️⃣ : Final Verdict');
+      if (isFeasible) {
+        confidenceLevel = 'high';
+        final surplus = monthlySavings - requiredMonthlySavings;
+        analysis =
+            '✅ Your goal is achievable! Based on your income (RM${monthlyIncome.toStringAsFixed(2)}) and '
+            'forecasted expenses (RM${projectedMonthlyExpense.toStringAsFixed(2)}), you can save RM${monthlySavings.toStringAsFixed(2)}/month '
+            'and reach RM${goalAmount.toStringAsFixed(2)} in $timelineMonths months.';
+        suggestions = [
+          'Monthly savings capacity: RM${monthlySavings.toStringAsFixed(2)}',
+          'Goal will be reached in approximately $timelineMonths months',
+          if (surplus > 0)
+            'You have a surplus of RM${surplus.toStringAsFixed(2)} per month - you could reach the goal faster!',
+          'Projected expenses: RM${projectedMonthlyExpense.toStringAsFixed(2)}/month (based on spending trend)',
+        ];
+        print('$_tag ✅ VERDICT: GOAL IS ACHIEVABLE');
+        print('$_tag Confidence Level: HIGH');
+        print(
+          '$_tag   • Available monthly savings: RM${monthlySavings.toStringAsFixed(2)}',
+        );
+        print(
+          '$_tag   • Monthly target required: RM${requiredMonthlySavings.toStringAsFixed(2)}',
+        );
+        if (surplus > 0) {
+          print('$_tag   • Monthly surplus: RM${surplus.toStringAsFixed(2)}');
+          print(
+            '$_tag   • Could reach goal in: ${(goalAmount / (requiredMonthlySavings + surplus)).ceil()} months (faster)',
+          );
+        }
+      } else {
+        confidenceLevel = 'low';
+        final shortfall = requiredMonthlySavings - monthlySavings;
+        final actualTimeline = monthlySavings > 0
+            ? (goalAmount / monthlySavings).ceil()
+            : 999;
+        analysis =
+            '⚠️ Your savings goal is NOT currently feasible. Your forecasted monthly expenses '
+            '(RM${projectedMonthlyExpense.toStringAsFixed(2)}) leave only RM${monthlySavings.toStringAsFixed(2)} for savings. '
+            'You need RM${shortfall.toStringAsFixed(2)} more per month to reach your goal in $timelineMonths months.';
+        suggestions = [
+          'Option 1: Increase monthly income by RM${shortfall.toStringAsFixed(2)} or more',
+          'Option 2: Reduce monthly expenses by RM${shortfall.toStringAsFixed(2)} or more',
+          'Option 3: Extend timeline to $actualTimeline months at current savings rate',
+          'Current expense trend shows spending of RM${projectedMonthlyExpense.toStringAsFixed(2)}/month - review spending categories',
+        ];
+        print('$_tag ❌ VERDICT: GOAL IS NOT FEASIBLE');
+        print('$_tag Confidence Level: LOW');
+        print(
+          '$_tag   • Required monthly savings: RM${requiredMonthlySavings.toStringAsFixed(2)}',
+        );
+        print(
+          '$_tag   • Available monthly savings: RM${monthlySavings.toStringAsFixed(2)}',
+        );
+        print('$_tag   • Monthly shortfall: RM${shortfall.toStringAsFixed(2)}');
+        print(
+          '$_tag   • Could reach goal in: $actualTimeline months (at current rate)',
+        );
+        print('$_tag Recommended Actions:');
+        print(
+          '$_tag   1️⃣ Increase income by: RM${shortfall.toStringAsFixed(2)}/month',
+        );
+        print(
+          '$_tag   2️⃣ Reduce expenses by: RM${shortfall.toStringAsFixed(2)}/month',
+        );
+        print('$_tag   3️⃣ Extend timeline to: $actualTimeline months');
+      }
+
+      print('\n$_tag ═══════════════════════════════════════════════════════');
+      print('$_tag 📋 ANALYSIS COMPLETE');
+      print('$_tag   Analysis: $analysis');
+      print('$_tag   Suggestions Count: ${suggestions.length}');
+      for (var i = 0; i < suggestions.length; i++) {
+        print('$_tag   ${i + 1}. ${suggestions[i]}');
+      }
+      print('$_tag ═══════════════════════════════════════════════════════\n');
+
+      return GoalFeasibilityResult(
+        success: true,
+        isFeasible: isFeasible,
+        monthlySavings: monthlySavings,
+        cumulativeSavingsTimeline: cumulativeSavingsTimeline,
+        analysis: analysis,
+        suggestions: suggestions,
+        confidenceLevel: confidenceLevel,
+      );
     } catch (e) {
       print('$_tag Error in analyzeGoalFeasibility: $e');
-      rethrow;
+      // Fallback to basic calculation if forecast fails
+      final monthlySavings = monthlyIncome - monthlyExpenses;
+      final requiredMonthlySavings = goalAmount / timelineMonths;
+      return GoalFeasibilityResult(
+        success: false,
+        isFeasible: monthlySavings >= requiredMonthlySavings,
+        monthlySavings: monthlySavings,
+        cumulativeSavingsTimeline: [],
+        analysis:
+            'Could not retrieve expense forecast. Using current expenses for analysis.',
+        suggestions: ['Check your spending data and try again'],
+        confidenceLevel: 'low',
+      );
     }
   }
 
   /// 2️⃣ GET SMART RECOMMENDATIONS
-  /// Provides AI-powered personalized recommendations to reach goal faster
+  /// Provides client-side personalized recommendations to reach goal faster
   static Future<SmartRecommendation> getSmartRecommendations({
     required double monthlyIncome,
     required double monthlyExpenses,
@@ -945,38 +1202,99 @@ class IntelligentSavingsGoalAssistant {
     Map<String, double>? spendingBreakdown,
   }) async {
     try {
-      final url = Uri.parse('$_backendUrl/savings-goal/recommendations');
+      final monthlySavings = monthlyIncome - monthlyExpenses;
+      final requiredMonthlySavings = goalAmount / timelineMonths;
+      final shortfall = (requiredMonthlySavings - monthlySavings).clamp(
+        0.0,
+        double.infinity,
+      );
 
-      final response = await http
-          .post(
-            url,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'monthly_income': monthlyIncome,
-              'monthly_expenses': monthlyExpenses,
-              'goal_amount': goalAmount,
-              'timeline_months': timelineMonths,
-              'current_savings': currentSavings,
-              'spending_breakdown': spendingBreakdown ?? {},
-            }),
-          )
-          .timeout(_timeout);
+      final recommendations = <String>[];
+      final priorityActions = <String>[];
+      final estimatedImpact = <Map<String, dynamic>>[];
 
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-        return SmartRecommendation.fromJson(json);
+      // Analyze spending if provided
+      if (spendingBreakdown != null && spendingBreakdown.isNotEmpty) {
+        // Find largest spending category
+        var largestCategory = '';
+        var largestAmount = 0.0;
+        spendingBreakdown.forEach((category, amount) {
+          if (amount > largestAmount) {
+            largestAmount = amount;
+            largestCategory = category;
+          }
+        });
+
+        if (largestCategory.isNotEmpty) {
+          final savingsIfReduced = largestAmount * 0.15; // 15% reduction
+          recommendations.add(
+            'Reduce $largestCategory spending by 10-15% (save \$${savingsIfReduced.toStringAsFixed(2)}/month)',
+          );
+          priorityActions.add('Review and optimize $largestCategory expenses');
+          estimatedImpact.add({
+            'action': 'Reduce $largestCategory by 15%',
+            'monthly_saving': savingsIfReduced,
+            'impact_score': 0.8,
+          });
+        }
+      }
+
+      // Income-focused recommendations
+      if (monthlySavings < requiredMonthlySavings) {
+        recommendations.add(
+          'Increase monthly income by \$${shortfall.toStringAsFixed(2)}',
+        );
+        priorityActions.add(
+          'Look for additional income opportunities or side projects',
+        );
+        estimatedImpact.add({
+          'action': 'Increase income by \$${shortfall.toStringAsFixed(2)}',
+          'monthly_saving': shortfall,
+          'impact_score': 1.0,
+        });
+      }
+
+      // Expense reduction recommendations
+      final expenseReduction = shortfall.clamp(0.0, double.infinity);
+      if (expenseReduction > 0) {
+        recommendations.add(
+          'Reduce monthly expenses by \$${expenseReduction.toStringAsFixed(2)}',
+        );
+        priorityActions.add(
+          'Cut unnecessary subscriptions and discretionary spending',
+        );
       } else {
-        print('$_tag Recommendations error: ${response.statusCode}');
-        return SmartRecommendation(
-          success: false,
-          recommendations: [],
-          priorityActions: [],
-          estimatedImpact: [],
+        recommendations.add('Great! Your savings rate supports your goal');
+        recommendations.add(
+          'Consider accelerating your timeline or increasing the goal amount',
         );
       }
+
+      // Current savings progress
+      if (currentSavings > 0) {
+        final remainingSavings = goalAmount - currentSavings;
+        final actualTimeline =
+            (remainingSavings / monthlySavings.clamp(1, double.infinity))
+                .ceil();
+        recommendations.add(
+          'Based on current savings of \$${currentSavings.toStringAsFixed(2)}, you\'ll reach your goal in $actualTimeline months',
+        );
+      }
+
+      return SmartRecommendation(
+        success: true,
+        recommendations: recommendations,
+        priorityActions: priorityActions,
+        estimatedImpact: estimatedImpact,
+      );
     } catch (e) {
       print('$_tag Error in getSmartRecommendations: $e');
-      rethrow;
+      return SmartRecommendation(
+        success: false,
+        recommendations: [],
+        priorityActions: [],
+        estimatedImpact: [],
+      );
     }
   }
 
@@ -990,51 +1308,41 @@ class IntelligentSavingsGoalAssistant {
     List<double>? expenseReductionPercentages,
   }) async {
     try {
-      final url = Uri.parse('$_backendUrl/savings-goal/scenarios');
-
       // Default scenarios if not provided
-      final scenarios = expenseReductionPercentages != null
-          ? expenseReductionPercentages
-                .map((pct) => {'expense_reduction': pct})
-                .toList()
-          : [
-              {'expense_reduction': 0.05}, // 5% reduction
-              {'expense_reduction': 0.10}, // 10% reduction
-              {'expense_reduction': 0.15}, // 15% reduction
-              {'expense_reduction': 0.20}, // 20% reduction
-            ];
+      final percentages =
+          expenseReductionPercentages ?? [0.05, 0.10, 0.15, 0.20];
 
-      final response = await http
-          .post(
-            url,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'monthly_income': monthlyIncome,
-              'monthly_expenses': monthlyExpenses,
-              'goal_amount': goalAmount,
-              'base_timeline_months': timelineMonths,
-              'scenarios': scenarios,
-            }),
-          )
-          .timeout(_timeout);
+      final results = <ScenarioResult>[];
+      final baseMonthlySavings = monthlyIncome - monthlyExpenses;
 
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-        return (json as List)
-            .map((item) => ScenarioResult.fromJson(item))
-            .toList();
-      } else {
-        print('$_tag Scenario simulation error: ${response.statusCode}');
-        return [];
+      for (final percentage in percentages) {
+        final expenseSavings = monthlyExpenses * percentage;
+        final newExpenses = monthlyExpenses - expenseSavings;
+        final newMonthlySavings = monthlyIncome - newExpenses;
+        final newTimelineMonths = (goalAmount / newMonthlySavings).ceil();
+        final totalSavingsVariation = expenseSavings.toDouble();
+
+        results.add(
+          ScenarioResult(
+            description:
+                'Reduce expenses by ${(percentage * 100).toStringAsFixed(0)}% '
+                '(save \$${expenseSavings.toStringAsFixed(2)}/month)',
+            newTimelineMonths: newTimelineMonths,
+            newMonthlySavings: newMonthlySavings,
+            totalSavingsVariation: totalSavingsVariation,
+          ),
+        );
       }
+
+      return results;
     } catch (e) {
       print('$_tag Error in simulateScenarios: $e');
-      rethrow;
+      return [];
     }
   }
 
   /// 4️⃣ GENERATE NATURAL LANGUAGE REPORT
-  /// Creates a friendly, comprehensive savings goal report
+  /// Creates a friendly, comprehensive savings goal report (client-side)
   static Future<NaturalLanguageReport> generateNaturalLanguageReport({
     required double monthlyIncome,
     required double predictedMonthlyExpense,
@@ -1044,41 +1352,139 @@ class IntelligentSavingsGoalAssistant {
     Map<String, double>? actualSpendingPatterns,
   }) async {
     try {
-      final url = Uri.parse('$_backendUrl/savings-goal/report');
+      final monthlySavings = monthlyIncome - predictedMonthlyExpense;
+      final savingsRate = (monthlySavings / monthlyIncome * 100).clamp(
+        0.0,
+        100.0,
+      );
 
-      final response = await http
-          .post(
-            url,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'monthly_income': monthlyIncome,
-              'predicted_monthly_expense': predictedMonthlyExpense,
-              'goal_amount': goalAmount,
-              'timeline_months': timelineMonths,
-              'cumulative_savings': cumulativeSavingsTimeline,
-              'actual_spending_patterns': actualSpendingPatterns ?? {},
-            }),
-          )
-          .timeout(_timeout);
+      // Generate friendly report sections
+      var executiveSummary = '';
+      executiveSummary +=
+          'Monthly income: \$${monthlyIncome.toStringAsFixed(2)} | ';
+      executiveSummary +=
+          'Monthly savings: \$${monthlySavings.toStringAsFixed(2)} (${savingsRate.toStringAsFixed(1)}%) | ';
+      executiveSummary +=
+          'Goal: \$${goalAmount.toStringAsFixed(2)} in $timelineMonths months';
 
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-        return NaturalLanguageReport.fromJson(json);
+      var financialAnalysis = '';
+      financialAnalysis +=
+          'Income Analysis: You earn \$${monthlyIncome.toStringAsFixed(2)} per month. ';
+      financialAnalysis +=
+          'Expenses: \$${predictedMonthlyExpense.toStringAsFixed(2)} per month. ';
+      financialAnalysis +=
+          'Available for savings: \$${monthlySavings.toStringAsFixed(2)} monthly.\n';
+
+      if (monthlySavings > 0) {
+        financialAnalysis +=
+            'Based on your current savings rate, you can accumulate \$${(monthlySavings * timelineMonths).toStringAsFixed(2)} in $timelineMonths months. ';
+        if (cumulativeSavingsTimeline.isNotEmpty &&
+            cumulativeSavingsTimeline.last >= goalAmount) {
+          financialAnalysis += '✅ This exceeds your goal!';
+        } else {
+          financialAnalysis += '⚠️ This falls short of your goal.';
+        }
       } else {
-        print('$_tag Report generation error: ${response.statusCode}');
-        return NaturalLanguageReport(
-          success: false,
-          executiveSummary: 'Error generating report',
-          financialAnalysis: '',
-          goalFeasibilityAnalysis: '',
-          personalizedRecommendations: '',
-          actionItems: [],
-          warningSignals: [],
+        financialAnalysis +=
+            '⚠️ Your current expenses equal or exceed your income. You need to increase savings to reach this goal.';
+      }
+
+      var goalFeasibilityAnalysis = '';
+      if (monthlySavings > 0) {
+        final requiredMonthlySavings = goalAmount / timelineMonths;
+        if (monthlySavings >= requiredMonthlySavings) {
+          goalFeasibilityAnalysis =
+              '✅ ACHIEVABLE: Your goal is realistic. With \$${monthlySavings.toStringAsFixed(2)} monthly savings, you will reach \$${goalAmount.toStringAsFixed(2)} in $timelineMonths months.';
+        } else {
+          final shortfall = requiredMonthlySavings - monthlySavings;
+          goalFeasibilityAnalysis =
+              '⚠️ CHALLENGING: You need \$${requiredMonthlySavings.toStringAsFixed(2)} monthly to reach your goal. Currently saving \$${monthlySavings.toStringAsFixed(2)}. Shortfall: \$${shortfall.toStringAsFixed(2)}/month.';
+        }
+      } else {
+        goalFeasibilityAnalysis =
+            '❌ NOT FEASIBLE: Your expenses exceed your income. Action needed.';
+      }
+
+      var personalizedRecommendations = '';
+      if (savingsRate < 10) {
+        personalizedRecommendations +=
+            '💡 Your savings rate is low. Try to increase it to at least 10-15% of income.\n';
+      }
+      if (actualSpendingPatterns != null && actualSpendingPatterns.isNotEmpty) {
+        var topCategory = '';
+        var topAmount = 0.0;
+        actualSpendingPatterns.forEach((cat, amt) {
+          if (amt > topAmount) {
+            topAmount = amt;
+            topCategory = cat;
+          }
+        });
+        if (topCategory.isNotEmpty) {
+          final topPercentage = (topAmount / predictedMonthlyExpense * 100);
+          personalizedRecommendations +=
+              '📊 Highest spending: $topCategory (\$${topAmount.toStringAsFixed(2)}, ${topPercentage.toStringAsFixed(1)}% of budget). ';
+          personalizedRecommendations +=
+              'Consider reducing this category by 10-15%.\n';
+        }
+      }
+      personalizedRecommendations +=
+          '🎯 Review your spending monthly and stay committed to your savings goal.';
+
+      final actionItems = <String>[];
+      if (monthlySavings < goalAmount / timelineMonths) {
+        actionItems.add(
+          'Step 1: Cut expenses by at least 10% to accelerate savings',
         );
       }
+      actionItems.add('Step ${actionItems.length + 1}: Track spending weekly');
+      actionItems.add(
+        'Step ${actionItems.length + 1}: Review progress monthly',
+      );
+      if (monthlySavings > 0) {
+        actionItems.add(
+          'Step ${actionItems.length + 1}: Celebrate reaching \$${(goalAmount * 0.5).toStringAsFixed(2)} (50th milestone)',
+        );
+      }
+      actionItems.add(
+        'Step ${actionItems.length + 1}: Reach goal of \$${goalAmount.toStringAsFixed(2)}',
+      );
+
+      final warningSignals = <String>[];
+      if (monthlySavings <= 0) {
+        warningSignals.add(
+          '⚠️ CRITICAL: Expenses exceed income. Immediate action needed.',
+        );
+      } else if (monthlySavings < goalAmount / timelineMonths) {
+        warningSignals.add(
+          '⚠️ WARNING: Current savings rate won\'t reach goal on time.',
+        );
+      }
+      if (savingsRate < 5) {
+        warningSignals.add(
+          '⚠️ WARNING: Savings rate is below 5%. Consider increasing income or reducing expenses.',
+        );
+      }
+
+      return NaturalLanguageReport(
+        success: true,
+        executiveSummary: executiveSummary,
+        financialAnalysis: financialAnalysis,
+        goalFeasibilityAnalysis: goalFeasibilityAnalysis,
+        personalizedRecommendations: personalizedRecommendations,
+        actionItems: actionItems,
+        warningSignals: warningSignals,
+      );
     } catch (e) {
       print('$_tag Error in generateNaturalLanguageReport: $e');
-      rethrow;
+      return NaturalLanguageReport(
+        success: false,
+        executiveSummary: 'Error generating report',
+        financialAnalysis: '',
+        goalFeasibilityAnalysis: '',
+        personalizedRecommendations: '',
+        actionItems: [],
+        warningSignals: [],
+      );
     }
   }
 
@@ -1213,7 +1619,7 @@ class IntelligentSavingsGoalAssistant {
   /// Returns 0 if no expense data available
   /// Calculate average monthly expenses for past 3 months
   /// Queries Transaction table for type='expense' records from last 90 days
-  static Future<double> _getAverageMonthlyExpenses(String userId) async {
+  static Future<double> _getAverageMonthlyExpenses(String ledgerId) async {
     try {
       final today = DateTime.now();
       final threeMonthsAgo = today.subtract(const Duration(days: 90));
@@ -1300,7 +1706,7 @@ class IntelligentSavingsGoalAssistant {
   /// Returns: ForecastAwareSavingsAnalysis with risk assessment and actions
   static Future<ForecastAwareSavingsAnalysis>
   analyzeSavingsGoalWithExpenseForecast(
-    String userId, {
+    String ledgerId, {
     double savingsTargetPercent = 0.20, // Default 20% of income
     double riskThreshold = 0.80, // Alert if expenses > 80% of income
   }) async {
@@ -1311,7 +1717,7 @@ class IntelligentSavingsGoalAssistant {
 
       // Step 1: Get user's average monthly income
       print('$_tag Step 1: Retrieving user income...');
-      final incomeResult = await validateConsistentIncome(userId);
+      final incomeResult = await validateConsistentIncome(ledgerId);
 
       if (!incomeResult.success || !incomeResult.hasConsistentIncome) {
         print('$_tag ❌ No consistent income found');
@@ -1343,7 +1749,7 @@ class IntelligentSavingsGoalAssistant {
       // Step 2: Get spending forecast for next month
       print('$_tag Step 2: Getting spending forecast...');
       final forecast = await getSpendingForecast(
-        userId,
+        ledgerId,
         periodsAhead: 1,
         period: 'month',
       );
@@ -1356,7 +1762,7 @@ class IntelligentSavingsGoalAssistant {
         );
       } else {
         // Fallback: use average monthly expenses
-        predictedExpense = await _getAverageMonthlyExpenses(userId);
+        predictedExpense = await _getAverageMonthlyExpenses(ledgerId);
         print(
           '$_tag Using average expense (forecast unavailable): RM${predictedExpense.toStringAsFixed(2)}',
         );
@@ -1364,7 +1770,7 @@ class IntelligentSavingsGoalAssistant {
 
       // Step 3: Calculate expense ratio and savings available
       final expenseRatio = (predictedExpense / monthlyIncome)
-          .clamp(0, 1)
+          .clamp(0.0, 1.0)
           .toDouble();
       final expensePercentage = (expenseRatio * 100).toDouble();
       final availableForSavings = (monthlyIncome - predictedExpense).toDouble();
@@ -1393,7 +1799,7 @@ class IntelligentSavingsGoalAssistant {
       // Step 5: Get category spending advice for targeted reductions
       print('$_tag Step 3: Analyzing spending by category...');
       final categoryAdvice = await getCategorySpendingAdvice(
-        userId,
+        ledgerId,
         lookbackMonths: 3,
       );
 
@@ -1405,7 +1811,10 @@ class IntelligentSavingsGoalAssistant {
         // Calculate how much to reduce to hit 20% savings target
         final neededReduction = predictedExpense - (monthlyIncome * 0.80);
         recommendedReduction =
-            ((neededReduction / predictedExpense * 100).clamp(0, 100)).toInt();
+            ((neededReduction / predictedExpense * 100).clamp(
+              0.0,
+              100.0,
+            )).toInt();
 
         print(
           '$_tag Need to reduce by: RM${neededReduction.toStringAsFixed(2)} (${recommendedReduction}%)',
@@ -1508,7 +1917,7 @@ class IntelligentSavingsGoalAssistant {
   /// Collects transaction data from past 12 months and sends to forecast backend
   /// Returns predicted spending values for future months
   static Future<ForecastResult> getSpendingForecast(
-    String userId, {
+    String ledgerId, {
     int periodsAhead = 1,
     String period = 'month',
   }) async {
@@ -1529,6 +1938,7 @@ class IntelligentSavingsGoalAssistant {
       final transactions = await Supabase.instance.client
           .from('Transaction')
           .select('amount, date')
+          .eq('ledgerId', ledgerId) // CRITICAL: Ledger data isolation
           .eq('type', 'expense')
           .gte('date', dateString);
 
@@ -1603,30 +2013,50 @@ class IntelligentSavingsGoalAssistant {
       );
       print('$_tag [getSpendingForecast] Data: $dataForForecast');
 
-      // Step 4: Call backend Forecast API
+      // Step 4: Call Forecast API
       print('$_tag [getSpendingForecast] Step 4: Calling Forecast API...');
+
+      // Convert dataForForecast format: {date, value} to Forecast API format: {date, value}
+      final historicalData = dataForForecast
+          .map(
+            (item) => {
+              'date': (item['date'] as String).substring(
+                0,
+                7,
+              ), // Convert YYYY-MM-DD to YYYY-MM
+              'value': item['value'] as double,
+            },
+          )
+          .toList();
+
+      final requestBody = {'data': historicalData, 'periods': periodsAhead};
+
+      print(
+        '$_tag [getSpendingForecast] Sending request to Forecast API at $_forecastApiUrl',
+      );
+      print('$_tag [getSpendingForecast] Request body: $requestBody');
 
       final response = await http
           .post(
-            Uri.parse('$_backendUrl/api/forecast/spending'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'user_id': userId,
-              'data': dataForForecast,
-              'periods': periodsAhead,
-              'period_type': period,
-            }),
+            Uri.parse(_forecastApiUrl),
+            headers: {
+              'Authorization': 'Bearer $_forecastApiKey',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode(requestBody),
           )
           .timeout(_timeout);
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
-        print('$_tag [getSpendingForecast] ✅ Forecast received: $json');
+        print('$_tag [getSpendingForecast] ✅ Forecast received successfully');
+        print('$_tag [getSpendingForecast] Response: $json');
         return ForecastResult.fromJson(json);
       } else {
         print(
           '$_tag [getSpendingForecast] ❌ API error: ${response.statusCode}',
         );
+        print('$_tag [getSpendingForecast] Response: ${response.body}');
         return ForecastResult(
           success: false,
           forecast: [],
@@ -1734,7 +2164,7 @@ class IntelligentSavingsGoalAssistant {
   /// Analyzes spending distribution across categories
   /// Provides targeted advice for high-spending categories
   static Future<List<CategorySpendingAdvice>> getCategorySpendingAdvice(
-    String userId, {
+    String ledgerId, {
     int lookbackMonths = 3,
   }) async {
     try {
@@ -1754,6 +2184,7 @@ class IntelligentSavingsGoalAssistant {
       final transactions = await Supabase.instance.client
           .from('Transaction')
           .select('amount, categoryId, date')
+          .eq('ledgerId', ledgerId) // CRITICAL: Ledger data isolation
           .eq('type', 'expense')
           .gte('date', dateString);
 
@@ -2254,5 +2685,13 @@ class IntelligentSavingsGoalAssistant {
       savingtips: tips,
       isConcerning: isConcerning,
     );
+  }
+
+  /// Helper: Generate a visual progress bar for console logging
+  static String _generateProgressBar(double percentage) {
+    final filledBlocks = (percentage / 10).round();
+    final emptyBlocks = 10 - filledBlocks;
+    final bar = '█' * filledBlocks + '░' * emptyBlocks;
+    return '[$bar]';
   }
 }

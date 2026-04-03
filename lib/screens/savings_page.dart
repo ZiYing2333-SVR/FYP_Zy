@@ -351,8 +351,10 @@ class _SavingsPageState extends State<SavingsPage> {
                 final result = await Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        SavingGoalAssistantScreen(userId: widget.userId),
+                    builder: (context) => SavingGoalAssistantScreen(
+                      userId: widget.userId,
+                      ledgerId: widget.ledgerId,
+                    ),
                   ),
                 );
                 // Refresh the data if a saving goal was created
