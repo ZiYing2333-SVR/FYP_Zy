@@ -487,13 +487,10 @@ class _PetHomePageState extends State<PetHomePage> {
     return Scaffold(
       body: Column(
         children: [
-
-          /// 🏠 TOP 50% (Background + Pet)
           Expanded(
             flex: 5,
             child: Stack(
               children: [
-
                 Positioned.fill(
                   child: Image.asset(
                     "assets/images/petLivingRoom.png",
@@ -601,8 +598,7 @@ class _PetHomePageState extends State<PetHomePage> {
             ),
           ),
 
-          /// 🧺 BOTTOM PANEL (only show when open)
-          /// 🧺 Bottom Panel Animated
+          /// BOTTOM PANEL (only show when open)
           AnimatedContainer(
             duration: const Duration(milliseconds: 400),
 

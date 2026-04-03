@@ -65,7 +65,7 @@ class _QuizPlayPageState extends State<QuizPlayPage> {
   Future<void> fetchQuestions() async {
     try {
       final response = await supabase
-          .from('QuizQuestion') // confirmed correct
+          .from('QuizQuestion')
           .select();
 
       if (response.isEmpty) {
@@ -333,7 +333,7 @@ class _QuizPlayPageState extends State<QuizPlayPage> {
     final coinsEarned = score * 2;
 
     try {
-      /// 1️⃣ Save quiz attempt
+      /// 1Save quiz attempt
       await supabase.from('QuizAttempt').insert({
         'attemptId': attemptId,
         'userId': widget.userId,
@@ -348,7 +348,7 @@ class _QuizPlayPageState extends State<QuizPlayPage> {
         missionId: 'M004',
       );
 
-      /// 2️⃣ Get current coin balance
+      ///  Get current coin balance
       final userData = await supabase
           .from('User')
           .select('coinbalance')

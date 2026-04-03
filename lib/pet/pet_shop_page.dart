@@ -125,7 +125,7 @@ class _PetShopPageState extends State<PetShopPage> {
     return data.first;
   }
 
-  /// 🛍 Buy Item
+  /// Buy Item
   Future<void> buyItem(Map item) async {
     int price = (item['price'] as num).toInt();
     String slotType = item['slotType'];
@@ -137,13 +137,13 @@ class _PetShopPageState extends State<PetShopPage> {
 
     final existing = await getExistingItem(item['itemId']);
 
-    /// ❌ Non-food already owned → block
+    /// Non-food already owned → block
     if (existing != null && slotType != "Consumable") {
       showMessage("You already own this item!", success: false);
       return;
     }
 
-    /// 💰 Deduct coin FIRST
+    /// Deduct coin FIRST
     int newBalance = coinBalance - price;
 
     await supabase
@@ -151,7 +151,7 @@ class _PetShopPageState extends State<PetShopPage> {
         .update({'coinbalance': newBalance})
         .eq('userId', widget.userId);
 
-    /// 🍖 FOOD → increase quantity
+    /// FOOD → increase quantity
     if (existing != null && slotType == "Consumable") {
       int newQty = (existing['quantity'] as num).toInt() + 1;
 
@@ -161,7 +161,7 @@ class _PetShopPageState extends State<PetShopPage> {
           .eq('purchasedItemId', existing['purchasedItemId']);
     }
 
-    /// 🆕 NEW ITEM
+    /// NEW ITEM
     else {
       String purchaseId = await generatePurchaseId();
 

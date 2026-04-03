@@ -21,7 +21,7 @@ class ReceiptErrorDialog extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ❌ ICON
+            // ICON
             const CircleAvatar(
               radius: 28,
               backgroundColor: Colors.red,
