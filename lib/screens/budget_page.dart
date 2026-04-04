@@ -190,6 +190,20 @@ class _BudgetPageState extends State<BudgetPage> {
     return 'RM${value.toStringAsFixed(2)}';
   }
 
+  Widget _buildSuggestion(String text, bool isAlert) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 11,
+          height: 1.4,
+          color: isAlert ? Colors.red.shade600 : Colors.orange.shade600,
+        ),
+      ),
+    );
+  }
+
   Future<void> _checkAndShowHighRiskAlert() async {
     try {
       if (_budgets.isEmpty) return;
@@ -420,7 +434,10 @@ class _BudgetPageState extends State<BudgetPage> {
 
                               final double usagePercentage =
                                   usageSnapshot.data ?? 0;
-                              final bool isLowUsage = usagePercentage >= 80;
+                              final bool isCaution =
+                                  usagePercentage >= 80 &&
+                                  usagePercentage < 100;
+                              final bool isAlert = usagePercentage >= 100;
                               final itemName =
                                   detailsSnapshot.data?['name'] ?? 'Budget';
                               final iconUrl = detailsSnapshot.data?['iconUrl'];
@@ -474,8 +491,11 @@ class _BudgetPageState extends State<BudgetPage> {
                                                             stackTrace,
                                                           ) {
                                                             return Icon(
-                                                              Icons
-                                                                  .category_outlined,
+                                                              budget['type'] ==
+                                                                      'ledger'
+                                                                  ? Icons.book
+                                                                  : Icons
+                                                                        .category_outlined,
                                                               size: 40,
                                                               color: Colors
                                                                   .grey
@@ -491,7 +511,10 @@ class _BudgetPageState extends State<BudgetPage> {
                                                           right: 12,
                                                         ),
                                                     child: Icon(
-                                                      Icons.category_outlined,
+                                                      budget['type'] == 'ledger'
+                                                          ? Icons.book
+                                                          : Icons
+                                                                .category_outlined,
                                                       size: 40,
                                                       color:
                                                           Colors.grey.shade400,
@@ -530,8 +553,8 @@ class _BudgetPageState extends State<BudgetPage> {
                                               ],
                                             ),
                                           ),
-                                          // Warning Icon
-                                          if (isLowUsage)
+                                          // Caution/Alert Icon
+                                          if (isCaution || isAlert)
                                             Padding(
                                               padding: const EdgeInsets.only(
                                                 right: 8,
@@ -540,19 +563,22 @@ class _BudgetPageState extends State<BudgetPage> {
                                                 width: 32,
                                                 height: 32,
                                                 decoration: BoxDecoration(
-                                                  color: Colors.red.shade200,
+                                                  color: isAlert
+                                                      ? Colors.red.shade200
+                                                      : Colors.orange.shade200,
                                                   shape: BoxShape.circle,
                                                 ),
                                                 child: Center(
-                                                  child: Text(
-                                                    '!',
-                                                    style: TextStyle(
-                                                      fontSize: 18,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color:
-                                                          Colors.red.shade600,
-                                                    ),
+                                                  child: Icon(
+                                                    isAlert
+                                                        ? Icons.error_rounded
+                                                        : Icons.warning_rounded,
+                                                    color: isAlert
+                                                        ? Colors.red.shade600
+                                                        : Colors
+                                                              .orange
+                                                              .shade600,
+                                                    size: 18,
                                                   ),
                                                 ),
                                               ),
@@ -828,6 +854,128 @@ class _BudgetPageState extends State<BudgetPage> {
                                                   ),
                                             ),
                                           ),
+                                          // Warning Message
+                                          if (isCaution || isAlert)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                top: 8,
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  Icon(
+                                                    isAlert
+                                                        ? Icons.error_rounded
+                                                        : Icons.warning_rounded,
+                                                    color: isAlert
+                                                        ? Colors.red.shade600
+                                                        : Colors
+                                                              .orange
+                                                              .shade600,
+                                                    size: 16,
+                                                  ),
+                                                  const SizedBox(width: 6),
+                                                  Expanded(
+                                                    child: Text(
+                                                      isAlert
+                                                          ? 'Budget has exceeded the limit!'
+                                                          : 'Budget usage is approaching the limit.',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        fontWeight:
+                                                            FontWeight.w500,
+                                                        color: isAlert
+                                                            ? Colors
+                                                                  .red
+                                                                  .shade600
+                                                            : Colors
+                                                                  .orange
+                                                                  .shade600,
+                                                      ),
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          // Spending Suggestions
+                                          if (isCaution || isAlert)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                top: 10,
+                                              ),
+                                              child: Container(
+                                                decoration: BoxDecoration(
+                                                  color: isAlert
+                                                      ? Colors.red.shade50
+                                                      : Colors.orange.shade50,
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  border: Border.all(
+                                                    color: isAlert
+                                                        ? Colors.red.shade200
+                                                        : Colors
+                                                              .orange
+                                                              .shade200,
+                                                    width: 1,
+                                                  ),
+                                                ),
+                                                padding: const EdgeInsets.all(
+                                                  10,
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      'Spending Suggestions:',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color: isAlert
+                                                            ? Colors
+                                                                  .red
+                                                                  .shade700
+                                                            : Colors
+                                                                  .orange
+                                                                  .shade700,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 6),
+                                                    ...(isAlert
+                                                        ? [
+                                                            _buildSuggestion(
+                                                              '• Stop all non-essential spending immediately',
+                                                              isAlert,
+                                                            ),
+                                                            _buildSuggestion(
+                                                              '• Review and reduce daily expenses',
+                                                              isAlert,
+                                                            ),
+                                                            _buildSuggestion(
+                                                              '• Consider increasing your budget limit',
+                                                              isAlert,
+                                                            ),
+                                                          ]
+                                                        : [
+                                                            _buildSuggestion(
+                                                              '• Limit spending for the rest of the cycle',
+                                                              isAlert,
+                                                            ),
+                                                            _buildSuggestion(
+                                                              '• Avoid large purchases this period',
+                                                              isAlert,
+                                                            ),
+                                                            _buildSuggestion(
+                                                              '• Plan expenses carefully',
+                                                              isAlert,
+                                                            ),
+                                                          ]),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
                                         ],
                                       ),
                                     ],

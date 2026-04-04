@@ -3,6 +3,44 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:math';
 
+/// Data model for overspend analysis
+class OverspendAnalysis {
+  final double currentMonthUsage;
+  final double forecastedMonthUsage;
+  final double budgetAmount;
+  final double overspendPercentage; // How much over budget as percentage
+  final double overspendAmount; // Actual RM amount over budget
+  final String riskLevel; // 'low', 'medium', 'high', 'critical'
+  final List<SpendingSuggestion> suggestions;
+  final bool isMonthlyBudget;
+
+  OverspendAnalysis({
+    required this.currentMonthUsage,
+    required this.forecastedMonthUsage,
+    required this.budgetAmount,
+    required this.overspendPercentage,
+    required this.overspendAmount,
+    required this.riskLevel,
+    required this.suggestions,
+    required this.isMonthlyBudget,
+  });
+}
+
+/// Data model for spending suggestions
+class SpendingSuggestion {
+  final String title;
+  final String description;
+  final int priority; // 1-5, higher = more urgent
+  final String category; // 'reduce', 'increase', 'monitor'
+
+  SpendingSuggestion({
+    required this.title,
+    required this.description,
+    required this.priority,
+    required this.category,
+  });
+}
+
 /// Data model for forecast results
 class ForecastResult {
   final DateTime date;
@@ -38,20 +76,297 @@ class HistoricalSpending {
   HistoricalSpending({required this.date, required this.amount});
 }
 
-/// Service for budget forecasting using Forecast API
-/// Communicates with forecastapi.com for accurate expense predictions
+/// Service for budget forecasting
+/// Calls backend API which uses Facebook Prophet for forecasting
 class BudgetForecastService {
   static const String _tag = '[BudgetForecastService]';
   static const int _minHistoricalMonths = 3;
 
-  // Forecast API configuration
-  static const String _forecastApiUrl = 'https://forecastapi.com/v2/forecast';
-  // API Key from Forecast API (free tier available)
-  static const String _apiKey =
-      'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiIwMTk4YTgxMC0xM2JhLTcxZjktYWNjMS0wYzQ5MDA5ZDE2NWIiLCJqdGkiOiJmMjQ1NzJkNWUzY2IxMmIyODRlODkyYjg0ODY1ZjgyMWQ4ZDRhYTBlYWQ3YzZlYTE5ZjAzMTdkMjA5MGM1NDA2OThiODk2MzAzNGNkNTI4MyIsImlhdCI6MTc3NTA3NTk3OC40NjM2OCwibmJmIjoxNzc1MDc1OTc4LjQ2MzY4NCwiZXhwIjoxODM4MjM0Mzc4LjQ1NTcxNiwic3ViIjoiOTEiLCJzY29wZXMiOltdfQ.EdzgtFRbifJWMZ6zLwspMGuS3lm4bGQ_rGrz9oF0P7r2uCY9toNyvQsGP6nj9Zsw7xaRvrBaeJAlAwkbsoyPLClq6F3sD19AN5mdkpVdsm09PIe9wTUGGFrWyoMB9qqvpT_RkuidoR8bf0MOpre8FBW0kIA42Olkzqlg-Af0G6oBZ9_qs4xkSDO30wKaVdu5ULjsD4UfXq46lX0XFx0_kmSf40pomuh7kw21NDmWEaCS_jvam_B42PDTgjdSy_tvsPjR4-5VXd_tcDxWcZDGQQaKKlN3j-2DGP37GiO3EdUKI_UH7svKSzx-ZdGauEjL6YVf8rYEWEU7IrNIDf11PnirquRCFZSo0ELp3ZuilaqwKG-nPxp6qy0JLxyfFuJ2MwH8YEac6GmY3DZPPUx9M1Rzp6nEUvold6r2wPm2F8B8xRY0lNBSD2OzELKPvbxMXHglQln-Ac5H246HnzwIuLuHI5ywSe6Xim_HnKMhQ5DKT-Yhu0gsk6Y8Ahd2dINLWqSQEIu6ysjxSFrhV2VubZUJW_s2mfsoz0tag84PlypZnBLjKE5auzgS6d8AZYZAPhGppOrKyMMKHaVjYwRPYzgztybNsC9J5jK85yRgV1_MndtyzuBQbL2BXd0f9APeoX0EALWg2IfD1O8qgLTBSXKFmEP_ngTRj4eZBcS9_-0';
+  // Backend API configuration
+  // For local development: http://localhost:8000
+  // For production (Render/Railway): https://your-backend-url.com
+  // Update the URL below based on your deployment
+  static const String _backendUrl = String.fromEnvironment(
+    'BACKEND_URL',
+    defaultValue:
+        'https://your-backend-url.onrender.com', // Change this to your actual URL
+  );
+  static const String _forecastEndpoint = '/forecast';
 
-  // API timeout (Forecast API is fast, 15 seconds is enough)
-  static const Duration _timeout = Duration(seconds: 15);
+  // API timeout
+  static const Duration _timeout = Duration(seconds: 30);
+
+  /// Extracts user ID from transaction ID
+  /// Format: TRANSUID0001000001 -> UID0001
+  String _extractUserIdFromTransaction(String transactionId) {
+    final regex = RegExp(r'UID\d{4}');
+    final match = regex.firstMatch(transactionId);
+    return match?.group(0) ?? '';
+  }
+
+  /// Verifies if a budget is monthly only
+  /// Returns true only for monthly cycle budgets
+  bool _isMonthlyBudget(String? cycleType) {
+    return cycleType != null && cycleType.toLowerCase() == 'month';
+  }
+
+  /// Generates spending suggestions based on overspend risk
+  List<SpendingSuggestion> _generateSpendingSuggestions(
+    double overspendPercentage,
+    double currentMonthUsage,
+    double budgetAmount,
+    double forecastedAmount,
+  ) {
+    final suggestions = <SpendingSuggestion>[];
+
+    if (overspendPercentage > 50) {
+      // Critical overspend
+      suggestions.addAll([
+        SpendingSuggestion(
+          title: 'URGENT: Reduce Spending Immediately',
+          description:
+              'You are on track to overspend by ${overspendPercentage.toStringAsFixed(1)}%. Stop all non-essential expenses now.',
+          priority: 5,
+          category: 'reduce',
+        ),
+        SpendingSuggestion(
+          title: 'Review All Transactions',
+          description:
+              'Analyze recent transactions and cancel any subscriptions or recurring charges you can avoid.',
+          priority: 5,
+          category: 'reduce',
+        ),
+        SpendingSuggestion(
+          title: 'Increase Budget Amount',
+          description:
+              'If expenses are justified, consider increasing your budget limit to RM${(forecastedAmount * 1.15).toStringAsFixed(2)}.',
+          priority: 4,
+          category: 'increase',
+        ),
+      ]);
+    } else if (overspendPercentage > 20) {
+      // High overspend risk
+      suggestions.addAll([
+        SpendingSuggestion(
+          title: 'Limit Large Purchases',
+          description:
+              'Avoid making purchases over RM500 for the remainder of this month. Current projected overspend: ${overspendPercentage.toStringAsFixed(1)}%.',
+          priority: 4,
+          category: 'reduce',
+        ),
+        SpendingSuggestion(
+          title: 'Delay Non-Essential Spending',
+          description:
+              'Post-pone shopping, dining out, and entertainment expenses until next month if possible.',
+          priority: 4,
+          category: 'reduce',
+        ),
+        SpendingSuggestion(
+          title: 'Monitor Spending Closely',
+          description:
+              'Check your transactions daily to stay aware of your spending pace.',
+          priority: 3,
+          category: 'monitor',
+        ),
+      ]);
+    } else if (overspendPercentage > 5) {
+      // Moderate overspend risk
+      suggestions.addAll([
+        SpendingSuggestion(
+          title: 'Careful Spending for Rest of Month',
+          description:
+              'You\'re projected to exceed budget slightly. Plan remaining purchases carefully.',
+          priority: 3,
+          category: 'reduce',
+        ),
+        SpendingSuggestion(
+          title: 'Prioritize Necessary Expenses',
+          description:
+              'Focus on essential purchases only. ${overspendPercentage.toStringAsFixed(1)}% overspend is manageable with careful planning.',
+          priority: 3,
+          category: 'monitor',
+        ),
+      ]);
+    } else {
+      // On track or under budget
+      suggestions.addAll([
+        SpendingSuggestion(
+          title: 'On Track with Budget',
+          description:
+              'Excellent! You\'re projected to stay within budget with room to spare.',
+          priority: 1,
+          category: 'monitor',
+        ),
+        SpendingSuggestion(
+          title: 'Maintain Current Pace',
+          description:
+              'Continue spending at your current rate and you\'ll end the month under budget.',
+          priority: 1,
+          category: 'monitor',
+        ),
+      ]);
+    }
+
+    return suggestions;
+  }
+
+  /// Calculates detailed overspend analysis for a budget
+  Future<OverspendAnalysis> calculateOverspendAnalysis(
+    String userId,
+    String budgetId,
+    double budgetAmount,
+    String? cycleType,
+    String? accountId,
+    String? categoryId,
+    String? ledgerId,
+    double? currentMonthUsage,
+    double? forecastedAmount,
+  ) async {
+    try {
+      // Check if this is a monthly budget
+      final isMonthly = _isMonthlyBudget(cycleType);
+
+      if (!isMonthly) {
+        // Return neutral analysis for non-monthly budgets
+        return OverspendAnalysis(
+          currentMonthUsage: 0,
+          forecastedMonthUsage: 0,
+          budgetAmount: budgetAmount,
+          overspendPercentage: 0,
+          overspendAmount: 0,
+          riskLevel: 'low',
+          suggestions: [
+            SpendingSuggestion(
+              title: 'Budget Type Note',
+              description:
+                  'Forecasting only applies to monthly budgets. This budget uses $cycleType cycles.',
+              priority: 1,
+              category: 'monitor',
+            ),
+          ],
+          isMonthlyBudget: false,
+        );
+      }
+
+      // Get current month usage if not provided
+      double currentUsage = currentMonthUsage ?? 0;
+      if (currentUsage == 0) {
+        final now = DateTime.now();
+        final startOfMonth = DateTime(now.year, now.month, 1);
+
+        List<dynamic> transactions = [];
+        if (accountId != null) {
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('accountId', accountId)
+              .gte('date', startOfMonth.toIso8601String());
+        } else if (categoryId != null) {
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('categoryId', categoryId)
+              .eq('type', 'expense')
+              .gte('date', startOfMonth.toIso8601String());
+        } else if (ledgerId != null) {
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('ledgerId', ledgerId)
+              .eq('type', 'expense')
+              .gte('date', startOfMonth.toIso8601String());
+        }
+
+        for (var transaction in transactions) {
+          final amount = transaction['amount'];
+          if (amount != null) {
+            currentUsage += (amount as num).toDouble();
+          }
+        }
+      }
+
+      // Get forecasted amount if not provided
+      double forecasted = forecastedAmount ?? 0;
+      if (forecasted == 0) {
+        final historicalData = await _fetchHistoricalData(
+          userId,
+          budgetId,
+          accountId,
+          categoryId,
+          ledgerId,
+          12,
+        );
+
+        if (historicalData.isNotEmpty) {
+          final forecast = await _callForecastAPI(
+            historicalData,
+            1,
+            budgetAmount,
+          );
+          if (forecast.isNotEmpty) {
+            forecasted = forecast.first.forecastedAmount;
+          }
+        }
+      }
+
+      // Calculate overspend
+      final double overspendAmount =
+          (forecasted - budgetAmount).clamp(0.0, double.infinity) as double;
+      final double overspendPercentage = budgetAmount > 0
+          ? (overspendAmount / budgetAmount) * 100
+          : 0.0;
+
+      // Determine risk level
+      String riskLevel;
+      if (overspendPercentage > 50) {
+        riskLevel = 'critical';
+      } else if (overspendPercentage > 20) {
+        riskLevel = 'high';
+      } else if (overspendPercentage > 5) {
+        riskLevel = 'medium';
+      } else {
+        riskLevel = 'low';
+      }
+
+      // Generate suggestions
+      final suggestions = _generateSpendingSuggestions(
+        overspendPercentage,
+        currentUsage,
+        budgetAmount,
+        forecasted,
+      );
+
+      return OverspendAnalysis(
+        currentMonthUsage: currentUsage,
+        forecastedMonthUsage: forecasted,
+        budgetAmount: budgetAmount,
+        overspendPercentage: overspendPercentage,
+        overspendAmount: overspendAmount,
+        riskLevel: riskLevel,
+        suggestions: suggestions,
+        isMonthlyBudget: true,
+      );
+    } catch (e) {
+      print('$_tag Error calculating overspend analysis: $e');
+      return OverspendAnalysis(
+        currentMonthUsage: 0,
+        forecastedMonthUsage: 0,
+        budgetAmount: budgetAmount,
+        overspendPercentage: 0,
+        overspendAmount: 0,
+        riskLevel: 'low',
+        suggestions: [
+          SpendingSuggestion(
+            title: 'Error',
+            description: 'Could not calculate analysis: $e',
+            priority: 1,
+            category: 'monitor',
+          ),
+        ],
+        isMonthlyBudget: _isMonthlyBudget(cycleType),
+      );
+    }
+  }
 
   /// Fetches historical spending data for a budget
   Future<List<HistoricalSpending>> _fetchHistoricalData(
@@ -133,7 +448,7 @@ class BudgetForecastService {
     }
   }
 
-  /// Calls the Prophet forecasting API
+  /// Calls the backend forecasting API (uses Facebook Prophet)
   /// Returns forecast with predictions, confidence intervals, and alerts
   Future<List<ForecastResult>> _callForecastAPI(
     List<HistoricalSpending> historicalData,
@@ -146,30 +461,29 @@ class BudgetForecastService {
         return [];
       }
 
-      // Prepare request payload for Forecast API
+      // Prepare request payload for backend API
       final List<Map<String, dynamic>> histData = historicalData.map((h) {
         return {
-          'date': h.date
-              .toIso8601String()
-              .split('T')[0]
-              .substring(0, 7), // YYYY-MM format
-          'value': h.amount,
+          'date': h.date.toIso8601String().split('T')[0], // YYYY-MM-DD format
+          'amount': h.amount,
         };
       }).toList();
 
-      final requestBody = {'data': histData, 'periods': forecastMonths};
+      final requestBody = {
+        'historical_data': histData,
+        'forecast_periods': forecastMonths,
+        'budget_amount': budgetAmount,
+      };
 
-      print('$_tag Calling Forecast API at $_forecastApiUrl');
+      final apiUrl = '$_backendUrl$_forecastEndpoint';
+      print('$_tag Calling backend API at $apiUrl');
       print('$_tag Request: ${jsonEncode(requestBody)}');
 
-      // Make API request
+      // Make API request to backend
       final response = await http
           .post(
-            Uri.parse(_forecastApiUrl),
-            headers: {
-              'Authorization': 'Bearer $_apiKey',
-              'Content-Type': 'application/json',
-            },
+            Uri.parse(apiUrl),
+            headers: {'Content-Type': 'application/json'},
             body: jsonEncode(requestBody),
           )
           .timeout(_timeout);
@@ -182,40 +496,38 @@ class BudgetForecastService {
 
         print('$_tag API Response: ${response.body}');
 
-        // Parse forecast results from Forecast API
+        // Parse forecast results from backend
         final List<dynamic> forecastList = decodedResponse['forecast'] ?? [];
+        final mae = (decodedResponse['mae'] ?? 0.0).toDouble();
+        final hasSufficientData =
+            decodedResponse['has_sufficient_data'] ?? true;
+        final alertStatus = decodedResponse['alert_status'] ?? 'normal';
+        final alertMessage = decodedResponse['alert_message'] ?? '';
 
         if (forecastList.isEmpty) {
           print('$_tag No forecast data received');
           return [];
         }
 
-        final results = forecastList.asMap().entries.map((entry) {
-          final index = entry.key;
-          final forecast = entry.value as Map<String, dynamic>;
+        final results = forecastList.map((forecastItem) {
+          final forecast = forecastItem as Map<String, dynamic>;
 
-          // Determine alert status based on forecast value vs budget
-          final forecastedAmount = (forecast['value'] ?? 0.0).toDouble();
-          final alertStatus = forecastedAmount > budgetAmount
-              ? 'warning'
-              : forecastedAmount > (budgetAmount * 1.2)
-              ? 'critical'
-              : 'normal';
+          final forecastedAmount = (forecast['predicted_amount'] ?? 0.0)
+              .toDouble();
+          final lowerBound = (forecast['lower_bound'] ?? 0.0).toDouble();
+          final upperBound = (forecast['upper_bound'] ?? 0.0).toDouble();
+          final isAnomaly = forecast['is_anomaly'] ?? false;
 
           return ForecastResult(
-            date: DateTime.parse('${forecast['date']}-01'),
+            date: DateTime.parse(forecast['date']),
             forecastedAmount: forecastedAmount,
-            lowerBound: forecastedAmount * 0.85, // 15% lower bound estimate
-            upperBound: forecastedAmount * 1.15, // 15% upper bound estimate
-            isAnomaly: false,
-            mae: 0.0,
-            hasSufficientData: historicalData.length >= _minHistoricalMonths,
+            lowerBound: lowerBound,
+            upperBound: upperBound,
+            isAnomaly: isAnomaly,
+            mae: mae,
+            hasSufficientData: hasSufficientData,
             alertStatus: alertStatus,
-            alertMessage: alertStatus == 'normal'
-                ? 'Expenses within expected range'
-                : alertStatus == 'warning'
-                ? 'Expenses trending above budget. Consider reducing.'
-                : 'Expenses significantly above budget. Take action now.',
+            alertMessage: alertMessage,
           );
         }).toList();
 
@@ -224,18 +536,18 @@ class BudgetForecastService {
       } else {
         print('$_tag API Error: ${response.statusCode} - ${response.body}');
         throw Exception(
-          'Forecast API Error: ${response.statusCode} - ${response.body}',
+          'Backend API Error: ${response.statusCode} - ${response.body}',
         );
       }
     } on http.ClientException catch (e) {
       print('$_tag Network Error: $e');
       throw Exception(
-        'Network Error: Could not connect to Forecast API. '
-        'Make sure the backend is running.',
+        'Network Error: Could not connect to backend API at $_backendUrl. '
+        'Make sure your backend is running.',
       );
     } catch (e) {
-      print('$_tag Error calling forecast API: $e');
-      throw Exception('Forecast API Error: $e');
+      print('$_tag Error calling backend API: $e');
+      throw Exception('Backend API Error: $e');
     }
   }
 

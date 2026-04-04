@@ -21,11 +21,13 @@ class BudgetForecastingScreen extends StatefulWidget {
 class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
   final _forecastService = BudgetForecastService();
   List<Map<String, dynamic>> _budgets = [];
+  List<Map<String, dynamic>> _monthlyBudgets = [];
   bool _isLoading = true;
   String? _selectedBudgetId;
   Map<String, dynamic>? _selectedBudget;
   List<ForecastResult>? _forecastResults;
   List<HistoricalSpending>? _historicalData;
+  OverspendAnalysis? _overspendAnalysis;
   bool _showForecast = false;
 
   @override
@@ -46,11 +48,20 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
           .eq('userId', widget.userId)
           .order('budgetId', ascending: false);
 
+      // Filter only monthly budgets for forecasting
+      final allBudgets = List<Map<String, dynamic>>.from(response);
+      final monthlyBudgets = allBudgets
+          .where(
+            (b) => (b['cycleType'] ?? '').toString().toLowerCase() == 'month',
+          )
+          .toList();
+
       setState(() {
-        _budgets = List<Map<String, dynamic>>.from(response);
-        if (_budgets.isNotEmpty) {
-          _selectedBudgetId = _budgets[0]['budgetId'];
-          _selectedBudget = _budgets[0];
+        _budgets = allBudgets;
+        _monthlyBudgets = monthlyBudgets;
+        if (_monthlyBudgets.isNotEmpty) {
+          _selectedBudgetId = _monthlyBudgets[0]['budgetId'];
+          _selectedBudget = _monthlyBudgets[0];
           _loadForecast();
         }
       });
@@ -93,9 +104,24 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
         _selectedBudget!['ledgerId'],
       );
 
+      // Calculate overspend analysis
+      final overspendAnalysis = await _forecastService
+          .calculateOverspendAnalysis(
+            widget.userId,
+            _selectedBudget!['budgetId'],
+            (_selectedBudget!['amount'] ?? 0).toDouble(),
+            _selectedBudget!['cycleType'],
+            _selectedBudget!['accountId'],
+            _selectedBudget!['categoryId'],
+            _selectedBudget!['ledgerId'],
+            null, // Will be calculated
+            forecast.isNotEmpty ? forecast.first.forecastedAmount : null,
+          );
+
       setState(() {
         _forecastResults = forecast;
         _historicalData = historical;
+        _overspendAnalysis = overspendAnalysis;
         _showForecast = true;
       });
     } catch (e) {
@@ -135,20 +161,92 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _budgets.isEmpty
-          ? const Center(
-              child: Text('No budgets found. Create one to get started!'),
+          : _monthlyBudgets.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.calendar_month,
+                    size: 64,
+                    color: Colors.grey.shade300,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'No Monthly Budgets Found',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Forecasting is available only for monthly budgets.',
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Create a monthly budget to get started with forecasting.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                  ),
+                ],
+              ),
             )
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Note about monthly budgets
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF8DC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: const Color(0xFFFFE4B5),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.info_outline,
+                          color: Color(0xFFA37F20),
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Forecasting is available only for monthly budgets.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   // Budget Selector
                   _buildBudgetSelector(),
                   const SizedBox(height: 24),
 
-                  if (_showForecast && _forecastResults != null) ...[
+                  if (_showForecast && _overspendAnalysis != null) ...[
+                    // Visual Dashboard
+                    _buildSpendingVisualization(),
+                    const SizedBox(height: 24),
+
+                    // Overspend Analysis Card
+                    _buildOverspendAnalysisCard(),
+                    const SizedBox(height: 24),
+
+                    // Spending Suggestions
+                    _buildSpendingSuggestionsSection(),
+                    const SizedBox(height: 24),
+
                     // Alert (Display based on forecast - normal, warning, or critical)
                     if (_forecastResults!.isNotEmpty) _buildHighRiskAlert(),
                     if (_forecastResults!.isNotEmpty)
@@ -181,7 +279,7 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Select Budget',
+          'Select Monthly Budget',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
@@ -200,29 +298,373 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
             value: _selectedBudgetId,
             isExpanded: true,
             underline: const SizedBox.shrink(),
-            items: _budgets.map((budget) {
+            items: _monthlyBudgets.map((budget) {
               final name = budget['id'] ?? budget['budgetId'] ?? 'Unknown';
-              final type = budget['type'] ?? '';
               return DropdownMenuItem<String>(
                 value: budget['budgetId'],
-                child: Text('$name ($type)'),
+                child: Text('$name (Monthly)'),
               );
             }).toList(),
             onChanged: (value) {
               if (value != null) {
                 setState(() {
                   _selectedBudgetId = value;
-                  _selectedBudget = _budgets.firstWhere(
+                  _selectedBudget = _monthlyBudgets.firstWhere(
                     (b) => b['budgetId'] == value,
                   );
                   _forecastResults = null;
                   _historicalData = null;
+                  _overspendAnalysis = null;
                 });
                 _loadForecast();
               }
             },
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildSpendingVisualization() {
+    if (_overspendAnalysis == null) {
+      return const SizedBox.shrink();
+    }
+
+    final analysis = _overspendAnalysis!;
+    final budgetPercent = (analysis.budgetAmount / analysis.budgetAmount).clamp(
+      0.0,
+      1.0,
+    );
+    final currentPercent = (analysis.currentMonthUsage / analysis.budgetAmount)
+        .clamp(0.0, 1.0);
+    final forecastPercent =
+        (analysis.forecastedMonthUsage / analysis.budgetAmount).clamp(0.0, 1.0);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Spending Pattern Dashboard',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 20),
+          // Budget Limit Line
+          Text(
+            'Budget Limit: RM${analysis.budgetAmount.toStringAsFixed(2)}',
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: budgetPercent,
+              minHeight: 6,
+              backgroundColor: Colors.grey[200],
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Current Month Spending
+          Text(
+            'Current Month: RM${analysis.currentMonthUsage.toStringAsFixed(2)}',
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: currentPercent,
+              minHeight: 8,
+              backgroundColor: Colors.grey[200],
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.orange),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Forecasted Spending
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Projected Month: RM${analysis.forecastedMonthUsage.toStringAsFixed(2)}',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: analysis.riskLevel == 'critical'
+                      ? Colors.red.shade100
+                      : analysis.riskLevel == 'high'
+                      ? Colors.orange.shade100
+                      : analysis.riskLevel == 'medium'
+                      ? Colors.yellow.shade100
+                      : Colors.green.shade100,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  analysis.riskLevel.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: analysis.riskLevel == 'critical'
+                        ? Colors.red.shade700
+                        : analysis.riskLevel == 'high'
+                        ? Colors.orange.shade700
+                        : analysis.riskLevel == 'medium'
+                        ? Colors.yellow.shade700
+                        : Colors.green.shade700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: forecastPercent,
+              minHeight: 8,
+              backgroundColor: Colors.grey[200],
+              valueColor: AlwaysStoppedAnimation<Color>(
+                analysis.riskLevel == 'critical'
+                    ? Colors.red
+                    : analysis.riskLevel == 'high'
+                    ? Colors.orange
+                    : analysis.riskLevel == 'medium'
+                    ? Colors.yellow.shade600
+                    : Colors.green,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOverspendAnalysisCard() {
+    if (_overspendAnalysis == null) {
+      return const SizedBox.shrink();
+    }
+
+    final analysis = _overspendAnalysis!;
+    final isOverspending = analysis.overspendPercentage > 0;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isOverspending ? Colors.red.shade50 : Colors.green.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isOverspending ? Colors.red.shade200 : Colors.green.shade200,
+          width: 2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Overspend Analysis',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: isOverspending
+                      ? Colors.red.shade600
+                      : Colors.green.shade600,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '${analysis.overspendPercentage.toStringAsFixed(1)}%',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (isOverspending)
+            Text(
+              'You are projected to overspend by RM${analysis.overspendAmount.toStringAsFixed(2)}',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.red.shade700,
+                fontWeight: FontWeight.w500,
+              ),
+            )
+          else
+            Text(
+              'You are on track to stay within budget! 🎉',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.green.shade700,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Budget Limit',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'RM${analysis.budgetAmount.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    'Projected Spending',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'RM${analysis.forecastedMonthUsage.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: isOverspending
+                          ? Colors.red.shade600
+                          : Colors.black,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSpendingSuggestionsSection() {
+    if (_overspendAnalysis == null || _overspendAnalysis!.suggestions.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final suggestions = _overspendAnalysis!.suggestions;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Smart Spending Suggestions',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...suggestions.map((suggestion) {
+          final color = suggestion.priority >= 4
+              ? Colors.red.shade50
+              : suggestion.priority >= 3
+              ? Colors.orange.shade50
+              : Colors.blue.shade50;
+
+          final borderColor = suggestion.priority >= 4
+              ? Colors.red.shade200
+              : suggestion.priority >= 3
+              ? Colors.orange.shade200
+              : Colors.blue.shade200;
+
+          final iconColor = suggestion.priority >= 4
+              ? Colors.red.shade600
+              : suggestion.priority >= 3
+              ? Colors.orange.shade600
+              : Colors.blue.shade600;
+
+          return Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: borderColor, width: 1),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      suggestion.priority >= 4
+                          ? Icons.priority_high
+                          : suggestion.priority >= 3
+                          ? Icons.warning_rounded
+                          : Icons.lightbulb_rounded,
+                      color: iconColor,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        suggestion.title,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  suggestion.description,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[700],
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
       ],
     );
   }
