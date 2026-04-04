@@ -7,6 +7,14 @@ name = "smart-budgeting-api"
 version = "1.0.0"
 description = "API for expense forecasting using Facebook Prophet"
 requires-python = ">=3.11,<3.12"
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "prophet>=1.1.5",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "pydantic>=2.0.0",
+]
 
 [project.optional-dependencies]
 dev = ["pytest"]
