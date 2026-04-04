@@ -56,6 +56,54 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
           )
           .toList();
 
+      // Fetch related names (Category, Account, Ledger) for better display
+      for (var budget in monthlyBudgets) {
+        String displayName = 'Unknown Budget';
+
+        // Try to fetch category name
+        if (budget['categoryId'] != null) {
+          try {
+            final categoryRes = await Supabase.instance.client
+                .from('Category')
+                .select('name')
+                .eq('categoryId', budget['categoryId'])
+                .single();
+            displayName = categoryRes['name'] ?? 'Unknown';
+          } catch (e) {
+            print('Error fetching category: $e');
+          }
+        }
+        // If no category, try account
+        else if (budget['accountId'] != null) {
+          try {
+            final accountRes = await Supabase.instance.client
+                .from('Account')
+                .select('accountName')
+                .eq('accountId', budget['accountId'])
+                .single();
+            displayName = accountRes['accountName'] ?? 'Unknown';
+          } catch (e) {
+            print('Error fetching account: $e');
+          }
+        }
+        // If no category or account, try ledger
+        else if (budget['ledgerId'] != null) {
+          try {
+            final ledgerRes = await Supabase.instance.client
+                .from('Ledger')
+                .select('name')
+                .eq('ledgerId', budget['ledgerId'])
+                .single();
+            displayName = ledgerRes['name'] ?? 'Unknown';
+          } catch (e) {
+            print('Error fetching ledger: $e');
+          }
+        }
+
+        // Store the display name in the budget map
+        budget['displayName'] = displayName;
+      }
+
       setState(() {
         _budgets = allBudgets;
         _monthlyBudgets = monthlyBudgets;
@@ -275,6 +323,8 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
   }
 
   Widget _buildBudgetSelector() {
+    // Budget Selector: Let users choose which budget to analyze
+    // This helps track multiple budget categories separately
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -285,6 +335,11 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
             fontWeight: FontWeight.bold,
             color: Colors.black,
           ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Choose a budget to view its spending forecast and analysis',
+          style: TextStyle(fontSize: 11, color: Colors.grey[500]),
         ),
         const SizedBox(height: 8),
         Container(
@@ -299,10 +354,16 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
             isExpanded: true,
             underline: const SizedBox.shrink(),
             items: _monthlyBudgets.map((budget) {
-              final name = budget['id'] ?? budget['budgetId'] ?? 'Unknown';
+              final displayName = budget['displayName'] ?? 'Unknown Budget';
               return DropdownMenuItem<String>(
                 value: budget['budgetId'],
-                child: Text('$name (Monthly)'),
+                child: Flexible(
+                  child: Text(
+                    displayName,
+                    softWrap: true,
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ),
               );
             }).toList(),
             onChanged: (value) {
@@ -364,11 +425,34 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
               color: Colors.black,
             ),
           ),
-          const SizedBox(height: 20),
-          // Budget Limit Line
+          const SizedBox(height: 4),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Visual overview of your spending compared to budget limit',
+                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '📅 THIS MONTH ONLY (resets on 1st of each month)',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.orange[700],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Budget Limit Line - Shows your total budget amount
           Text(
             'Budget Limit: RM${analysis.budgetAmount.toStringAsFixed(2)}',
             style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          ),
+          Text(
+            'The maximum amount you set for this budget',
+            style: TextStyle(fontSize: 10, color: Colors.grey[500]),
           ),
           const SizedBox(height: 8),
           ClipRRect(
@@ -380,11 +464,15 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
               valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
             ),
           ),
-          const SizedBox(height: 16),
-          // Current Month Spending
+          const SizedBox(height: 12),
+          // Current Month Spending - What you've already spent this month
           Text(
             'Current Month: RM${analysis.currentMonthUsage.toStringAsFixed(2)}',
             style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          ),
+          Text(
+            'Amount you have spent so far IN THIS MONTH',
+            style: TextStyle(fontSize: 10, color: Colors.grey[500]),
           ),
           const SizedBox(height: 8),
           ClipRRect(
@@ -396,14 +484,41 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
               valueColor: const AlwaysStoppedAnimation<Color>(Colors.orange),
             ),
           ),
-          const SizedBox(height: 16),
-          // Forecasted Spending
+          const SizedBox(height: 12),
+          // Forecasted Spending - AI prediction of total spending by month end
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Projected Month: RM${analysis.forecastedMonthUsage.toStringAsFixed(2)}',
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'This Month Forecast: RM${analysis.forecastedMonthUsage.toStringAsFixed(2)}',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                    Text(
+                      'AI prediction: Your total spending by end of THIS MONTH ONLY',
+                      style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'Based on your historical spending patterns, NOT just multiplying current spending',
+                        softWrap: true,
+                        style: TextStyle(fontSize: 9, color: Colors.blue[700]),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -417,18 +532,27 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
                       : Colors.green.shade100,
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Text(
-                  analysis.riskLevel.toUpperCase(),
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: analysis.riskLevel == 'critical'
-                        ? Colors.red.shade700
-                        : analysis.riskLevel == 'high'
-                        ? Colors.orange.shade700
-                        : analysis.riskLevel == 'medium'
-                        ? Colors.yellow.shade700
-                        : Colors.green.shade700,
+                child: Tooltip(
+                  message: analysis.riskLevel == 'critical'
+                      ? 'High chance of exceeding budget'
+                      : analysis.riskLevel == 'high'
+                      ? 'Warning: You may exceed budget'
+                      : analysis.riskLevel == 'medium'
+                      ? 'Moderate risk of overspending'
+                      : 'On track with budget',
+                  child: Text(
+                    analysis.riskLevel.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: analysis.riskLevel == 'critical'
+                          ? Colors.red.shade700
+                          : analysis.riskLevel == 'high'
+                          ? Colors.orange.shade700
+                          : analysis.riskLevel == 'medium'
+                          ? Colors.yellow.shade700
+                          : Colors.green.shade700,
+                    ),
                   ),
                 ),
               ),
@@ -458,6 +582,8 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
   }
 
   Widget _buildOverspendAnalysisCard() {
+    // Overspend Analysis: Shows if you're likely to exceed budget and by how much
+    // This helps you understand your financial risk for the current cycle
     if (_overspendAnalysis == null) {
       return const SizedBox.shrink();
     }
@@ -481,13 +607,23 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Overspend Analysis',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Overspend Analysis',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Will you exceed your MONTHLY budget this month?',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                  ),
+                ],
               ),
               Container(
                 padding: const EdgeInsets.symmetric(
@@ -500,35 +636,90 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
                       : Colors.green.shade600,
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Text(
-                  '${analysis.overspendPercentage.toStringAsFixed(1)}%',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                child: Tooltip(
+                  message: analysis.overspendPercentage > 0
+                      ? 'How much over budget you will go (%)'
+                      : 'You are on track! 0% means no overspending projected',
+                  child: Text(
+                    '${analysis.overspendPercentage.toStringAsFixed(1)}%',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          if (isOverspending)
-            Text(
-              'You are projected to overspend by RM${analysis.overspendAmount.toStringAsFixed(2)}',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.red.shade700,
-                fontWeight: FontWeight.w500,
+          // Important note about monthly budgets
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: Colors.blue[200] ?? Colors.blue,
+                width: 1,
               ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, color: Colors.blue[700], size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    "📅 Note: This is a MONTHLY budget. It resets on the 1st of each month. Your spending from previous months does not affect THIS month's analysis.",
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.blue[700],
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (isOverspending)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Warning: You will likely overspend by RM${analysis.overspendAmount.toStringAsFixed(2)} this month',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.red.shade700,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Consider reducing spending to stay within your RM${analysis.budgetAmount.toStringAsFixed(2)} budget',
+                  style: TextStyle(fontSize: 11, color: Colors.red.shade600),
+                ),
+              ],
             )
           else
-            Text(
-              'You are on track to stay within budget! 🎉',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.green.shade700,
-                fontWeight: FontWeight.w500,
-              ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '✓ You are on track to stay within budget this month! 🎉',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.green.shade700,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '0% overspend = No overspending is predicted for THIS MONTH',
+                  style: TextStyle(fontSize: 11, color: Colors.green.shade600),
+                ),
+              ],
             ),
           const SizedBox(height: 12),
           Row(
@@ -538,8 +729,12 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Budget Limit',
+                    'Your Budget Limit',
                     style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  ),
+                  Text(
+                    'Max allowed for this month',
+                    style: TextStyle(fontSize: 9, color: Colors.grey[500]),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -580,6 +775,8 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
   }
 
   Widget _buildSpendingSuggestionsSection() {
+    // Smart Suggestions: AI-generated tips to help reduce spending
+    // Red badges = high priority, Orange = medium priority, Blue = general tips
     if (_overspendAnalysis == null || _overspendAnalysis!.suggestions.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -596,6 +793,11 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
             fontWeight: FontWeight.bold,
             color: Colors.black,
           ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Personalized tips to help you stay within budget (sorted by priority)',
+          style: TextStyle(fontSize: 11, color: Colors.grey[500]),
         ),
         const SizedBox(height: 12),
         ...suggestions.map((suggestion) {
@@ -616,6 +818,12 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
               : suggestion.priority >= 3
               ? Colors.orange.shade600
               : Colors.blue.shade600;
+
+          final priorityLabel = suggestion.priority >= 4
+              ? 'HIGH PRIORITY'
+              : suggestion.priority >= 3
+              ? 'MEDIUM PRIORITY'
+              : 'TIP';
 
           return Container(
             padding: const EdgeInsets.all(12),
@@ -641,13 +849,27 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        suggestion.title,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            suggestion.title,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            priorityLabel,
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: iconColor,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -804,6 +1026,8 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
   }
 
   Widget _buildForecastSummary() {
+    // Next Month Forecast: Shows predicted spending for the upcoming month
+    // Based on your historical spending patterns
     if (_forecastResults == null || _forecastResults!.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -829,13 +1053,62 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Next Month Forecast',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Next Month Forecast',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'AI prediction of how much you will spend next month',
+                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.amber[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.amber[200] ?? Colors.amber,
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '📊 How the forecast is calculated:',
+                      softWrap: true,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.amber[900],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '• Uses your spending pattern from past 12 months\n'
+                      '• NOT just a linear calculation based on current spending\n'
+                      '• Example: If you spent RM584 in first week but historically spend less in later weeks, forecast will reflect that\n'
+                      '• Updates as you spend more and new data comes in',
+                      softWrap: true,
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: Colors.amber[800],
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           if (nextMonth.isLimitedData) ...[
             const SizedBox(height: 8),
@@ -857,6 +1130,7 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
                   Expanded(
                     child: Text(
                       'Based on limited available data. More historical data will improve accuracy.',
+                      softWrap: true,
                       style: TextStyle(
                         fontSize: 12,
                         color: Color(0xFF856404),
@@ -886,6 +1160,22 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
                       color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'Including remaining days in month',
+                      softWrap: true,
+                      style: TextStyle(fontSize: 9, color: Colors.blue[700]),
                     ),
                   ),
                 ],
@@ -943,6 +1233,8 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
   }
 
   Widget _buildForecastDetails() {
+    // Forecast Details: Shows detailed forecast for next 3 months
+    // Includes confidence levels and prediction ranges
     if (_forecastResults == null || _forecastResults!.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -957,6 +1249,11 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
             fontWeight: FontWeight.bold,
             color: Colors.black,
           ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Monthly predictions including confidence level and expected range',
+          style: TextStyle(fontSize: 11, color: Colors.grey[500]),
         ),
         const SizedBox(height: 12),
         ..._forecastResults!.map((forecast) {
@@ -984,9 +1281,13 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      'Confidence: ${((1 - (forecast.upperBound - forecast.lowerBound) / (2 * forecast.forecastedAmount)) * 100).toStringAsFixed(0)}%',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    Tooltip(
+                      message:
+                          'How accurate this prediction is likely to be. Higher = more accurate.',
+                      child: Text(
+                        'Confidence: ${((1 - (forecast.upperBound - forecast.lowerBound) / (2 * forecast.forecastedAmount)) * 100).toStringAsFixed(0)}%',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
                     ),
                   ],
                 ),
@@ -1002,9 +1303,12 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      'Range: RM${forecast.lowerBound.toStringAsFixed(2)} - RM${forecast.upperBound.toStringAsFixed(2)}',
-                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                    Tooltip(
+                      message: 'Expected minimum to maximum spending range',
+                      child: Text(
+                        'Range: RM${forecast.lowerBound.toStringAsFixed(2)} - RM${forecast.upperBound.toStringAsFixed(2)}',
+                        style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                      ),
                     ),
                   ],
                 ),
@@ -1017,6 +1321,8 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
   }
 
   Widget _buildHistoricalDataSection() {
+    // Historical Data: Shows your spending history over the past 12 months
+    // Used to calculate accurate forecasts
     if (_historicalData == null || _historicalData!.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -1041,13 +1347,44 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Historical Data (12 Months)',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Historical Data (12 Months)',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Your past spending patterns used to calculate forecasts',
+                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.green[200] ?? Colors.green,
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  '✓ More historical data = More accurate forecasts. The algorithm analyzes patterns across these months to predict future spending.',
+                  softWrap: true,
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: Colors.green[700],
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           Container(
@@ -1141,6 +1478,7 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
               isLimitedData
                   ? 'Forecast based on limited available data. Accuracy will improve with more history.'
                   : 'Not enough historical data to calculate accuracy',
+              softWrap: true,
               style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
           );
@@ -1164,13 +1502,23 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Forecast Accuracy',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Forecast Accuracy',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'How accurate our predictions have been historically',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               Container(
@@ -1182,9 +1530,13 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Mean Absolute Error (MAE)',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                    Tooltip(
+                      message:
+                          'Average difference between predicted and actual spending. Lower is better.',
+                      child: Text(
+                        'Mean Absolute Error (MAE)',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -1198,7 +1550,18 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
                     const SizedBox(height: 8),
                     Text(
                       'The forecast typically deviates by RM${mae.toStringAsFixed(2)} from actual spending',
+                      softWrap: true,
                       style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '💡 Tip: Use this as a safety margin when planning your budget',
+                      softWrap: true,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.blue[600],
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
                 ),

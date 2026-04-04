@@ -89,7 +89,7 @@ class BudgetForecastService {
   static const String _backendUrl = String.fromEnvironment(
     'BACKEND_URL',
     defaultValue:
-        'https://your-backend-url.onrender.com', // Change this to your actual URL
+        'https://fyp-zy-6u7m.onrender.com', // Change this to your actual URL
   );
   static const String _forecastEndpoint = '/forecast';
 
