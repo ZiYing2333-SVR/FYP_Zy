@@ -953,70 +953,115 @@ class _AddTransactionState extends State<AddTransaction> {
               children: _accounts.map((account) {
                 final isSelected =
                     _selectedFromAccountId == account['accountId'];
+                final isSavingsAccount = account['accountType'] == 'Savings';
+
                 return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _selectedFromAccountId = account['accountId'];
-                    });
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(right: 12),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? const Color(0xFF90EE90)
-                          : Colors.white,
-                      border: Border.all(
-                        color: isSelected ? Colors.black : Colors.grey[300]!,
-                        width: isSelected ? 2 : 1,
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFB0E0E6),
-                            borderRadius: BorderRadius.circular(6),
+                  onTap: isSavingsAccount
+                      ? null
+                      : () {
+                          setState(() {
+                            _selectedFromAccountId = account['accountId'];
+                          });
+                        },
+                  child: Opacity(
+                    opacity: isSavingsAccount ? 0.5 : 1.0,
+                    child: Tooltip(
+                      message: isSavingsAccount
+                          ? 'Cannot transfer from Savings account'
+                          : account['accountName'] ?? 'Unknown',
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0xFF90EE90)
+                              : (isSavingsAccount
+                                    ? Colors.grey[200]
+                                    : Colors.white),
+                          border: Border.all(
+                            color: isSelected
+                                ? Colors.black
+                                : (isSavingsAccount
+                                      ? Colors.grey[400]!
+                                      : Colors.grey[300]!),
+                            width: isSelected ? 2 : 1,
                           ),
-                          child:
-                              account['iconImage'] != null &&
-                                  account['iconImage'].toString().isNotEmpty
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: Image.network(
-                                    account['iconImage'],
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Icon(
-                                        Icons.account_balance_wallet,
-                                        color: Colors.grey[600],
-                                        size: 16,
-                                      );
-                                    },
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Stack(
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 32,
+                                  height: 32,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFB0E0E6),
+                                    borderRadius: BorderRadius.circular(6),
                                   ),
-                                )
-                              : Icon(
-                                  Icons.account_balance_wallet,
-                                  color: Colors.grey[600],
-                                  size: 16,
+                                  child:
+                                      account['iconImage'] != null &&
+                                          account['iconImage']
+                                              .toString()
+                                              .isNotEmpty
+                                      ? ClipRRect(
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                          child: Image.network(
+                                            account['iconImage'],
+                                            fit: BoxFit.cover,
+                                            errorBuilder:
+                                                (context, error, stackTrace) {
+                                                  return Icon(
+                                                    Icons
+                                                        .account_balance_wallet,
+                                                    color: Colors.grey[600],
+                                                    size: 16,
+                                                  );
+                                                },
+                                          ),
+                                        )
+                                      : Icon(
+                                          Icons.account_balance_wallet,
+                                          color: Colors.grey[600],
+                                          size: 16,
+                                        ),
                                 ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  account['accountName'] ?? 'Unknown',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (isSavingsAccount)
+                              Positioned(
+                                top: -4,
+                                right: -4,
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.lock,
+                                    color: Colors.white,
+                                    size: 10,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          account['accountName'] ?? 'Unknown',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 );
@@ -1051,65 +1096,76 @@ class _AddTransactionState extends State<AddTransaction> {
                         },
                   child: Opacity(
                     opacity: isFromAccount ? 0.5 : 1.0,
-                    child: Container(
-                      margin: const EdgeInsets.only(right: 12),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? const Color(0xFFA7E399)
-                            : Colors.white,
-                        border: Border.all(
-                          color: isSelected ? Colors.black : Colors.grey[300]!,
-                          width: isSelected ? 2 : 1,
+                    child: Tooltip(
+                      message: isFromAccount
+                          ? 'Cannot use same account for from and to'
+                          : account['accountName'] ?? 'Unknown',
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
                         ),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFB0E0E6),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child:
-                                account['iconImage'] != null &&
-                                    account['iconImage'].toString().isNotEmpty
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(6),
-                                    child: Image.network(
-                                      account['iconImage'],
-                                      fit: BoxFit.cover,
-                                      errorBuilder:
-                                          (context, error, stackTrace) {
-                                            return Icon(
-                                              Icons.account_balance_wallet,
-                                              color: Colors.grey[600],
-                                              size: 16,
-                                            );
-                                          },
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0xFFA7E399)
+                              : (isFromAccount
+                                    ? Colors.grey[200]
+                                    : Colors.white),
+                          border: Border.all(
+                            color: isSelected
+                                ? Colors.black
+                                : (isFromAccount
+                                      ? Colors.grey[400]!
+                                      : Colors.grey[300]!),
+                            width: isSelected ? 2 : 1,
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFB0E0E6),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child:
+                                  account['iconImage'] != null &&
+                                      account['iconImage'].toString().isNotEmpty
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: Image.network(
+                                        account['iconImage'],
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) {
+                                              return Icon(
+                                                Icons.account_balance_wallet,
+                                                color: Colors.grey[600],
+                                                size: 16,
+                                              );
+                                            },
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.account_balance_wallet,
+                                      color: Colors.grey[600],
+                                      size: 16,
                                     ),
-                                  )
-                                : Icon(
-                                    Icons.account_balance_wallet,
-                                    color: Colors.grey[600],
-                                    size: 16,
-                                  ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            account['accountName'] ?? 'Unknown',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 12,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 8),
+                            Text(
+                              account['accountName'] ?? 'Unknown',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -1399,87 +1455,130 @@ class _AddTransactionState extends State<AddTransaction> {
               runSpacing: 12,
               children: _accounts.map((account) {
                 final isSelected = _selectedAccountId == account['accountId'];
+                final isSavingsAccount = account['accountType'] == 'Savings';
+
                 return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _selectedAccountId = account['accountId'];
-                      _selectedAccount = account;
-                    });
-                    Navigator.pop(context);
-                  },
-                  child: Container(
-                    width: 140,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? const Color(0xFFA7E399)
-                          : Colors.white,
-                      border: Border.all(
-                        color: isSelected
-                            ? const Color(0xFFF39C12)
-                            : Colors.grey[300]!,
-                        width: isSelected ? 2 : 1,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // Account Logo
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFB0E0E6),
-                            borderRadius: BorderRadius.circular(8),
+                  onTap: isSavingsAccount
+                      ? null
+                      : () {
+                          setState(() {
+                            _selectedAccountId = account['accountId'];
+                            _selectedAccount = account;
+                          });
+                          Navigator.pop(context);
+                        },
+                  child: Opacity(
+                    opacity: isSavingsAccount ? 0.5 : 1.0,
+                    child: Tooltip(
+                      message: isSavingsAccount
+                          ? 'Savings accounts cannot be used for transactions'
+                          : account['accountName'] ?? 'Unknown',
+                      child: Container(
+                        width: 140,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0xFFA7E399)
+                              : (isSavingsAccount
+                                    ? Colors.grey[200]
+                                    : Colors.white),
+                          border: Border.all(
+                            color: isSelected
+                                ? const Color(0xFFF39C12)
+                                : (isSavingsAccount
+                                      ? Colors.grey[400]!
+                                      : Colors.grey[300]!),
+                            width: isSelected ? 2 : 1,
                           ),
-                          child:
-                              account['iconImage'] != null &&
-                                  account['iconImage'].toString().isNotEmpty
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(
-                                    account['iconImage'],
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Icon(
-                                        Icons.account_balance_wallet,
-                                        color: Colors.grey[600],
-                                        size: 24,
-                                      );
-                                    },
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Stack(
+                          children: [
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                // Account Logo
+                                Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFB0E0E6),
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
-                                )
-                              : Icon(
-                                  Icons.account_balance_wallet,
-                                  color: Colors.grey[600],
-                                  size: 24,
+                                  child:
+                                      account['iconImage'] != null &&
+                                          account['iconImage']
+                                              .toString()
+                                              .isNotEmpty
+                                      ? ClipRRect(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          child: Image.network(
+                                            account['iconImage'],
+                                            fit: BoxFit.cover,
+                                            errorBuilder:
+                                                (context, error, stackTrace) {
+                                                  return Icon(
+                                                    Icons
+                                                        .account_balance_wallet,
+                                                    color: Colors.grey[600],
+                                                    size: 24,
+                                                  );
+                                                },
+                                          ),
+                                        )
+                                      : Icon(
+                                          Icons.account_balance_wallet,
+                                          color: Colors.grey[600],
+                                          size: 24,
+                                        ),
                                 ),
+                                const SizedBox(height: 8),
+                                // Account Name
+                                Text(
+                                  account['accountName'] ?? 'Unknown',
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                // Account Balance
+                                Text(
+                                  'RM${account['balance']?.toString() ?? '0.00'}',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (isSavingsAccount)
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.lock,
+                                    color: Colors.white,
+                                    size: 12,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                        const SizedBox(height: 8),
-                        // Account Name
-                        Text(
-                          account['accountName'] ?? 'Unknown',
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        // Account Balance
-                        Text(
-                          'RM${account['balance']?.toString() ?? '0.00'}',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 );

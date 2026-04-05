@@ -7,6 +7,7 @@ import 'settings_screen.dart';
 import 'add_account_page1.dart';
 import 'account_detail_screen.dart';
 import 'savings_page.dart';
+import 'create_account_group_screen.dart';
 
 class AccountPage extends StatefulWidget {
   final String userId;
@@ -19,6 +20,10 @@ class AccountPage extends StatefulWidget {
 
 class _AccountPageState extends State<AccountPage> {
   List<Map<String, dynamic>> _accounts = [];
+  List<Map<String, dynamic>> _filteredAccounts = [];
+  List<Map<String, dynamic>> _accountGroups = [];
+  String _selectedGroupId = 'all'; // 'all' or accountCategoryId
+  String _selectedGroupName = 'All';
   Map<String, dynamic> _currencies = {};
   bool _isLoading = true;
   int _selectedNavIndex = 1;
@@ -29,6 +34,7 @@ class _AccountPageState extends State<AccountPage> {
   void initState() {
     super.initState();
     _fetchCurrencies();
+    _fetchAccountGroups();
     _fetchAccounts();
     _checkBudgetAlerts();
   }
@@ -271,6 +277,22 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
+  Future<void> _fetchAccountGroups() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('AccountCategory')
+          .select()
+          .ilike('accountCategoryId', 'GACC${widget.userId}%')
+          .order('name', ascending: true);
+
+      setState(() {
+        _accountGroups = List<Map<String, dynamic>>.from(response);
+      });
+    } catch (e) {
+      print('Error fetching account groups: $e');
+    }
+  }
+
   Future<void> _fetchAccounts() async {
     try {
       setState(() {
@@ -285,6 +307,8 @@ class _AccountPageState extends State<AccountPage> {
 
       setState(() {
         _accounts = List<Map<String, dynamic>>.from(response);
+        _filteredAccounts =
+            _accounts; // Initialize filtered accounts with all accounts
         _isLoading = false;
       });
     } catch (e) {
@@ -517,14 +541,19 @@ class _AccountPageState extends State<AccountPage> {
     final categoryBalances = _calculateCategoryBalance();
     final accountsByType = <String, List<Map<String, dynamic>>>{};
 
-    for (var account in _accounts) {
+    // Use filtered accounts if group is selected, otherwise use all accounts
+    final displayAccounts = _selectedGroupId == 'all'
+        ? _accounts
+        : _filteredAccounts;
+
+    for (var account in displayAccounts) {
       final type = account['accountType'] ?? 'Other';
       accountsByType.putIfAbsent(type, () => []);
       accountsByType[type]!.add(account);
     }
 
-    // Filter savings accounts
-    final savingsAccounts = _accounts
+    // Filter savings accounts from displayAccounts
+    final savingsAccounts = displayAccounts
         .where((acc) => acc['accountType'] == 'Savings')
         .toList();
 
@@ -542,36 +571,169 @@ class _AccountPageState extends State<AccountPage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.green.shade100,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.green.shade300,
-                              width: 1,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              const Text(
-                                'Group A',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black87,
+                        PopupMenuButton<String>(
+                          onSelected: (String value) async {
+                            if (value == 'add_group') {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      CreateAccountGroupScreen(
+                                        userId: widget.userId,
+                                      ),
+                                ),
+                              ).then((_) {
+                                _fetchAccountGroups();
+                              });
+                            } else {
+                              setState(() {
+                                _selectedGroupId = value;
+                                _selectedGroupName = value == 'all'
+                                    ? 'All'
+                                    : _accountGroups.firstWhere(
+                                            (g) =>
+                                                g['accountCategoryId'] == value,
+                                            orElse: () => {'name': 'All'},
+                                          )['name'] ??
+                                          'Unknown';
+                              });
+
+                              // Fetch filtered accounts
+                              if (value == 'all') {
+                                setState(() {
+                                  _filteredAccounts = _accounts;
+                                });
+                              } else {
+                                try {
+                                  final groupAccounts = await Supabase
+                                      .instance
+                                      .client
+                                      .from('GroupAccount')
+                                      .select('accountId')
+                                      .eq('accountCategoryId', value);
+
+                                  final groupAccountIds = Set<String>.from(
+                                    groupAccounts.map((g) => g['accountId']),
+                                  );
+
+                                  setState(() {
+                                    _filteredAccounts = _accounts
+                                        .where(
+                                          (account) => groupAccountIds.contains(
+                                            account['accountId'],
+                                          ),
+                                        )
+                                        .toList();
+                                  });
+                                } catch (e) {
+                                  print('Error filtering accounts: $e');
+                                  setState(() {
+                                    _filteredAccounts = _accounts;
+                                  });
+                                }
+                              }
+                            }
+                          },
+                          itemBuilder: (BuildContext context) {
+                            final items = <PopupMenuEntry<String>>[
+                              const PopupMenuItem<String>(
+                                value: 'all',
+                                child: Text('All'),
+                              ),
+                            ];
+
+                            // Add existing groups
+                            for (var group in _accountGroups) {
+                              items.add(
+                                PopupMenuItem<String>(
+                                  value: group['accountCategoryId'],
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Text(group['name'] ?? 'Unknown'),
+                                      ),
+                                      GestureDetector(
+                                        onTap: () {
+                                          Navigator.pop(context);
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (context) =>
+                                                  CreateAccountGroupScreen(
+                                                    userId: widget.userId,
+                                                    groupId:
+                                                        group['accountCategoryId'],
+                                                    groupName: group['name'],
+                                                  ),
+                                            ),
+                                          ).then((_) {
+                                            _fetchAccountGroups();
+                                          });
+                                        },
+                                        child: Icon(
+                                          Icons.settings,
+                                          size: 18,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }
+
+                            // Add divider
+                            items.add(const PopupMenuDivider());
+
+                            // Add "Add Group" option
+                            items.add(
+                              const PopupMenuItem<String>(
+                                value: 'add_group',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.add, size: 18),
+                                    SizedBox(width: 8),
+                                    Text('Add Group'),
+                                  ],
                                 ),
                               ),
-                              const SizedBox(width: 4),
-                              Icon(
-                                Icons.arrow_drop_down,
-                                size: 20,
-                                color: Colors.green.shade700,
+                            );
+
+                            return items;
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade100,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Colors.green.shade300,
+                                width: 1,
                               ),
-                            ],
+                            ),
+                            child: Row(
+                              children: [
+                                Text(
+                                  _selectedGroupName,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(
+                                  Icons.arrow_drop_down,
+                                  size: 20,
+                                  color: Colors.green.shade700,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                         GestureDetector(
@@ -582,7 +744,9 @@ class _AccountPageState extends State<AccountPage> {
                                 builder: (context) =>
                                     AddAccountPage1(userId: widget.userId),
                               ),
-                            );
+                            ).then((_) {
+                              _fetchAccounts();
+                            });
                           },
                           child: Container(
                             width: 40,

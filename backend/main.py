@@ -16,6 +16,7 @@ import os
 from dotenv import load_dotenv
 import google.generativeai as genai
 import json
+from auto_deduction import start_auto_deduction_scheduler
 
 warnings.filterwarnings('ignore')
 
@@ -671,8 +672,19 @@ async def root():
         "version": "1.0.0",
         "documentation": "/docs",
         "health": "/health",
-        "forecast": "/forecast (POST)"
+        "forecast": "/forecast (POST)",
+        "auto-deduction": "Enabled (runs every hour)"
     }
+
+
+# ==================== STARTUP EVENT ====================
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize background tasks on app startup"""
+    scheduler = start_auto_deduction_scheduler()
+    if scheduler:
+        app.scheduler = scheduler  # Store scheduler instance for cleanup if needed
 
 
 if __name__ == "__main__":
