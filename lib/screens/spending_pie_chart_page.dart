@@ -15,10 +15,12 @@ class SpendingPieChartPage extends StatefulWidget {
 class _SpendingPieChartPageState extends State<SpendingPieChartPage> {
   int _selectedIndex = 4;
   String _selectedFilter = 'month';
+  late DateTime _selectedDate;
 
   Map<String, double> _spendingByCategory = {};
   double _totalSpending = 0;
   bool _isLoading = true;
+  String _currencySymbol = '\$';
 
   final Map<String, Color> _categoryColors = {
     'Food & Dining': const Color(0xFF4CAF50),
@@ -34,7 +36,40 @@ class _SpendingPieChartPageState extends State<SpendingPieChartPage> {
   @override
   void initState() {
     super.initState();
+    _selectedDate = DateTime.now();
+    _fetchCurrencySymbol();
     _fetchSpendingData();
+  }
+
+  Future<void> _fetchCurrencySymbol() async {
+    try {
+      // Fetch user's currency from UserCurrency table
+      final userCurrency = await Supabase.instance.client
+          .from('UserCurrency')
+          .select('currencyId')
+          .eq('userId', widget.userId)
+          .maybeSingle();
+
+      if (userCurrency != null) {
+        final currencyId = userCurrency['currencyId'];
+
+        // Fetch currency symbol from Currency table
+        final currency = await Supabase.instance.client
+            .from('Currency')
+            .select('symbol')
+            .eq('currencyId', currencyId)
+            .maybeSingle();
+
+        if (currency != null) {
+          setState(() {
+            _currencySymbol = currency['symbol'] ?? '\$';
+          });
+        }
+      }
+    } catch (e) {
+      print('Error fetching currency symbol: $e');
+      // Keep default currency symbol
+    }
   }
 
   Future<void> _fetchSpendingData() async {
@@ -58,25 +93,37 @@ class _SpendingPieChartPageState extends State<SpendingPieChartPage> {
         ledgers.map((l) => l['ledgerId'] as String),
       );
 
-      // Calculate date range based on selected filter
-      final now = DateTime.now();
+      // Calculate date range based on selected filter and selected date
       final DateTime startDate;
+      final DateTime endDate;
 
       switch (_selectedFilter) {
         case 'day':
-          startDate = DateTime(now.year, now.month, now.day);
+          startDate = DateTime(
+            _selectedDate.year,
+            _selectedDate.month,
+            _selectedDate.day,
+          );
+          endDate = startDate.add(const Duration(days: 1));
           break;
         case 'week':
-          startDate = now.subtract(Duration(days: now.weekday - 1));
+          final weekStart = _selectedDate.subtract(
+            Duration(days: _selectedDate.weekday - 1),
+          );
+          startDate = DateTime(weekStart.year, weekStart.month, weekStart.day);
+          endDate = startDate.add(const Duration(days: 7));
           break;
         case 'month':
-          startDate = DateTime(now.year, now.month, 1);
+          startDate = DateTime(_selectedDate.year, _selectedDate.month, 1);
+          endDate = DateTime(_selectedDate.year, _selectedDate.month + 1, 1);
           break;
         case 'year':
-          startDate = DateTime(now.year, 1, 1);
+          startDate = DateTime(_selectedDate.year, 1, 1);
+          endDate = DateTime(_selectedDate.year + 1, 1, 1);
           break;
         default:
-          startDate = DateTime(now.year, now.month, 1);
+          startDate = DateTime(_selectedDate.year, _selectedDate.month, 1);
+          endDate = DateTime(_selectedDate.year, _selectedDate.month + 1, 1);
       }
 
       // Fetch all transactions for these ledgers
@@ -87,7 +134,8 @@ class _SpendingPieChartPageState extends State<SpendingPieChartPage> {
             .select('*, Category(name)')
             .eq('ledgerId', ledgerId)
             .eq('type', 'expense')
-            .gte('date', startDate.toIso8601String());
+            .gte('date', startDate.toIso8601String())
+            .lt('date', endDate.toIso8601String());
 
         allTransactions.addAll(transactions);
       }
@@ -147,16 +195,81 @@ class _SpendingPieChartPageState extends State<SpendingPieChartPage> {
               child: Column(
                 children: [
                   const SizedBox(height: 20),
+                  // Date Picker Button
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: GestureDetector(
+                      onTap: () async {
+                        final DateTime? picked = await showDatePicker(
+                          context: context,
+                          initialDate: _selectedDate,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime.now(),
+                          builder: (context, child) {
+                            return Theme(
+                              data: Theme.of(context).copyWith(
+                                colorScheme: const ColorScheme.light(
+                                  primary: Color(0xFFF39C12),
+                                  onPrimary: Colors.white,
+                                  surface: Color(0xFFFFF9E6),
+                                  onSurface: Colors.black,
+                                ),
+                              ),
+                              child: child!,
+                            );
+                          },
+                        );
+                        if (picked != null && picked != _selectedDate) {
+                          setState(() {
+                            _selectedDate = picked;
+                            _isLoading = true;
+                          });
+                          await _fetchSpendingData();
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEFFD3),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: const Color(0xFFF39C12),
+                            width: 2,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Selected Date: ${_selectedDate.toLocal().toString().split(' ')[0]}',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            const Icon(
+                              Icons.calendar_today,
+                              color: Color(0xFFF39C12),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
                   // Filter buttons
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        _buildFilterButton('Day', 'day'),
-                        _buildFilterButton('Week', 'week'),
-                        _buildFilterButton('Month', 'month'),
-                        _buildFilterButton('Year', 'year'),
+                        _buildFilterButton('Today', 'day'),
+                        _buildFilterButton('This Month', 'month'),
+                        _buildFilterButton('This Year', 'year'),
                       ],
                     ),
                   ),
@@ -192,7 +305,7 @@ class _SpendingPieChartPageState extends State<SpendingPieChartPage> {
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              'Total: \$${_totalSpending.toStringAsFixed(2)}',
+                              'Total: $_currencySymbol${_totalSpending.toStringAsFixed(2)}',
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -233,6 +346,7 @@ class _SpendingPieChartPageState extends State<SpendingPieChartPage> {
                                       category,
                                       amount,
                                       _getColorForCategory(category),
+                                      _currencySymbol,
                                     ),
                                     if (index <
                                         _spendingByCategory.entries.length - 1)
@@ -300,7 +414,7 @@ class _SpendingPieChartPageState extends State<SpendingPieChartPage> {
         await _fetchSpendingData();
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: isSelected ? const Color(0xFFC8E6C9) : Colors.white,
           borderRadius: BorderRadius.circular(8),
@@ -314,6 +428,7 @@ class _SpendingPieChartPageState extends State<SpendingPieChartPage> {
           style: TextStyle(
             color: isSelected ? Colors.black87 : Colors.grey[600],
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            fontSize: 13,
           ),
         ),
       ),
@@ -344,7 +459,12 @@ class _SpendingPieChartPageState extends State<SpendingPieChartPage> {
     }).toList();
   }
 
-  Widget _buildCategoryItem(String category, double amount, Color color) {
+  Widget _buildCategoryItem(
+    String category,
+    double amount,
+    Color color,
+    String currencySymbol,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
@@ -366,7 +486,7 @@ class _SpendingPieChartPageState extends State<SpendingPieChartPage> {
             ),
           ),
           Text(
-            '\$${amount.toStringAsFixed(2)}',
+            '$currencySymbol${amount.toStringAsFixed(2)}',
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.bold,

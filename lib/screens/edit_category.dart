@@ -27,6 +27,7 @@ class _EditCategoryState extends State<EditCategory> {
   late Map<String, dynamic> _originalCategory;
   Uint8List? _selectedIconBytes;
   String? _newIconUrl;
+  String? _nameError;
   final ImagePicker _imagePicker = ImagePicker();
 
   @override
@@ -49,6 +50,100 @@ class _EditCategoryState extends State<EditCategory> {
   void dispose() {
     _nameController.dispose();
     super.dispose();
+  }
+
+  void _showBackConfirmation() {
+    if (!_hasChanges()) {
+      Navigator.pop(context);
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: const Color(0xFFFFF9E6),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF9E6),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Title
+              const Text(
+                'Discard Changes?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFF39C12),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Description
+              const Text(
+                'You have unsaved changes. Are you sure you want to discard them?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF666666),
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 24),
+              // Keep Editing Button
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFA7E399),
+                    foregroundColor: Colors.black87,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    'Keep Editing',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Discard Changes Button
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: OutlinedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.pop(context);
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.grey[700],
+                    side: BorderSide(color: Colors.grey[300]!, width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Discard Changes',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   bool _hasChanges() {
@@ -110,10 +205,34 @@ class _EditCategoryState extends State<EditCategory> {
   }
 
   Future<void> _saveCategory() async {
+    // Validation - Check if category name is empty
+    if (_nameController.text.trim().isEmpty) {
+      setState(() {
+        _nameError = 'Please enter a category name';
+      });
+      return;
+    }
+
+    // Clear error if validation passed
+    setState(() {
+      _nameError = null;
+    });
+
     if (!_hasChanges()) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('No changes made')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No changes made',
+            style: TextStyle(
+              color: Colors.red,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+          backgroundColor: Color(0xFFFFEBEE),
+          duration: Duration(seconds: 3),
+        ),
+      );
       return;
     }
 
@@ -239,8 +358,16 @@ class _EditCategoryState extends State<EditCategory> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error updating category: $e'),
-          backgroundColor: Colors.red,
+          content: Text(
+            'Error updating category: $e',
+            style: const TextStyle(
+              color: Colors.red,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+          backgroundColor: const Color(0xFFFFEBEE),
+          duration: const Duration(seconds: 3),
         ),
       );
     } finally {
@@ -468,8 +595,16 @@ class _EditCategoryState extends State<EditCategory> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error deleting category: $e'),
-          backgroundColor: Colors.red,
+          content: Text(
+            'Error deleting category: $e',
+            style: const TextStyle(
+              color: Colors.red,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+          backgroundColor: const Color(0xFFFFEBEE),
+          duration: const Duration(seconds: 3),
         ),
       );
       setState(() {
@@ -480,244 +615,272 @@ class _EditCategoryState extends State<EditCategory> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFFFF9E6),
-      appBar: AppBar(
+    return WillPopScope(
+      onWillPop: () async {
+        _showBackConfirmation();
+        return false;
+      },
+      child: Scaffold(
         backgroundColor: const Color(0xFFFFF9E6),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          _isDefaultCategory ? 'View Category' : 'Edit Category',
-          style: const TextStyle(
-            color: Colors.black,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
+        appBar: AppBar(
+          backgroundColor: const Color(0xFFFFF9E6),
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.black),
+            onPressed: _showBackConfirmation,
           ),
+          title: Text(
+            _isDefaultCategory ? 'View Category' : 'Edit Category',
+            style: const TextStyle(
+              color: Colors.black,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          centerTitle: true,
         ),
-        centerTitle: true,
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Category Icon
-              Center(
-                child: Stack(
-                  children: [
-                    Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFB0E0E6),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: _selectedIconBytes != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Image.memory(
-                                _selectedIconBytes!,
-                                fit: BoxFit.cover,
-                              ),
-                            )
-                          : (widget.category['icon'] != null &&
-                                    widget.category['icon'].isNotEmpty
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(12),
-                                    child: Image.network(
-                                      widget.category['icon'],
-                                      fit: BoxFit.cover,
-                                      errorBuilder:
-                                          (context, error, stackTrace) {
-                                            return Icon(
-                                              Icons.category,
-                                              color: Colors.grey[600],
-                                              size: 50,
-                                            );
-                                          },
-                                    ),
-                                  )
-                                : Icon(
-                                    Icons.category,
-                                    color: Colors.grey[600],
-                                    size: 50,
-                                  )),
-                    ),
-                    // Change icon button (only for user categories)
-                    if (!_isDefaultCategory)
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: GestureDetector(
-                          onTap: _pickIcon,
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFA7E399),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.white, width: 2),
-                            ),
-                            child: const Icon(
-                              Icons.camera_alt,
-                              color: Colors.white,
-                              size: 16,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
-              // Info message for default categories
-              if (_isDefaultCategory)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.orange[50],
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.orange[300]!, width: 1),
-                  ),
-                  child: Row(
+        body: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Category Icon
+                Center(
+                  child: Stack(
                     children: [
-                      Icon(Icons.info, color: Colors.orange[700]),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'This is a default category and cannot be edited.',
-                          style: TextStyle(
-                            color: Colors.orange[700],
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
+                      Container(
+                        width: 100,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFB0E0E6),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: _selectedIconBytes != null
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.memory(
+                                  _selectedIconBytes!,
+                                  fit: BoxFit.cover,
+                                ),
+                              )
+                            : (widget.category['icon'] != null &&
+                                      widget.category['icon'].isNotEmpty
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: Image.network(
+                                        widget.category['icon'],
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) {
+                                              return Icon(
+                                                Icons.category,
+                                                color: Colors.grey[600],
+                                                size: 50,
+                                              );
+                                            },
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.category,
+                                      color: Colors.grey[600],
+                                      size: 50,
+                                    )),
+                      ),
+                      // Change icon button (only for user categories)
+                      if (!_isDefaultCategory)
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: GestureDetector(
+                            onTap: _pickIcon,
+                            child: Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFA7E399),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.camera_alt,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ),
-              const SizedBox(height: 24),
-              // Category Name Field
-              const Text(
-                'Category Name',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _nameController,
-                enabled: !_isDefaultCategory,
-                decoration: InputDecoration(
-                  hintText: 'Enter category name',
-                  filled: true,
-                  fillColor: _isDefaultCategory
-                      ? Colors.grey[200]
-                      : Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFFE8D5F2)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFFE8D5F2)),
-                  ),
-                  disabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFFE8D5F2)),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 32),
-              // Save Button (only for user categories)
-              if (!_isDefaultCategory)
-                Column(
-                  children: [
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _saveCategory,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFA7E399),
-                          foregroundColor: Colors.black,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
+                const SizedBox(height: 32),
+                // Info message for default categories
+                if (_isDefaultCategory)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.orange[50],
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.orange[300]!, width: 1),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info, color: Colors.orange[700]),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'This is a default category and cannot be edited.',
+                            style: TextStyle(
+                              color: Colors.orange[700],
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
-                          textStyle: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          disabledBackgroundColor: const Color(0xFFD3F8D3),
                         ),
-                        child: _isLoading
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.black,
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 24),
+                // Category Name Field
+                const Text(
+                  'Category Name',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _nameController,
+                  enabled: !_isDefaultCategory,
+                  onChanged: (value) {
+                    if (_nameError != null) {
+                      setState(() {
+                        _nameError = null;
+                      });
+                    }
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Enter category name',
+                    filled: true,
+                    fillColor: _isDefaultCategory
+                        ? Colors.grey[200]
+                        : Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFE8D5F2)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFE8D5F2)),
+                    ),
+                    disabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFE8D5F2)),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+                if (_nameError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      _nameError!,
+                      style: const TextStyle(
+                        color: Colors.red,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 32),
+                // Save Button (only for user categories)
+                if (!_isDefaultCategory)
+                  Column(
+                    children: [
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : _saveCategory,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFA7E399),
+                            foregroundColor: Colors.black,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            disabledBackgroundColor: const Color(0xFFD3F8D3),
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.black,
+                                    ),
                                   ),
-                                ),
-                              )
-                            : const Text('Save Changes'),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    // Delete Button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _deleteCategory,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red[600],
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          textStyle: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
+                                )
+                              : const Text('Save Changes'),
                         ),
-                        child: const Text('Delete Category'),
                       ),
+                      const SizedBox(height: 12),
+                      // Delete Button
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : _deleteCategory,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red[600],
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          child: const Text('Delete Category'),
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFBCBCBC),
+                        foregroundColor: Colors.black,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      child: const Text('Back'),
                     ),
-                  ],
-                )
-              else
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFBCBCBC),
-                      foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      textStyle: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    child: const Text('Back'),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

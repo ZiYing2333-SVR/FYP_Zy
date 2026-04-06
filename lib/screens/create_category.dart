@@ -14,24 +14,19 @@ class CreateCategory extends StatefulWidget {
 
 class _CreateCategoryState extends State<CreateCategory> {
   final _nameController = TextEditingController();
-  final _typeController = TextEditingController();
-  final _subcategories = <TextEditingController>[];
 
   Uint8List? _selectedImageBytes;
   String? _selectedImageName;
   String? _uploadedImageUrl;
   bool _isSaving = false;
   String _selectedType = 'expense';
+  String? _nameError;
 
   final ImagePicker _imagePicker = ImagePicker();
 
   @override
   void dispose() {
     _nameController.dispose();
-    _typeController.dispose();
-    for (var controller in _subcategories) {
-      controller.dispose();
-    }
     super.dispose();
   }
 
@@ -49,9 +44,20 @@ class _CreateCategoryState extends State<CreateCategory> {
         });
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error picking image: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Error picking image: $e',
+            style: const TextStyle(
+              color: Colors.red,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+          backgroundColor: const Color(0xFFFFEBEE),
+          duration: const Duration(seconds: 3),
+        ),
+      );
     }
   }
 
@@ -77,9 +83,20 @@ class _CreateCategoryState extends State<CreateCategory> {
       return publicUrl;
     } catch (e) {
       print('Error uploading image: $e');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error uploading image: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Error uploading image: $e',
+            style: const TextStyle(
+              color: Colors.red,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+          backgroundColor: const Color(0xFFFFEBEE),
+          duration: const Duration(seconds: 3),
+        ),
+      );
       return null;
     }
   }
@@ -113,12 +130,18 @@ class _CreateCategoryState extends State<CreateCategory> {
   }
 
   Future<void> _saveCategory() async {
-    if (_nameController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a category name')),
-      );
+    // Validation - Check if category name is empty
+    if (_nameController.text.trim().isEmpty) {
+      setState(() {
+        _nameError = 'Please enter a category name';
+      });
       return;
     }
+
+    // Clear error if validation passed
+    setState(() {
+      _nameError = null;
+    });
 
     setState(() => _isSaving = true);
 
@@ -134,38 +157,128 @@ class _CreateCategoryState extends State<CreateCategory> {
       // Save category to database
       await Supabase.instance.client.from('Category').insert({
         'categoryId': categoryId,
-        'name': _nameController.text,
+        'name': _nameController.text.trim(),
         'icon': _uploadedImageUrl,
         'type': _selectedType,
         'userId': widget.userId,
       });
 
-      // Save subcategories if any
-      for (var i = 0; i < _subcategories.length; i++) {
-        if (_subcategories[i].text.isNotEmpty) {
-          final subCategoryId =
-              '${categoryId}_SUB${(i + 1).toString().padLeft(2, '0')}';
+      if (!mounted) return;
 
-          await Supabase.instance.client.from('Subcategory').insert({
-            'subCategoryId': subCategoryId,
-            'name': _subcategories[i].text,
-            'categoryId': categoryId,
-          });
-        }
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Category created successfully')),
+      // Show success dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            backgroundColor: const Color(0xFFFFF9E6),
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF9E6),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Success icon
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFA7E399),
+                    ),
+                    child: const Icon(
+                      Icons.check,
+                      color: Colors.white,
+                      size: 32,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // Success title
+                  const Text(
+                    'Category Created Successfully!',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFF39C12),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Success message
+                  const Text(
+                    'Your new category has been created successfully.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF666666),
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // Done button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context); // Close dialog
+                        Navigator.pop(
+                          context,
+                          true,
+                        ); // Return to category manager
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFA7E399),
+                        foregroundColor: Colors.black87,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: const Text(
+                        'Done',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       );
-
-      Navigator.pop(context, true);
     } catch (e) {
       print('Error saving category: $e');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error saving category: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Error saving category: $e',
+              style: const TextStyle(
+                color: Colors.red,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+            backgroundColor: const Color(0xFFFFEBEE),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     } finally {
-      setState(() => _isSaving = false);
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
 
@@ -269,54 +382,77 @@ class _CreateCategoryState extends State<CreateCategory> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  // Name Field
-                  Container(
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFC8E6C9),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _nameController,
-                            decoration: const InputDecoration(
-                              hintText: 'Name',
-                              border: InputBorder.none,
-                              hintStyle: TextStyle(
+                  // Category Name Field
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        height: 80,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFC8E6C9),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Category Name',
+                              style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.grey,
+                                color: Colors.black,
                               ),
                             ),
+                            Expanded(
+                              child: TextField(
+                                controller: _nameController,
+                                textAlign: TextAlign.right,
+                                onChanged: (value) {
+                                  if (_nameError != null) {
+                                    setState(() {
+                                      _nameError = null;
+                                    });
+                                  }
+                                },
+                                decoration: const InputDecoration(
+                                  hintText: 'Enter name',
+                                  border: InputBorder.none,
+                                  hintStyle: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.grey,
+                                  ),
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                  ),
+                                ),
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_nameError != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            _nameError!,
                             style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black,
+                              color: Colors.red,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ),
-                        GestureDetector(
-                          onTap: () {
-                            // TODO: Handle custom bank/category
-                          },
-                          child: const Text(
-                            'Add Custom',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                    ],
                   ),
                   const SizedBox(height: 20),
                   // Type Field (Currency style)
@@ -324,33 +460,122 @@ class _CreateCategoryState extends State<CreateCategory> {
                     onTap: () {
                       showModalBottomSheet(
                         context: context,
+                        backgroundColor: const Color(0xFFFFF9E6),
+                        shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.only(
+                            topLeft: Radius.circular(20),
+                            topRight: Radius.circular(20),
+                          ),
+                        ),
                         builder: (context) => Container(
-                          padding: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.all(24),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFFFF9E6),
+                            borderRadius: BorderRadius.only(
+                              topLeft: Radius.circular(20),
+                              topRight: Radius.circular(20),
+                            ),
+                          ),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               const Text(
                                 'Select Type',
                                 style: TextStyle(
-                                  fontSize: 18,
+                                  fontSize: 20,
                                   fontWeight: FontWeight.bold,
+                                  color: Colors.black,
                                 ),
                               ),
-                              const SizedBox(height: 16),
-                              ListTile(
-                                title: const Text('Expense'),
+                              const SizedBox(height: 20),
+                              // Expense Option
+                              GestureDetector(
                                 onTap: () {
                                   setState(() => _selectedType = 'expense');
                                   Navigator.pop(context);
                                 },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 16,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFC8E6C9),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: _selectedType == 'expense'
+                                        ? Border.all(
+                                            color: const Color(0xFFA7E399),
+                                            width: 2,
+                                          )
+                                        : null,
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text(
+                                        'Expense',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                                      if (_selectedType == 'expense')
+                                        const Icon(
+                                          Icons.check_circle,
+                                          color: Color(0xFFA7E399),
+                                          size: 24,
+                                        ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                              ListTile(
-                                title: const Text('Income'),
+                              const SizedBox(height: 12),
+                              // Income Option
+                              GestureDetector(
                                 onTap: () {
                                   setState(() => _selectedType = 'income');
                                   Navigator.pop(context);
                                 },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 16,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFC8E6C9),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: _selectedType == 'income'
+                                        ? Border.all(
+                                            color: const Color(0xFFA7E399),
+                                            width: 2,
+                                          )
+                                        : null,
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text(
+                                        'Income',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                                      if (_selectedType == 'income')
+                                        const Icon(
+                                          Icons.check_circle,
+                                          color: Color(0xFFA7E399),
+                                          size: 24,
+                                        ),
+                                    ],
+                                  ),
+                                ),
                               ),
+                              const SizedBox(height: 16),
                             ],
                           ),
                         ),
@@ -400,113 +625,6 @@ class _CreateCategoryState extends State<CreateCategory> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  // Subcategory Field
-                  Container(
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFC8E6C9),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Subcategory',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black,
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _subcategories.add(TextEditingController());
-                            });
-                          },
-                          child: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFC8E6C9),
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.black, width: 2),
-                            ),
-                            child: const Icon(Icons.add, color: Colors.black),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  // Subcategory List
-                  ..._subcategories.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final controller = entry.value;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Container(
-                        height: 80,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFC8E6C9),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: controller,
-                                decoration: InputDecoration(
-                                  hintText: 'Subcategory ${index + 1}',
-                                  border: InputBorder.none,
-                                  hintStyle: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            GestureDetector(
-                              onTap: () {
-                                setState(() {
-                                  _subcategories.removeAt(index);
-                                });
-                              },
-                              child: Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFCDD2),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Icon(
-                                  Icons.close,
-                                  color: Colors.red,
-                                  size: 20,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList(),
                   const SizedBox(height: 20),
                   // Save Button
                   ElevatedButton(
