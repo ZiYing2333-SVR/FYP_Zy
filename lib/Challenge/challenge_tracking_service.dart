@@ -36,9 +36,10 @@ class ChallengeTrackingService {
           isComplete,
           coinEarned,
           isWinner,
+          hasClaimedReward,
           Challenge (
             achievementId
-            )
+          )
         ''')
           .eq('userId', userId)
           .not('challengeId', 'is', null)
@@ -79,7 +80,7 @@ class ChallengeTrackingService {
     final startDate = DateTime.parse(participant['startDate']);
     final endDate = DateTime.parse(participant['endDate']);
     final today = DateTime.now();
-    final alreadyRewarded = (participant['coinEarned'] ?? 0) > 0;
+    final hasClaimed = participant['hasClaimedReward'] ?? false;
     final achievementId = participant['Challenge']?['achievementId'];
 
     int currentStreak = 0;
@@ -148,13 +149,20 @@ class ChallengeTrackingService {
 
     print('updated participant: $checkUpdated');
 
-    if (isWinner && !alreadyRewarded) {
+    if (isWinner && !hasClaimed) {
       await rewardUserCoins(userId, 50);
 
       await awardAchievement(
         userId,
         achievementId,
       );
+
+      await supabase
+          .from('ChallengeParticipant')
+          .update({
+        'hasClaimedReward': true,
+      })
+          .eq('challengeParticipantId', participantId);
     }
   }
 
@@ -167,18 +175,29 @@ class ChallengeTrackingService {
     final startDate = DateTime.parse(participant['startDate']);
     final endDate = DateTime.parse(participant['endDate']);
     final now = DateTime.now();
-    final alreadyRewarded = (participant['coinEarned'] ?? 0) > 0;
+    final hasClaimed = participant['hasClaimedReward'] ?? false;
     final achievementId = participant['Challenge']?['achievementId'];
 
     final budgets = await supabase
         .from('Budget')
-        .select('amount, createdAt')
+        .select('amount, createdAt, categoryId')
         .eq('userId', userId)
         .order('createdAt', ascending: false)
         .limit(1);
 
+    print("Budgets result: $budgets");
+    print("Length: ${budgets.length}");
+
     double budgetAmount =
     (budgets.isNotEmpty ? budgets.first['amount'] : 0).toDouble();
+
+    final budgetCategoryId =
+    budgets.isNotEmpty ? budgets.first['categoryId'] : null;
+
+    if (budgetCategoryId == null) {
+      print("No category set for budget");
+      return;
+    }
 
     final transactions = await supabase
         .from('Transaction')
@@ -186,6 +205,7 @@ class ChallengeTrackingService {
         .eq('type', 'expense')
         .eq('refund', false)
         .inFilter('ledgerId', ledgerIds)
+        .eq('categoryId', budgetCategoryId)
         .gte('date', startDate.toIso8601String())
         .lte('date', endDate.toIso8601String());
 
@@ -212,10 +232,19 @@ class ChallengeTrackingService {
     })
         .eq('challengeParticipantId', participantId);
 
-    if (isWinner && !alreadyRewarded) {
+    if (isWinner && !hasClaimed) {
       await rewardUserCoins(userId, 60);
       await awardAchievement(userId, achievementId);
+
+      await supabase
+          .from('ChallengeParticipant')
+          .update({
+        'hasClaimedReward': true,
+      })
+          .eq('challengeParticipantId', participantId);
     }
+
+
 
   }
 
@@ -228,7 +257,7 @@ class ChallengeTrackingService {
     final startDate = DateTime.parse(participant['startDate']);
     final endDate = DateTime.parse(participant['endDate']);
     final now = DateTime.now();
-    final alreadyRewarded = (participant['coinEarned'] ?? 0) > 0;
+    final hasClaimed = participant['hasClaimedReward'] ?? false;
     final achievementId = participant['Challenge']?['achievementId'];
 
     final impulseCategories = [
@@ -315,9 +344,16 @@ class ChallengeTrackingService {
     })
         .eq('challengeParticipantId', participantId);
 
-    if (isWinner && !alreadyRewarded) {
+    if (isWinner && !hasClaimed) {
       await rewardUserCoins(userId, 40);
       await awardAchievement(userId, achievementId);
+
+      await supabase
+          .from('ChallengeParticipant')
+          .update({
+        'hasClaimedReward': true,
+      })
+          .eq('challengeParticipantId', participantId);
     }
 
 
@@ -332,7 +368,7 @@ class ChallengeTrackingService {
     final startDate = DateTime.parse(participant['startDate']);
     final endDate = DateTime.parse(participant['endDate']);
     final now = DateTime.now();
-    final alreadyRewarded = (participant['coinEarned'] ?? 0) > 0;
+    final hasClaimed = participant['hasClaimedReward'] ?? false;
     final achievementId = participant['Challenge']?['achievementId'];
 
     final incomeTransactions = await supabase
@@ -384,9 +420,16 @@ class ChallengeTrackingService {
     })
         .eq('challengeParticipantId', participantId);
 
-    if (isWinner && !alreadyRewarded) {
+    if (isWinner && !hasClaimed) {
       await rewardUserCoins(userId, 50);
       await awardAchievement(userId, achievementId);
+
+      await supabase
+          .from('ChallengeParticipant')
+          .update({
+        'hasClaimedReward': true,
+      })
+          .eq('challengeParticipantId', participantId);
     }
 
 

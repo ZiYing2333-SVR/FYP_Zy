@@ -36,7 +36,8 @@ class _JoinedChallengeProgressPageState
 
   final TextEditingController _phoneController = TextEditingController();
 
-  @override
+  bool hasShownResultDialog = false;
+
   @override
   void initState() {
     super.initState();
@@ -105,17 +106,14 @@ class _JoinedChallengeProgressPageState
         case 'PC0002':
           final budgets = await supabase
               .from('Budget')
-              .select('amount')
-              .eq('userId', participant['userId']);
+              .select('amount, createdAt')
+              .eq('userId', participant['userId'])
+              .order('createdAt', ascending: false)
+              .limit(1);
 
-          double totalBudget = 0;
-
-          for (var b in budgets) {
-            final amount = (b['amount'] as num?)?.toDouble() ?? 0;
-            totalBudget += amount;
-          }
-
-          targetValue = totalBudget;
+          targetValue = (budgets.isNotEmpty
+              ? (budgets.first['amount'] as num).toDouble()
+              : 0);
           break;
         case 'PC0003':
           targetValue = 3;
@@ -159,13 +157,17 @@ class _JoinedChallengeProgressPageState
       isLoading = false;
     });
 
-    if (isComplete && isWinner && !hasClaimed) {
+    if (isComplete && isWinner && !hasShownResultDialog) {
+      hasShownResultDialog = true;
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _showWinnerDialog(coinEarned);
       });
     }
 
-    if (isComplete && !isWinner && !(participant['hasViewedResult'] ?? false)) {
+    if (isComplete && !isWinner && !hasShownResultDialog) {
+      hasShownResultDialog = true;
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _showLoserDialog();
       });
@@ -526,10 +528,7 @@ class _JoinedChallengeProgressPageState
                           .single();
 
                       if (participant['hasClaimedReward'] == true) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Reward already claimed')),
-                        );
-                        return;
+                        print("Already claimed, just navigate");
                       }
 
                       // 🚨 2. Get achievementId (IMPORTANT FIX)
@@ -544,57 +543,6 @@ class _JoinedChallengeProgressPageState
 
                       print("achievementId: $achievementId"); // DEBUG
 
-                      // 3️⃣ Add coins
-                      final user = await supabase
-                          .from('User')
-                          .select('coinbalance')
-                          .eq('userId', data!['userId'])
-                          .single();
-
-                      final currentBalance = (user['coinbalance'] ?? 0) as num;
-
-                      await supabase
-                          .from('User')
-                          .update({'coinbalance': currentBalance + coins})
-                          .eq('userId', data!['userId']);
-
-                      // 4️⃣ Insert achievement
-                      if (achievementId != null) {
-                        final existing = await supabase
-                            .from('UserAchievement')
-                            .select('userAchievementId')
-                            .eq('userId', data!['userId'])
-                            .eq('achievementId', achievementId)
-                            .maybeSingle();
-
-                        if (existing == null) {
-                          final last = await supabase
-                              .from('UserAchievement')
-                              .select('userAchievementId')
-                              .order('userAchievementId', ascending: false)
-                              .limit(1);
-
-                          String newId;
-
-                          if (last.isEmpty) {
-                            newId = "UA00001";
-                          } else {
-                            String lastId = last.first['userAchievementId'];
-                            int num = int.parse(lastId.substring(2));
-                            num++;
-                            newId = "UA${num.toString().padLeft(5, '0')}";
-                          }
-
-                          await supabase.from('UserAchievement').insert({
-                            'userAchievementId': newId,
-                            'awardedAt': DateTime.now().toIso8601String(),
-                            'userId': data!['userId'],
-                            'achievementId': achievementId,
-                          });
-
-                          print("🏆 Achievement inserted!");
-                        }
-                      }
 
                       // 5️⃣ Mark claimed
                       await supabase
@@ -605,10 +553,14 @@ class _JoinedChallengeProgressPageState
                       })
                           .eq('challengeParticipantId', widget.participantId);
 
-                      Navigator.pop(context);
+                      // ✅ close dialog using ROOT navigator
+                      Navigator.of(context, rootNavigator: true).pop();
 
-                      Navigator.push(
-                        context,
+// ✅ wait for dialog animation to finish
+                      await Future.delayed(const Duration(milliseconds: 300));
+
+// ✅ navigate using ROOT navigator
+                      Navigator.of(context, rootNavigator: true).push(
                         MaterialPageRoute(
                           builder: (_) => AchievementPage(
                             userId: data!['userId'],
@@ -660,17 +612,36 @@ class _JoinedChallengeProgressPageState
 
               const SizedBox(height: 20),
 
-              ElevatedButton(
-                onPressed: () async {
-                  await Supabase.instance.client
-                      .from('ChallengeParticipant')
-                      .update({'hasViewedResult': true,
-                                'hasClaimedReward': true,})
-                      .eq('challengeParticipantId', widget.participantId);
+              SizedBox(
+                width: 200,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    await Supabase.instance.client
+                        .from('ChallengeParticipant')
+                        .update({
+                      'hasViewedResult': true,
+                      'hasClaimedReward': true,
+                    })
+                        .eq('challengeParticipantId', widget.participantId);
 
-                  Navigator.pop(context);
-                },
-                child: const Text("OK"),
+                    Navigator.pop(context);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF9ED39E),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: const Text(
+                    "OK",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               )
             ],
           ),
@@ -681,6 +652,7 @@ class _JoinedChallengeProgressPageState
 
   @override
   Widget build(BuildContext context) {
+
     if (isLoading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
