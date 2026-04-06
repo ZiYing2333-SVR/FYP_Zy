@@ -82,7 +82,8 @@ class ChallengeTrackingService {
     final alreadyRewarded = (participant['coinEarned'] ?? 0) > 0;
     final achievementId = participant['Challenge']?['achievementId'];
 
-    int streak = 0;
+    int currentStreak = 0;
+    int longestStreak = 0;
 
     final duration = DateTime.parse(participant['endDate'])
         .difference(DateTime.parse(participant['startDate']))
@@ -105,28 +106,34 @@ class ChallengeTrackingService {
 
       final transactions = await supabase
           .from('Transaction')
-          .select('transactionId, date, ledgerId, type, refund')
+          .select('transactionId')
           .eq('type', 'expense')
           .inFilter('ledgerId', ledgerIds)
           .gte('date', dayStart.toIso8601String())
           .lt('date', dayEnd.toIso8601String());
 
       if (transactions.isNotEmpty) {
-        streak++;
+        currentStreak++;
+
+        if (currentStreak > longestStreak) {
+          longestStreak = currentStreak;
+        }
       } else {
-        break;
+        currentStreak = 0; // 🔥 reset but continue
       }
     }
 
-    final isWinner = streak >= duration;
-    final isComplete = isWinner;
+    final target = 5; // or change to 5 if you want easier win
 
-    print('final streak: $streak');
+    final isWinner = longestStreak >= target;
+    final isComplete = !today.isBefore(endDate);
+
+    print('longest streak: $longestStreak');
 
     await supabase
         .from('ChallengeParticipant')
         .update({
-      'progressValue': streak,
+      'progressValue': longestStreak,
       'isWinner': isWinner,
       'isComplete': isComplete,
       'coinEarned': isWinner ? 50 : 0,
@@ -165,14 +172,13 @@ class ChallengeTrackingService {
 
     final budgets = await supabase
         .from('Budget')
-        .select('amount')
-        .eq('userId', userId);
+        .select('amount, createdAt')
+        .eq('userId', userId)
+        .order('createdAt', ascending: false)
+        .limit(1);
 
-    double budgetAmount = 0;
-
-    for (var b in budgets) {
-      budgetAmount += (b['amount'] as num?)?.toDouble() ?? 0;
-    }
+    double budgetAmount =
+    (budgets.isNotEmpty ? budgets.first['amount'] : 0).toDouble();
 
     final transactions = await supabase
         .from('Transaction')
@@ -206,6 +212,11 @@ class ChallengeTrackingService {
     })
         .eq('challengeParticipantId', participantId);
 
+    if (isWinner && !alreadyRewarded) {
+      await rewardUserCoins(userId, 60);
+      await awardAchievement(userId, achievementId);
+    }
+
   }
 
   Future<void> trackNoImpulseSpending(
@@ -235,7 +246,9 @@ class ChallengeTrackingService {
     int safeDays = 0;
     bool failed = false;
 
-    for (int i = 0; i < 3; i++) {
+    final duration = endDate.difference(startDate).inDays + 1;
+
+    for (int i = 0; i < duration; i++) {
       final day = startDate.add(Duration(days: i));
       final onlyDay = DateTime(day.year, day.month, day.day);
       final onlyToday = DateTime(now.year, now.month, now.day);
@@ -282,11 +295,12 @@ class ChallengeTrackingService {
 
     bool isComplete = false;
     bool isWinner = false;
+    final target = duration;
 
     if (failed) {
       isComplete = true;
       isWinner = false;
-    } else if (safeDays >= 3) {
+    } else if (safeDays >= target) {
       isComplete = true;
       isWinner = true;
     }
@@ -300,6 +314,11 @@ class ChallengeTrackingService {
       'coinEarned': isWinner ? 40 : 0,
     })
         .eq('challengeParticipantId', participantId);
+
+    if (isWinner && !alreadyRewarded) {
+      await rewardUserCoins(userId, 40);
+      await awardAchievement(userId, achievementId);
+    }
 
 
   }
@@ -365,6 +384,11 @@ class ChallengeTrackingService {
     })
         .eq('challengeParticipantId', participantId);
 
+    if (isWinner && !alreadyRewarded) {
+      await rewardUserCoins(userId, 50);
+      await awardAchievement(userId, achievementId);
+    }
+
 
   }
 
@@ -386,18 +410,6 @@ class ChallengeTrackingService {
   Future<void> awardAchievement(String userId, String? achievementId) async {
     if (achievementId == null) return;
 
-    /// 1️⃣ Prevent duplicate
-    final existing = await supabase
-        .from('UserAchievement')
-        .select('userAchievementId')
-        .eq('userId', userId)
-        .eq('achievementId', achievementId)
-        .maybeSingle();
-
-    if (existing != null) {
-      print("Achievement already exists");
-      return;
-    }
 
     /// 2️⃣ Generate ID
     final last = await supabase
