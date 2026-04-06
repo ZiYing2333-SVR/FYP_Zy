@@ -22,7 +22,6 @@ class AccountDetailScreen extends StatefulWidget {
 class _AccountDetailScreenState extends State<AccountDetailScreen> {
   late Future<Map<String, dynamic>> _accountDetailsFuture;
   late Future<List<Map<String, dynamic>>> _transactionsFuture;
-  bool _accountUpdated = false;
   Map<String, dynamic> _currencies = {};
 
   @override
@@ -264,73 +263,6 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
           return SingleChildScrollView(
             child: Column(
               children: [
-                // Success Message (if account was just updated)
-                if (_accountUpdated)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFA7E399),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFFA7E399).withOpacity(0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.check_circle,
-                            color: Colors.white,
-                            size: 24,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Account Updated Successfully!',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                const Text(
-                                  'Your account details have been updated.',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _accountUpdated = false;
-                              });
-                            },
-                            child: const Icon(
-                              Icons.close,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
                 // Account Header Card - Clickable to Edit
                 Padding(
                   padding: const EdgeInsets.all(16),
@@ -348,7 +280,6 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
                       );
                       if (result == true) {
                         setState(() {
-                          _accountUpdated = true;
                           _accountDetailsFuture = _fetchAccountDetails();
                           _transactionsFuture = _fetchTransactions();
                         });
@@ -422,6 +353,12 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
                                 ),
                               ],
                             ),
+                          ),
+                          // Edit Icon on the right
+                          const Icon(
+                            Icons.edit,
+                            color: Color(0xFFF39C12),
+                            size: 24,
                           ),
                         ],
                       ),

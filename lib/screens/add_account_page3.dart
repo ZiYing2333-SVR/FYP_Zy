@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/bank_icon_helper.dart';
@@ -221,6 +222,7 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
   late TextEditingController _nameController;
   late TextEditingController _descriptionController;
   late TextEditingController _balanceController;
+  late FocusNode _balanceFocusNode;
 
   String? _selectedCurrency;
   String? _defaultCurrency;
@@ -241,6 +243,11 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
     _descriptionController = TextEditingController();
     _balanceController = TextEditingController(text: '0');
     _uploadedIconPath = widget.bankImage ?? '';
+
+    // Initialize balance focus node with listeners
+    _balanceFocusNode = FocusNode();
+    _balanceFocusNode.addListener(_handleBalanceFocus);
+
     _loadCurrencies();
   }
 
@@ -379,7 +386,30 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
     _nameController.dispose();
     _descriptionController.dispose();
     _balanceController.dispose();
+    _balanceFocusNode.removeListener(_handleBalanceFocus);
+    _balanceFocusNode.dispose();
     super.dispose();
+  }
+
+  void _handleBalanceFocus() {
+    if (_balanceFocusNode.hasFocus) {
+      // On focus: clear if value is "0"
+      if (_balanceController.text == '0') {
+        _balanceController.clear();
+      }
+    } else {
+      // On unfocus: restore to "0" if empty
+      if (_balanceController.text.isEmpty) {
+        _balanceController.text = '0';
+      }
+    }
+  }
+
+  String _removeLeadingZeros(String value) {
+    // Remove leading zeros but keep at least one digit
+    if (value.isEmpty) return '0';
+    final intValue = int.tryParse(value) ?? 0;
+    return intValue.toString();
   }
 
   Future<void> _pickIcon() async {
@@ -898,10 +928,27 @@ class _AddAccountPage3State extends State<AddAccountPage3> {
                       width: 120,
                       child: TextField(
                         controller: _balanceController,
+                        focusNode: _balanceFocusNode,
                         textAlign: TextAlign.right,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(15),
+                        ],
+                        onChanged: (value) {
+                          // Remove leading zeros when user types
+                          if (value.isNotEmpty && value != '0') {
+                            final cleanedValue = _removeLeadingZeros(value);
+                            if (cleanedValue != value) {
+                              _balanceController.text = cleanedValue;
+                              // Move cursor to end
+                              _balanceController.selection =
+                                  TextSelection.fromPosition(
+                                    TextPosition(offset: cleanedValue.length),
+                                  );
+                            }
+                          }
+                        },
                         decoration: InputDecoration(
                           prefix: Text(_getBalancePrefix()),
                           border: InputBorder.none,

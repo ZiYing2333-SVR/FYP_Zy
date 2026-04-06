@@ -260,6 +260,165 @@ class _AccountPageState extends State<AccountPage> {
     return imagePath;
   }
 
+  void _showAllSavingsAccountsList(List<Map<String, dynamic>> savingsAccounts) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: const Color(0xFFFEFFD3),
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.8,
+          ),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFEFFD3),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Savings Accounts',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              // List of savings accounts
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  itemCount: savingsAccounts.length,
+                  separatorBuilder: (context, index) =>
+                      Divider(height: 1, color: Colors.grey[300]),
+                  itemBuilder: (context, index) {
+                    final account = savingsAccounts[index];
+                    final accountId = account['accountId'] ?? '';
+                    final accountName = account['accountName'] ?? 'Savings';
+                    final balance = (account['balance'] ?? 0).toDouble();
+                    final currencyId = account['currencyId'];
+                    final iconImage = account['iconImage'];
+
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.pop(context); // Close dialog
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => AccountDetailScreen(
+                              accountId: accountId,
+                              userId: widget.userId,
+                            ),
+                          ),
+                        ).then((_) {
+                          _fetchAccounts();
+                        });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Row(
+                          children: [
+                            // Account Icon
+                            if (iconImage != null && iconImage.isNotEmpty)
+                              Container(
+                                width: 45,
+                                height: 45,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.grey[200]!),
+                                ),
+                                child: Image.network(
+                                  _getIconUrl(iconImage),
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Container(
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey[300],
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Icon(
+                                        Icons.savings,
+                                        size: 24,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              )
+                            else
+                              Container(
+                                width: 45,
+                                height: 45,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[300],
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(Icons.savings, size: 24),
+                              ),
+                            const SizedBox(width: 16),
+                            // Account Name and Balance
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    accountName,
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _formatCurrencyWithSymbol(
+                                      balance,
+                                      currencyId,
+                                    ),
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.green.shade600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // Arrow icon
+                            Icon(
+                              Icons.arrow_forward_ios,
+                              size: 18,
+                              color: Colors.grey[400],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _fetchCurrencies() async {
     try {
       final response = await Supabase.instance.client.from('Currency').select();
@@ -748,18 +907,10 @@ class _AccountPageState extends State<AccountPage> {
                               _fetchAccounts();
                             });
                           },
-                          child: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: Colors.green.shade200,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              Icons.add,
-                              color: Colors.green,
-                              size: 24,
-                            ),
+                          child: const Icon(
+                            Icons.add,
+                            size: 28,
+                            color: Colors.green,
                           ),
                         ),
                       ],
@@ -999,12 +1150,8 @@ class _AccountPageState extends State<AccountPage> {
                                 ),
                                 GestureDetector(
                                   onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) =>
-                                            SavingsPage(userId: widget.userId),
-                                      ),
+                                    _showAllSavingsAccountsList(
+                                      savingsAccounts,
                                     );
                                   },
                                   child: Text(

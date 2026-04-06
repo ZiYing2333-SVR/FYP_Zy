@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/bank_icon_helper.dart';
 import 'dart:typed_data';
 import 'account_manager.dart';
+import 'account_page.dart';
 
 class EditAccountPage extends StatefulWidget {
   final Map<String, dynamic> account;
@@ -36,6 +37,8 @@ class _EditAccountPageState extends State<EditAccountPage> {
   bool _isLoading = false;
   List<Map<String, dynamic>> _currencies = [];
   bool _isCurrenciesLoading = true;
+  List<String> _accountCategories = [];
+  bool _isCategoriesLoading = true;
 
   late Map<String, dynamic> _originalAccount;
   final ImagePicker _imagePicker = ImagePicker();
@@ -63,6 +66,7 @@ class _EditAccountPageState extends State<EditAccountPage> {
     _uploadedIconPath = widget.account['iconImage'];
 
     _loadCurrencies();
+    _loadAccountCategories();
   }
 
   Future<void> _loadCurrencies() async {
@@ -79,6 +83,56 @@ class _EditAccountPageState extends State<EditAccountPage> {
       print('Error loading currencies: $e');
       setState(() {
         _isCurrenciesLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadAccountCategories() async {
+    try {
+      final accountId = widget.account['accountId'];
+
+      // Get all group accounts for this account with their category names
+      final groupAccountsData = await Supabase.instance.client
+          .from('GroupAccount')
+          .select('accountCategoryId')
+          .eq('accountId', accountId);
+
+      if (groupAccountsData.isEmpty) {
+        setState(() {
+          _accountCategories = [];
+          _isCategoriesLoading = false;
+        });
+        return;
+      }
+
+      // Extract unique accountCategoryIds
+      final categoryIds = <String>{};
+      for (var item in groupAccountsData) {
+        categoryIds.add(item['accountCategoryId'] as String);
+      }
+
+      // Fetch category names for all these ids
+      final categoriesData = await Supabase.instance.client
+          .from('AccountCategory')
+          .select('accountCategoryId, name')
+          .inFilter('accountCategoryId', categoryIds.toList());
+
+      // Sort by name for consistent display
+      categoriesData.sort(
+        (a, b) => (a['name'] as String).compareTo(b['name'] as String),
+      );
+
+      setState(() {
+        _accountCategories = List<String>.from(
+          categoriesData.map((c) => c['name'] as String),
+        );
+        _isCategoriesLoading = false;
+      });
+    } catch (e) {
+      print('Error loading account categories: $e');
+      setState(() {
+        _accountCategories = [];
+        _isCategoriesLoading = false;
       });
     }
   }
@@ -440,14 +494,7 @@ class _EditAccountPageState extends State<EditAccountPage> {
                                 .eq('accountId', widget.account['accountId']);
 
                             if (mounted) {
-                              Navigator.pushAndRemoveUntil(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      AccountManager(userId: widget.userId),
-                                ),
-                                (route) => false,
-                              );
+                              _showDeleteSuccessDialog();
                             }
                           } catch (e) {
                             if (mounted) {
@@ -491,38 +538,180 @@ class _EditAccountPageState extends State<EditAccountPage> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFFFFF9E6),
+      barrierDismissible: false,
+      builder: (BuildContext context) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        contentPadding: const EdgeInsets.all(24),
-        title: const Text(
-          'Discard Changes',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFFF39C12),
+        backgroundColor: const Color(0xFFFFF9E6),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF9E6),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Title
+              const Text(
+                'Discard Changes?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFF39C12),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Description
+              const Text(
+                'You have unsaved changes. Are you sure you want to discard them?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF666666),
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 24),
+              // No Button
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFA7E399),
+                    foregroundColor: Colors.black87,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    'Keep Editing',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Yes Button
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: OutlinedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.pop(context);
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.grey[700],
+                    side: BorderSide(color: Colors.grey[300]!, width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Discard Changes',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-        content: const Text(
-          'You have unsaved changes. Do you want to discard them?',
-          style: TextStyle(color: Color(0xFF666666)),
+      ),
+    );
+  }
+
+  void _showDeleteSuccessDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: const Color(0xFFFFF9E6),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF9E6),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Success icon
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFFA7E399),
+                ),
+                child: const Icon(Icons.check, color: Colors.white, size: 32),
+              ),
+              const SizedBox(height: 20),
+              // Success title
+              const Text(
+                'Account Deleted Successfully!',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFF39C12),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Success message
+              const Text(
+                'Your account has been deleted successfully.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: Color(0xFF666666)),
+              ),
+              const SizedBox(height: 24),
+              // OK button
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context); // Close dialog
+                    // Navigate back based on source
+                    if (widget.source == 'detail') {
+                      // From detail: navigate back to account page
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              AccountPage(userId: widget.userId),
+                        ),
+                        (route) => false,
+                      );
+                    } else {
+                      // From manager: just pop back to manager
+                      Navigator.pop(context);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFA7E399),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  child: widget.source == 'detail'
+                      ? const Text('Back to Account Page')
+                      : const Text('OK'),
+                ),
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('No', style: TextStyle(color: Color(0xFFF39C12))),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            child: const Text(
-              'Yes',
-              style: TextStyle(color: Color(0xFF666666)),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -908,6 +1097,7 @@ class _EditAccountPageState extends State<EditAccountPage> {
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
                               'Group',
@@ -917,14 +1107,36 @@ class _EditAccountPageState extends State<EditAccountPage> {
                                 color: Colors.black87,
                               ),
                             ),
-                            const Text(
-                              'None',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black87,
+                            if (_isCategoriesLoading)
+                              const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            else if (_accountCategories.isEmpty)
+                              const Text(
+                                'None',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black87,
+                                ),
+                              )
+                            else
+                              Expanded(
+                                child: Text(
+                                  _accountCategories.join('\n'),
+                                  textAlign: TextAlign.right,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black87,
+                                    height: 1.4,
+                                  ),
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ),
