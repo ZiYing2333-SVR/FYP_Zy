@@ -214,6 +214,23 @@ class ChallengeTrackingService {
       totalExpense += (t['amount'] as num).toDouble();
     }
 
+    // Early lose condition: budget exceeded
+    if (totalExpense > budgetAmount) {
+      await supabase
+          .from('ChallengeParticipant')
+          .update({
+        'progressValue': totalExpense,
+        'isWinner': false,
+        'isComplete': true,
+        'coinEarned': 0,
+      })
+          .eq('challengeParticipantId', participantId);
+
+      print("Challenge ended early: Budget exceeded");
+
+      return; // stop further execution
+    }
+
     bool isComplete = false;
     bool isWinner = false;
 
