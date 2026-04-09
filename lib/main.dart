@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'FacialRecognition/face_auth_service.dart';
 import 'screens/welcome_screen.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,6 +15,11 @@ Future<void> main() async {
   const anonKey = 'sb_publishable_G7rzmuNmAifrbXyuEFgbSg_PaKY75mW';
 
   await Supabase.initialize(url: supabaseUrl, anonKey: anonKey);
+  await dotenv.load(fileName: ".env");
+
+  // await FaceAuthService.removeAllFaces();
+  // await FaceAuthService.deleteFaceSet();   // optional (reset)
+  // await FaceAuthService.createFaceSet();
 
   runApp(const MyApp());
 }

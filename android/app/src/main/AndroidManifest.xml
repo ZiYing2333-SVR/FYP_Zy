@@ -1,6 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+
+
+
     <application
-        android:label="fyp_zy"
+        android:label="fyp_wx"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         <activity

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../pet/pet_home_page.dart';
+import '../pet/pet_main.dart';
 import '../utils/bank_icon_helper.dart';
 import '../services/budget_forecast_service.dart';
 import '../services/budget_alert_service.dart';
@@ -1087,6 +1089,45 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
     return '$symbol${amount.toStringAsFixed(2)}';
   }
 
+  Future<void> _handlePetNavigation() async {
+    try {
+      final supabase = Supabase.instance.client;
+
+      final response = await supabase
+          .from('Pet')
+          .select('petId') // 👈 only get petId
+          .eq('userId', widget.userId)
+          .maybeSingle();
+
+      if (response != null) {
+        final petId = response['petId'];
+
+        // ✅ Navigate with petId
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PetHomePage(
+              userId: widget.userId,
+              petId: petId,
+            ),
+          ),
+        );
+      } else {
+        // ❌ No pet → go create page
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PetMainPage(
+              userId: widget.userId,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error checking pet: $e');
+    }
+  }
+
   String _formatCurrency(double amount) {
     return 'RM${amount.toStringAsFixed(2)}';
   }
@@ -1989,6 +2030,124 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
                     });
                   }
                 },
+
+                    // AI Features placeholder
+                    const SizedBox(height: 24),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: Colors.grey.shade300,
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.auto_awesome,
+                            size: 18,
+                            color: Colors.black87,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'AI Features',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 40),
+                  ],
+                ),
+              ),
+            ),
+      bottomNavigationBar: Stack(
+        children: [
+          BottomNavigationBar(
+            currentIndex: _selectedNavIndex,
+            backgroundColor: const Color(0xFFFEFFD3),
+            type: BottomNavigationBarType.fixed,
+            items: const [
+              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.account_balance_wallet),
+                label: 'Account',
+              ),
+              BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.savings),
+                label: 'Saving',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.settings),
+                label: 'Setting',
+              ),
+            ],
+            onTap: (index) {
+              setState(() {
+                _selectedNavIndex = index;
+              });
+              if (index == 0) {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => HomeScreen(userId: widget.userId),
+                  ),
+                );
+              }else if (index == 2) {
+                // 🐶 PET LOGIC HERE
+                _handlePetNavigation();
+              }  else if (index == 3) {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => SavingsPage(userId: widget.userId),
+                  ),
+                );
+              } else if (index == 4) {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => SettingsScreen(userId: widget.userId),
+                  ),
+                ).then((_) {
+                  _checkBudgetAlerts();
+                });
+              }
+            },
+          ),
+          // Alert badge on Settings icon
+          if (_hasBudgetAlert)
+            Positioned(
+              right: 12,
+              top: 8,
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE53935),
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(
+                  child: Text(
+                    '!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
               ),
               // Build badges for multiple nav icons
               ..._buildNavBadges(),

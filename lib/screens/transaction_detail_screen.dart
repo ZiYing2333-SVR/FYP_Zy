@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../Challenge/challenge_tracking_service.dart';
+import 'refund_screen.dart';
 import 'home_screen.dart';
 
 class TransactionDetailScreen extends StatefulWidget {
@@ -221,6 +223,11 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
             'amount': newAmount,
           })
           .eq('transactionId', widget.transactionId);
+
+      /// ✅ Recalculate preset challenge progress
+      if (widget.userId != null) {
+        await ChallengeTrackingService().updateUserChallenges(widget.userId!);
+      }
 
       setState(() {
         _transaction!['note'] = _noteController.text;
@@ -502,6 +509,11 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
             .delete()
             .eq('transactionId', widget.transactionId);
 
+        /// ✅ Recalculate preset challenge progress
+        if (widget.userId != null) {
+          await ChallengeTrackingService().updateUserChallenges(widget.userId!);
+        }
+
         if (mounted) {
           // Show success dialog
           showDialog(
@@ -614,6 +626,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
 
   void _refundTransaction() {
     if (_transaction == null) return;
+  void _navigateToRefund() {
+    if (_transaction == null || widget.userId == null) return;
 
     final amount = double.tryParse(_transaction!['amount'].toString()) ?? 0;
 
@@ -756,6 +770,21 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
             newBalance = currentBalance + amount;
           }
 
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => RefundScreen(
+          transactionId: widget.transactionId,
+          amount: amount,
+          accountId: _transaction!['accountId'],
+          accountName: accountName,
+          userId: widget.userId!,
+        ),
+      ),
+    ).then((result) {
+      if (result == true) {
+        // Refresh transaction details and close
+        Navigator.pop(context, true);
           // 3. Update account balance
           await supabase
               .from('Account')

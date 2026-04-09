@@ -6,6 +6,7 @@ class RefundScreen extends StatefulWidget {
   final double amount;
   final String accountId;
   final String accountName;
+  final String userId;
 
   const RefundScreen({
     super.key,
@@ -13,6 +14,7 @@ class RefundScreen extends StatefulWidget {
     required this.amount,
     required this.accountId,
     required this.accountName,
+    required this.userId,
   });
 
   @override

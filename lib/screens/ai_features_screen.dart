@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../AIBuddy/ai_buddy_page.dart';
 import 'auto_expense_categorization_screen.dart';
 import 'budget_forecasting_screen.dart';
 import 'saving_goal_assistant_screen.dart';
@@ -80,7 +81,22 @@ class AIFeaturesScreen extends StatelessWidget {
                 );
               },
             ),
+            const SizedBox(height: 12),
+            _buildFeatureButton(
+              context,
+              title: 'AI Buddy Chatbot',
+              icon: Icons.smart_toy,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AiBuddyPage(userId: userId),
+                  ),
+                );
+              },
+            ),
           ],
+
         ),
       ),
     );

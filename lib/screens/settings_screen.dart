@@ -2,6 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 // import 'package:image_picker/image_picker.dart';
 // import 'dart:typed_data';
+import '../Challenge/View_Challenge.dart';
+import '../Challenge/view_achievement.dart';
+import '../FinancialTip/view_tips_page.dart';
+import '../Missions/view_mission.dart';
+import '../Quiz/view_quiz_page.dart';
+import '../pet/pet_home_page.dart';
+import '../pet/pet_main.dart';
 import '../services/budget_alert_service.dart';
 import 'home_screen.dart';
 import 'welcome_screen.dart';
@@ -574,6 +581,45 @@ class _SettingsScreenState extends State<SettingsScreen>
     return badges;
   }
 
+  Future<void> _handlePetNavigation() async {
+    try {
+      final supabase = Supabase.instance.client;
+
+      final response = await supabase
+          .from('Pet')
+          .select('petId') // 👈 only get petId
+          .eq('userId', widget.userId)
+          .maybeSingle();
+
+      if (response != null) {
+        final petId = response['petId'];
+
+        // ✅ Navigate with petId
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PetHomePage(
+              userId: widget.userId,
+              petId: petId,
+            ),
+          ),
+        );
+      } else {
+        // ❌ No pet → go create page
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PetMainPage(
+              userId: widget.userId,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error checking pet: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -950,13 +996,72 @@ class _SettingsScreenState extends State<SettingsScreen>
                     },
                   ),
                   _buildDivider(),
-                  _buildMenuItem('Finance Tips', 8),
+                  _buildMenuItem(
+                    'Finance Tips',
+                    8,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              ViewTipsPage(userId: widget.userId),
+                        ),
+                      );
+                    },
+                  ),
                   _buildDivider(),
-                  _buildMenuItem('Challenges', 9),
+                  _buildMenuItem(
+                      'Daily Missions',
+                      9,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              MissionPage(userId: widget.userId),
+                        ),
+                      );
+                    },
+                  ),
                   _buildDivider(),
-                  _buildMenuItem('Achievement', 10),
+                  _buildMenuItem(
+                    'Challenges',
+                    11,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ViewChallengePage(userId: widget.userId),
+                        ),
+                      );
+                    },
+                  ),
                   _buildDivider(),
-                  _buildMenuItem('Quiz', 11),
+                  _buildMenuItem(
+                    'Achievement',
+                    11,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => AchievementPage(userId: widget.userId),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDivider(),
+                  _buildMenuItem(
+                    'Quiz',
+                    11,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ViewQuizPage(userId: widget.userId),
+                        ),
+                      );
+                    },
+                  ),
                   _buildDivider(),
                   _buildMenuItem('FAQ', 12),
                 ],
@@ -1007,7 +1112,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                     builder: (context) => AccountPage(userId: widget.userId),
                   ),
                 );
-              } else if (index == 3) {
+              } else if (index == 2) {
+                // 🐶 PET LOGIC HERE
+                _handlePetNavigation();
+              }else if (index == 3) {
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(

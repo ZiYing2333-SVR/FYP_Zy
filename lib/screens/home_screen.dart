@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/budget_alert_service.dart';
 import '../services/alert_status_service.dart';
+import '../pet/pet_home_page.dart';
+import '../pet/pet_main.dart';
 import 'settings_screen.dart';
 import 'account_page.dart';
 import 'add_transaction.dart';
@@ -1786,6 +1788,45 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _handlePetNavigation() async {
+    try {
+      final supabase = Supabase.instance.client;
+
+      final response = await supabase
+          .from('Pet')
+          .select('petId') // 👈 only get petId
+          .eq('userId', _currentUserId!)
+          .maybeSingle();
+
+      if (response != null) {
+        final petId = response['petId'];
+
+        // ✅ Navigate with petId
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PetHomePage(
+              userId: _currentUserId!,
+              petId: petId,
+            ),
+          ),
+        );
+      } else {
+        // ❌ No pet → go create page
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PetMainPage(
+              userId: _currentUserId!,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error checking pet: $e');
+    }
+  }
+
   List<Widget> _buildNavBadges() {
     // Position badge only on Budget icon (index 2)
     final badges = <Widget>[];
@@ -2794,6 +2835,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       MaterialPageRoute(
                         builder: (context) =>
                             AccountPage(userId: _currentUserId!),
+                      ),
+                    );
+                  } else if (index == 2) {
+                    // 🐶 PET LOGIC HERE
+                    _handlePetNavigation();
+                  } else if (index == 3) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            SavingsPage(userId: _currentUserId!),
                       ),
                     );
                   } else if (index == 3) {
