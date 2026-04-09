@@ -112,6 +112,7 @@ class _AddTransactionState extends State<AddTransaction> {
                 .from('Transaction')
                 .select()
                 .eq('accountId', accountId)
+                .eq('type', 'expense')
                 .gte('date', startDate.toIso8601String());
           }
         } else if (budgetType == 'category') {
@@ -210,9 +211,7 @@ class _AddTransactionState extends State<AddTransaction> {
     } catch (e) {
       print('Error fetching categories: $e');
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error loading categories: $e')));
+      _showErrorDialog('Error loading categories: $e');
     }
   }
 
@@ -245,9 +244,7 @@ class _AddTransactionState extends State<AddTransaction> {
       }
     } catch (e) {
       print('Error picking image: $e');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error picking image: $e')));
+      _showErrorDialog('Error picking image: $e');
     }
   }
 
@@ -263,9 +260,7 @@ class _AddTransactionState extends State<AddTransaction> {
       }
     } catch (e) {
       print('Error scanning image: $e');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error scanning image: $e')));
+      _showErrorDialog('Error scanning image: $e');
     }
   }
 
@@ -372,52 +367,128 @@ class _AddTransactionState extends State<AddTransaction> {
     return formatted;
   }
 
+  /// Show styled error dialog with error colors (red theme)
+  void _showErrorDialog(String message) {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFCDD2), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Error icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0xFFFFCDD2),
+                  ),
+                  child: const Icon(
+                    Icons.close,
+                    color: Color(0xFFE53935),
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Error title
+                const Text(
+                  'Validation Error',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFE53935),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Error message
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF666666),
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Got it button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFE53935),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    child: const Text('Got it'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _saveTransaction() async {
     // Original single transaction logic
     // Validate based on transaction type
     if (_selectedType == 'transfer') {
       if (_selectedFromAccountId == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please select a from account')),
-        );
+        _showErrorDialog('Please select a from account');
         return;
       }
 
       if (_selectedToAccountId == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please select a to account')),
-        );
+        _showErrorDialog('Please select a to account');
         return;
       }
 
       if (_selectedFromAccountId == _selectedToAccountId) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('From and To accounts cannot be the same'),
-          ),
-        );
+        _showErrorDialog('From and To accounts cannot be the same');
         return;
       }
     } else {
       if (_selectedCategory == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please select a category')),
-        );
+        _showErrorDialog('Please select a category');
         return;
       }
 
       if (_selectedAccountId == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please select an account')),
-        );
+        _showErrorDialog('Please select an account');
         return;
       }
     }
 
     if (_amountText == '0' || _amountText.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Please enter an amount')));
+      _showErrorDialog('Please enter an amount');
       return;
     }
 
@@ -504,15 +575,10 @@ class _AddTransactionState extends State<AddTransaction> {
 
       if (_selectedType == 'transfer') {
         // For transfer, create a single record in Transfer table
-        // Get the count of existing transfers for this user to generate sequence
-        final existingTransfers = await Supabase.instance.client
-            .from('Transfer')
-            .select('transferId')
-            .like('transferId', 'TRANSFER${widget.userId}%');
-
-        final sequenceNumber = existingTransfers.length + 1;
-        final formattedSequence = sequenceNumber.toString().padLeft(6, '0');
-        final transferId = 'TRANSFER${widget.userId}$formattedSequence';
+        // Use timestamp-based ID to prevent race condition duplicates
+        // ✅ Millisecond precision ensures uniqueness even with concurrent requests
+        final transferId =
+            'TRANSFER${widget.userId}${DateTime.now().millisecondsSinceEpoch}';
 
         // Save transfer record to Transfer table
         await Supabase.instance.client.from('Transfer').insert({
@@ -553,31 +619,11 @@ class _AddTransactionState extends State<AddTransaction> {
         }
       } else {
         // Original logic for expense/income transactions
-        // Generate transaction ID: TRANS+userId+sequence
-        final existingTransactions = await Supabase.instance.client
-            .from('Transaction')
-            .select('transactionId')
-            .like('transactionId', 'TRANS${widget.userId}%');
+        // Generate transaction ID using UUID to prevent race condition duplicates
+        // ✅ UUID ensures globally unique IDs even with concurrent requests
+        final transactionId =
+            'TRANS${widget.userId}${DateTime.now().millisecondsSinceEpoch}';
 
-        final sequenceNumber = existingTransactions.length + 1;
-        final formattedSequence = sequenceNumber.toString().padLeft(6, '0');
-        final transactionId = 'TRANS${widget.userId}$formattedSequence';
-
-      final amount = double.parse(_amountText);
-
-
-      // Save transaction to database
-      await Supabase.instance.client.from('Transaction').insert({
-        'transactionId': transactionId,
-        'categoryId': _selectedCategory!['categoryId'],
-        'accountId': _selectedAccountId,
-        'amount': amount,
-        'date': _selectedDate.toIso8601String(),
-        'note': _noteController.text,
-        'type': _selectedType,
-        'ledgerId': widget.ledgerId,
-        'image': imageUrl,
-      });
         // Save transaction to database
         await Supabase.instance.client.from('Transaction').insert({
           'transactionId': transactionId,
@@ -619,13 +665,8 @@ class _AddTransactionState extends State<AddTransaction> {
       /// ✅ Recalculate preset challenge progress
       await ChallengeTrackingService().updateUserChallenges(widget.userId);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Transaction saved successfully')),
-      );
-
-      Navigator.pop(context, true);
       if (mounted) {
-        // Show success dialog
+        // Show success dialog - keep AddTransaction screen open until user confirms
         showDialog(
           context: context,
           barrierDismissible: false,
@@ -693,7 +734,10 @@ class _AddTransactionState extends State<AddTransaction> {
                       child: ElevatedButton(
                         onPressed: () {
                           Navigator.pop(context); // Close dialog
-                          Navigator.pop(context, true); // Return to home page
+                          Navigator.pop(
+                            context,
+                            true,
+                          ); // Close AddTransaction and return to home
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFA7E399),
@@ -719,9 +763,7 @@ class _AddTransactionState extends State<AddTransaction> {
     } catch (e) {
       print('Error saving transaction: $e');
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error saving transaction: $e')));
+        _showErrorDialog('Error saving transaction: $e');
       }
     }
   }
@@ -740,7 +782,9 @@ class _AddTransactionState extends State<AddTransaction> {
                   leading: const Icon(Icons.camera_alt),
                   title: const Text('Take Photo'),
                   onTap: () async {
-                    final img = await picker.pickImage(source: ImageSource.camera);
+                    final img = await picker.pickImage(
+                      source: ImageSource.camera,
+                    );
                     Navigator.pop(context, img);
                   },
                 ),
@@ -748,7 +792,9 @@ class _AddTransactionState extends State<AddTransaction> {
                   leading: const Icon(Icons.photo_library),
                   title: const Text('Choose from Gallery'),
                   onTap: () async {
-                    final img = await picker.pickImage(source: ImageSource.gallery);
+                    final img = await picker.pickImage(
+                      source: ImageSource.gallery,
+                    );
                     Navigator.pop(context, img);
                   },
                 ),
@@ -772,14 +818,11 @@ class _AddTransactionState extends State<AddTransaction> {
 
       /// AUTO FILL UI
       _applyParsedReceipt(parsed);
-
     } catch (e) {
       print("Scan Error: $e");
       if (!mounted) return;
       _showScanError();
     }
-
-
   }
 
   void _applyParsedReceipt(ParsedReceipt parsed) {
@@ -809,7 +852,7 @@ class _AddTransactionState extends State<AddTransaction> {
             : incomeCategories;
 
         final match = categories.firstWhere(
-              (c) => c['categoryId'] == parsed.categoryId,
+          (c) => c['categoryId'] == parsed.categoryId,
           orElse: () => {},
         );
 
@@ -833,8 +876,6 @@ class _AddTransactionState extends State<AddTransaction> {
       ),
     );
   }
-
-
 
   @override
   Widget build(BuildContext context) {

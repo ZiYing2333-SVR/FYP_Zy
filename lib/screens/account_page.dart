@@ -5,6 +5,7 @@ import '../pet/pet_main.dart';
 import '../utils/bank_icon_helper.dart';
 import '../services/budget_forecast_service.dart';
 import '../services/budget_alert_service.dart';
+import '../widgets/shared_bottom_nav_bar.dart';
 import 'home_screen.dart';
 import 'settings_screen.dart';
 import 'add_account_page1.dart';
@@ -920,6 +921,7 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
               .from('Transaction')
               .select()
               .eq('accountId', accountId)
+              .eq('type', 'expense')
               .gte('date', startDate.toIso8601String());
         }
       } else if (budgetType == 'category') {
@@ -1158,7 +1160,7 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
   }
 
   List<Widget> _buildNavBadges() {
-    // Position badge only on Settings icon (index 4)
+    // Position badge only on Budget icon (index 2) - matching home_screen.dart
     final badges = <Widget>[];
     const badgeSize = 20.0;
     const badgeTopOffset = 8.0;
@@ -1168,8 +1170,8 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
       return badges;
     }
 
-    // Show caution badge (YELLOW for 70-100% usage)
-    if (_hasBudgetCaution) {
+    // Show isAlert (YELLOW/ORANGE) badge
+    if (_hasBudgetAlert) {
       badges.add(
         Positioned(
           right: badgeRightOffset,
@@ -1178,7 +1180,7 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
             width: badgeSize,
             height: badgeSize,
             decoration: BoxDecoration(
-              color: Colors.orange.shade700, // YELLOW for caution
+              color: Colors.orange.shade700, // YELLOW/ORANGE for isAlert
               shape: BoxShape.circle,
             ),
             child: const Center(
@@ -1189,8 +1191,8 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
       );
     }
 
-    // Show alert/exceeded badge (RED for >100% usage) - only if no caution
-    if (_hasBudgetAlert && !_hasBudgetCaution) {
+    // Show isWarning (RED) badge
+    if (_hasBudgetCaution) {
       badges.add(
         Positioned(
           right: badgeRightOffset,
@@ -1199,7 +1201,7 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
             width: badgeSize,
             height: badgeSize,
             decoration: const BoxDecoration(
-              color: Color(0xFFE53935), // RED for exceeded
+              color: Color(0xFFE53935), // RED for isWarning
               shape: BoxShape.circle,
             ),
             child: const Center(
@@ -1929,88 +1931,9 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
               ),
             ),
 
-      bottomNavigationBar: Stack(
-        children: [
-          BottomNavigationBar(
-            currentIndex: _selectedNavIndex,
-            backgroundColor: const Color(0xFFFEFFD3),
-            type: BottomNavigationBarType.fixed,
-            items: const [
-              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.account_balance_wallet),
-                label: 'Account',
-              ),
-              BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.savings),
-                label: 'Saving',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.settings),
-                label: 'Setting',
-              ),
-            ],
-            onTap: (index) {
-              setState(() {
-                _selectedNavIndex = index;
-              });
-              if (index == 0) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => HomeScreen(userId: widget.userId),
-                  ),
-                );
-              } else if (index == 2) {
-                // 🐶 PET LOGIC HERE
-                _handlePetNavigation();
-              } else if (index == 3) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SavingsPage(userId: widget.userId),
-                  ),
-                );
-              } else if (index == 4) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SettingsScreen(userId: widget.userId),
-                  ),
-                ).then((_) {
-                  _checkBudgetAlerts();
-                });
-              }
-            },
-          ),
-          // Alert badge on Settings icon
-          if (_hasBudgetAlert)
-            Positioned(
-              right: 12,
-              top: 8,
-              child: Container(
-                width: 20,
-                height: 20,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFE53935),
-                  shape: BoxShape.circle,
-                ),
-                child: const Center(
-                  child: Text(
-                    '!',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          // Build badges for multiple nav icons
-          ..._buildNavBadges(),
-        ],
+      bottomNavigationBar: SharedBottomNavBar(
+        currentIndex: 1,
+        userId: widget.userId,
       ),
     );
   }

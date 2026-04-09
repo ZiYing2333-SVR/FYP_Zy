@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../Challenge/challenge_tracking_service.dart';
+import '../services/budget_alert_service.dart';
+import '../services/alert_status_service.dart';
 import 'home_screen.dart';
 
 class TransactionDetailScreen extends StatefulWidget {
@@ -771,6 +773,11 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               .update({'refund': true})
               .eq('transactionId', widget.transactionId);
 
+          // ✅ For EXPENSE transactions only: Recalculate budgets
+          if (type == 'expense' && widget.userId != null) {
+            await _recalculateBudgetsAfterRefund();
+          }
+
           if (mounted) {
             showDialog(
               context: context,
@@ -834,7 +841,14 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                           child: ElevatedButton(
                             onPressed: () {
                               Navigator.pop(context); // Close dialog
-                              Navigator.pop(context, true); // Return
+                              // Navigate to home page after refund
+                              Navigator.pushReplacement(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      HomeScreen(userId: widget.userId ?? ''),
+                                ),
+                              );
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFFA7E399),
@@ -1022,6 +1036,296 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   }
 
   bool _isRefunded() => _transaction?['refund'] == true;
+
+  /// ✅ Enhanced refund flow: Recalculate budgets for expense transactions
+  /// Only checks budgets linked to this transaction's category, ledger, or account
+  /// Excludes the refunded transaction from calculations
+  Future<void> _recalculateBudgetsAfterRefund() async {
+    if (_transaction == null) return;
+
+    try {
+      print(
+        '[TransactionDetailScreen] === Starting budget recalculation after refund ===',
+      );
+
+      final supabase = Supabase.instance.client;
+      final categoryId = _transaction!['categoryId'];
+      final ledgerId = _transaction!['ledgerId'];
+      final accountId = _transaction!['accountId'];
+
+      print(
+        '[TransactionDetailScreen] Transaction refs - Category: $categoryId, Ledger: $ledgerId, Account: $accountId',
+      );
+
+      // Query budgets that are linked to this transaction's category, ledger, or account
+      final budgets = await supabase
+          .from('Budget')
+          .select()
+          .eq('userId', widget.userId!)
+          .or(
+            'categoryId.eq.$categoryId,ledgerId.eq.$ledgerId,accountId.eq.$accountId',
+          );
+
+      if (budgets.isEmpty) {
+        print(
+          '[TransactionDetailScreen] No budgets found for this transaction',
+        );
+        return;
+      }
+
+      print(
+        '[TransactionDetailScreen] Found ${budgets.length} relevant budgets',
+      );
+
+      final alertService = BudgetAlertService();
+      bool hasCautionAlert = false;
+      bool hasExceedAlert = false;
+
+      for (var budget in budgets) {
+        final budgetId = budget['budgetId'];
+        final budgetType = budget['type'] ?? '';
+        final budgetAmount = (budget['amount'] ?? 0).toDouble();
+        final cycleType = (budget['cycleType'] ?? 'month').toLowerCase();
+
+        if (budgetAmount <= 0) continue;
+
+        // Calculate date range based on cycle type
+        final now = DateTime.now();
+        final DateTime startDate;
+
+        switch (cycleType) {
+          case 'day':
+            startDate = DateTime(now.year, now.month, now.day);
+            break;
+          case 'week':
+            startDate = now.subtract(Duration(days: now.weekday - 1));
+            break;
+          case 'month':
+            startDate = DateTime(now.year, now.month, 1);
+            break;
+          case 'year':
+            startDate = DateTime(now.year, 1, 1);
+            break;
+          default:
+            startDate = DateTime(now.year, now.month, 1);
+        }
+
+        print(
+          '[TransactionDetailScreen] Processing budget $budgetId (Type: $budgetType, Cycle: $cycleType)',
+        );
+
+        // Fetch transactions for this budget (excluding refunded ones)
+        List<dynamic> transactions = [];
+
+        if (budgetType == 'account') {
+          final budgetAccountId = budget['accountId'];
+          if (budgetAccountId != null) {
+            transactions = await supabase
+                .from('Transaction')
+                .select()
+                .eq('accountId', budgetAccountId)
+                .eq('type', 'expense')
+                .gte('date', startDate.toIso8601String());
+          }
+        } else if (budgetType == 'category') {
+          final budgetCategoryId = budget['categoryId'];
+          if (budgetCategoryId != null) {
+            transactions = await supabase
+                .from('Transaction')
+                .select()
+                .eq('categoryId', budgetCategoryId)
+                .eq('type', 'expense')
+                .gte('date', startDate.toIso8601String());
+          }
+        } else if (budgetType == 'ledger') {
+          final budgetLedgerId = budget['ledgerId'];
+          if (budgetLedgerId != null) {
+            transactions = await supabase
+                .from('Transaction')
+                .select()
+                .eq('ledgerId', budgetLedgerId)
+                .eq('type', 'expense')
+                .gte('date', startDate.toIso8601String());
+          }
+        }
+
+        // Sum up NON-REFUNDED transaction amounts only
+        // ✅ The refund has already been marked with refund=true, so we skip it
+        double totalSpent = 0;
+        for (var transaction in transactions) {
+          // Skip refunded transactions (including the one we just marked)
+          if (transaction['refund'] == true) {
+            print(
+              '[TransactionDetailScreen] Excluding refunded transaction: ${transaction['transactionId']}',
+            );
+            continue;
+          }
+          totalSpent += ((transaction['amount'] ?? 0) as num).toDouble();
+        }
+
+        final double usagePercentage = (totalSpent / budgetAmount) * 100;
+
+        print(
+          '[TransactionDetailScreen] Budget $budgetId: $totalSpent / $budgetAmount = ${usagePercentage.toStringAsFixed(1)}%',
+        );
+
+        // Update alert flags based on new usage percentage
+        await alertService.updateAlertFlags(budgetId, usagePercentage);
+
+        // Track which types of alerts we have
+        if (usagePercentage >= 100) {
+          hasExceedAlert = true;
+        } else if (usagePercentage >= 70) {
+          hasCautionAlert = true;
+        }
+      }
+
+      print(
+        '[TransactionDetailScreen] Budget update complete - Caution: $hasCautionAlert, Exceed: $hasExceedAlert',
+      );
+
+      // ✅ Broadcast real-time updates to all pages via AlertStatusService
+      AlertStatusService().updateCautionAlertStatus(hasCautionAlert);
+      AlertStatusService().updateHighRiskAlertStatus(hasExceedAlert);
+
+      print('[TransactionDetailScreen] === Budget recalculation complete ===');
+    } catch (e) {
+      print(
+        '[TransactionDetailScreen] Error recalculating budget after refund: $e',
+      );
+    }
+  }
+
+  /// Update budget flags after a refund is marked
+  /// Recalculates budget usage excluding the refunded transaction
+  Future<void> _updateBudgetFlagsAfterRefund() async {
+    try {
+      print(
+        '[TransactionDetailScreen] === Starting budget flag update after refund ===',
+      );
+
+      // Get budgets related to this transaction's account/category
+      final supabase = Supabase.instance.client;
+      final budgets = await supabase
+          .from('Budget')
+          .select()
+          .eq('userId', widget.userId!);
+
+      if (budgets.isEmpty) {
+        print('[TransactionDetailScreen] No budgets found');
+        return;
+      }
+
+      final alertService = BudgetAlertService();
+      bool hasCautionAlert = false;
+      bool hasExceedAlert = false;
+
+      for (var budget in budgets) {
+        final budgetId = budget['budgetId'];
+        final budgetType = budget['type'] ?? '';
+        final budgetAmount = (budget['amount'] ?? 0).toDouble();
+        final cycleType = (budget['cycleType'] ?? 'month').toLowerCase();
+
+        if (budgetAmount <= 0) continue;
+
+        // Calculate date range based on cycle type
+        final now = DateTime.now();
+        final DateTime startDate;
+
+        switch (cycleType) {
+          case 'day':
+            startDate = DateTime(now.year, now.month, now.day);
+            break;
+          case 'week':
+            startDate = now.subtract(Duration(days: now.weekday - 1));
+            break;
+          case 'month':
+            startDate = DateTime(now.year, now.month, 1);
+            break;
+          case 'year':
+            startDate = DateTime(now.year, 1, 1);
+            break;
+          default:
+            startDate = DateTime(now.year, now.month, 1);
+        }
+
+        // Fetch transactions for this budget (excluding refunded ones)
+        List<dynamic> transactions = [];
+
+        if (budgetType == 'account') {
+          final accountId = budget['accountId'];
+          if (accountId != null) {
+            transactions = await supabase
+                .from('Transaction')
+                .select()
+                .eq('accountId', accountId)
+                .gte('date', startDate.toIso8601String());
+          }
+        } else if (budgetType == 'category') {
+          final categoryId = budget['categoryId'];
+          if (categoryId != null) {
+            transactions = await supabase
+                .from('Transaction')
+                .select()
+                .eq('categoryId', categoryId)
+                .eq('type', 'expense')
+                .gte('date', startDate.toIso8601String());
+          }
+        } else if (budgetType == 'ledger') {
+          final ledgerId = budget['ledgerId'];
+          if (ledgerId != null) {
+            transactions = await supabase
+                .from('Transaction')
+                .select()
+                .eq('ledgerId', ledgerId)
+                .eq('type', 'expense')
+                .gte('date', startDate.toIso8601String());
+          }
+        }
+
+        // Sum up non-refunded transaction amounts
+        double totalSpent = 0;
+        for (var transaction in transactions) {
+          // Skip refunded transactions
+          if (transaction['refund'] == true) {
+            print(
+              '[TransactionDetailScreen] Skipping refunded transaction: ${transaction['transactionId']}',
+            );
+            continue;
+          }
+          totalSpent += ((transaction['amount'] ?? 0) as num).toDouble();
+        }
+
+        final double usagePercentage = (totalSpent / budgetAmount) * 100;
+
+        print(
+          '[TransactionDetailScreen] Budget $budgetId: $totalSpent / $budgetAmount = ${usagePercentage.toStringAsFixed(1)}%',
+        );
+
+        // Update alert flags based on usage
+        await alertService.updateAlertFlags(budgetId, usagePercentage);
+
+        // Track alerts
+        if (usagePercentage >= 100) {
+          hasExceedAlert = true;
+        } else if (usagePercentage >= 70) {
+          hasCautionAlert = true;
+        }
+      }
+
+      print(
+        '[TransactionDetailScreen] Budget update complete: hasCaution=$hasCautionAlert, hasExceed=$hasExceedAlert',
+      );
+
+      // Notify all pages in real-time
+      AlertStatusService().updateCautionAlertStatus(hasCautionAlert);
+      AlertStatusService().updateHighRiskAlertStatus(hasExceedAlert);
+
+      print('[TransactionDetailScreen] === Budget flag update complete ===');
+    } catch (e) {
+      print('[TransactionDetailScreen] Error updating budget flags: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

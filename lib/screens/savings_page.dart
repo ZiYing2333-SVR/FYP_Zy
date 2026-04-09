@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../pet/pet_home_page.dart';
 import '../pet/pet_main.dart';
 import '../services/budget_alert_service.dart';
+import '../widgets/shared_bottom_nav_bar.dart';
 import 'home_screen.dart';
 import 'account_page.dart';
 import 'settings_screen.dart';
@@ -207,6 +208,7 @@ class _SavingsPageState extends State<SavingsPage> with WidgetsBindingObserver {
               .from('Transaction')
               .select()
               .eq('accountId', accountId)
+              .eq('type', 'expense')
               .gte('date', startDate.toIso8601String());
         }
       } else if (budgetType == 'category') {
@@ -272,6 +274,69 @@ class _SavingsPageState extends State<SavingsPage> with WidgetsBindingObserver {
     } catch (e) {
       print('Error checking budget caution: $e');
     }
+  }
+
+  List<Widget> _buildNavBadges() {
+    // Position badge only on Budget icon (index 2) - matching home_screen.dart
+    final badges = <Widget>[];
+    const badgeSize = 20.0;
+    const badgeTopOffset = 8.0;
+    const badgeRightOffset = 12.0;
+
+    if (!(_hasBudgetCaution || _hasBudgetAlert)) {
+      return badges;
+    }
+
+    // Show isAlert (YELLOW/ORANGE) badge
+    if (_hasBudgetAlert) {
+      badges.add(
+        Positioned(
+          right: badgeRightOffset,
+          top: badgeTopOffset,
+          child: Container(
+            width: badgeSize,
+            height: badgeSize,
+            decoration: BoxDecoration(
+              color: Colors.orange.shade700, // YELLOW/ORANGE for isAlert
+              shape: BoxShape.circle,
+            ),
+            child: const Center(
+              child: Icon(Icons.warning_rounded, color: Colors.white, size: 12),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Show isWarning (RED) badge
+    if (_hasBudgetCaution) {
+      badges.add(
+        Positioned(
+          right: badgeRightOffset,
+          top: badgeTopOffset,
+          child: Container(
+            width: badgeSize,
+            height: badgeSize,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE53935), // RED for isWarning
+              shape: BoxShape.circle,
+            ),
+            child: const Center(
+              child: Text(
+                '!',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return badges;
   }
 
   double _calculateTotalSaved() {
@@ -445,10 +510,8 @@ class _SavingsPageState extends State<SavingsPage> with WidgetsBindingObserver {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => PetHomePage(
-              userId: widget.userId,
-              petId: petId,
-            ),
+            builder: (context) =>
+                PetHomePage(userId: widget.userId, petId: petId),
           ),
         );
       } else {
@@ -456,9 +519,7 @@ class _SavingsPageState extends State<SavingsPage> with WidgetsBindingObserver {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => PetMainPage(
-              userId: widget.userId,
-            ),
+            builder: (context) => PetMainPage(userId: widget.userId),
           ),
         );
       }
@@ -1067,189 +1128,12 @@ class _SavingsPageState extends State<SavingsPage> with WidgetsBindingObserver {
               ),
             ),
           ),
-          // Bottom Navigation Bar
-          Stack(
-            children: [
-              BottomNavigationBar(
-                currentIndex: _selectedNavIndex,
-                selectedItemColor: const Color(0xFFA7E399),
-                backgroundColor: const Color(0xFFFEFFD3),
-                type: BottomNavigationBarType.fixed,
-                items: const [
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.home),
-                    label: 'Home',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.account_balance_wallet),
-                    label: 'Account',
-                  ),
-                  BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.savings),
-                    label: 'Saving',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.settings),
-                    label: 'Setting',
-                  ),
-                ],
-                onTap: (index) {
-                  setState(() {
-                    _selectedNavIndex = index;
-                  });
-                  if (index == 0) {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => HomeScreen(userId: widget.userId),
-                      ),
-                    );
-                  } else if (index == 1) {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            AccountPage(userId: widget.userId),
-                      ),
-                    );
-                  } else if (index == 4) {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            SettingsScreen(userId: widget.userId),
-                      ),
-                    ).then((_) {
-                      _checkBudgetAlerts();
-                    });
-                  }
-                },
-              ),
-              // Caution badge on Settings icon
-              if (_hasBudgetCaution)
-                Positioned(
-                  right: 12,
-                  top: 8,
-                  child: Container(
-                    width: 20,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade700,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Center(
-                      child: Icon(
-                        Icons.warning_rounded,
-                        color: Colors.white,
-                        size: 12,
-                      ),
-                    ),
-                  ),
-                ),
-              // Alert badge on Settings icon
-              if (_hasBudgetAlert)
-                Positioned(
-                  right: 12,
-                  top: 8,
-                  child: Container(
-                    width: 20,
-                    height: 20,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFE53935),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Center(
-                      child: Text(
-                        '!',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+          // Shared Bottom Navigation Bar
+          SharedBottomNavBar(
+            currentIndex: 3,
+            userId: widget.userId,
+            ledgerId: widget.ledgerId,
           ),
-          BottomNavigationBar(
-            currentIndex: _selectedNavIndex,
-            backgroundColor: const Color(0xFFFEFFD3),
-            type: BottomNavigationBarType.fixed,
-            items: const [
-              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.account_balance_wallet),
-                label: 'Account',
-              ),
-              BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.savings),
-                label: 'Saving',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.settings),
-                label: 'Setting',
-              ),
-            ],
-            onTap: (index) {
-              setState(() {
-                _selectedNavIndex = index;
-              });
-              if (index == 0) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => HomeScreen(userId: widget.userId),
-                  ),
-                );
-              } else if (index == 1) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => AccountPage(userId: widget.userId),
-                  ),
-                );
-              } else if (index == 2) {
-                // 🐶 PET LOGIC HERE
-                _handlePetNavigation();
-              }else if (index == 4) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SettingsScreen(userId: widget.userId),
-                  ),
-                ).then((_) {
-                  _checkBudgetAlerts();
-                });
-              }
-            },
-          ),
-          // Alert badge on Settings icon
-          if (_hasBudgetAlert)
-            Positioned(
-              right: 12,
-              top: 8,
-              child: Container(
-                width: 20,
-                height: 20,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFE53935),
-                  shape: BoxShape.circle,
-                ),
-                child: const Center(
-                  child: Text(
-                    '!',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );

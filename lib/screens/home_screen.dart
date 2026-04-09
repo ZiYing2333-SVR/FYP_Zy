@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/budget_alert_service.dart';
 import '../services/alert_status_service.dart';
+import '../widgets/shared_bottom_nav_bar.dart';
 import '../pet/pet_home_page.dart';
 import '../pet/pet_main.dart';
 import 'settings_screen.dart';
+import 'ledger_manager.dart';
 import 'account_page.dart';
 import 'add_transaction.dart';
 import 'transaction_detail_screen.dart';
@@ -170,16 +172,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       double expense = 0;
       List<Map<String, dynamic>> allRecords = [];
 
-      // Process transactions
+      // Process transactions (excluding refunded ones)
       for (var transaction in transactionResponse) {
         allRecords.add(transaction);
         final amount = double.tryParse(transaction['amount'].toString()) ?? 0;
         final type = transaction['type']?.toString().toLowerCase() ?? 'expense';
+        final isRefunded = transaction['refund'] == true;
 
-        if (type == 'income') {
-          income += amount;
-        } else {
-          expense += amount;
+        // Skip refunded transactions from income/expense totals
+        if (!isRefunded) {
+          if (type == 'income') {
+            income += amount;
+          } else {
+            expense += amount;
+          }
         }
       }
 
@@ -698,6 +704,146 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Update budget isAlert and isWarning flags after a transaction is added
+  /// This method calculates budget usage per cycle type and updates flags
+  Future<void> _updateBudgetFlagsAfterTransaction() async {
+    try {
+      print('[HomeScreen] === Starting budget flag updates ===');
+
+      final budgets = await Supabase.instance.client
+          .from('Budget')
+          .select()
+          .eq('userId', _currentUserId ?? widget.userId);
+
+      if (budgets.isEmpty) {
+        print('[HomeScreen] No budgets found for user');
+        return;
+      }
+
+      final alertService = BudgetAlertService();
+      bool hasCautionAlert = false;
+      bool hasExceedAlert = false;
+
+      for (var budget in budgets) {
+        final budgetId = budget['budgetId'];
+        final budgetType = budget['type'] ?? '';
+        final budgetAmount = (budget['amount'] ?? 0).toDouble();
+        final cycleType = (budget['cycleType'] ?? 'month').toLowerCase();
+
+        if (budgetAmount <= 0) {
+          print('[HomeScreen] Skipping budget $budgetId: invalid amount');
+          continue;
+        }
+
+        // Calculate date range based on cycle type
+        final now = DateTime.now();
+        final DateTime startDate;
+
+        switch (cycleType) {
+          case 'day':
+            startDate = DateTime(now.year, now.month, now.day);
+            break;
+          case 'week':
+            startDate = now.subtract(Duration(days: now.weekday - 1));
+            break;
+          case 'month':
+            startDate = DateTime(now.year, now.month, 1);
+            break;
+          case 'year':
+            startDate = DateTime(now.year, 1, 1);
+            break;
+          default:
+            startDate = DateTime(now.year, now.month, 1);
+        }
+
+        // Fetch transactions based on budget type (excluding refunds)
+        List<dynamic> transactions = [];
+
+        if (budgetType == 'account') {
+          final accountId = budget['accountId'];
+          if (accountId != null) {
+            transactions = await Supabase.instance.client
+                .from('Transaction')
+                .select()
+                .eq('accountId', accountId)
+                .eq(
+                  'type',
+                  'expense',
+                ) // Only expenses, exclude income/transfers
+                .gte('date', startDate.toIso8601String());
+          }
+        } else if (budgetType == 'category') {
+          final categoryId = budget['categoryId'];
+          if (categoryId != null) {
+            transactions = await Supabase.instance.client
+                .from('Transaction')
+                .select()
+                .eq('categoryId', categoryId)
+                .eq('type', 'expense') // Only expenses
+                .gte('date', startDate.toIso8601String());
+          }
+        } else if (budgetType == 'ledger') {
+          final ledgerId = budget['ledgerId'];
+          if (ledgerId != null) {
+            transactions = await Supabase.instance.client
+                .from('Transaction')
+                .select()
+                .eq('ledgerId', ledgerId)
+                .eq('type', 'expense') // Only expenses
+                .gte('date', startDate.toIso8601String());
+          }
+        }
+
+        // Sum up transaction amounts (excluding refunded transactions)
+        double totalSpent = 0;
+        for (var transaction in transactions) {
+          // Skip refunded transactions
+          if (transaction['refund'] == true) {
+            print(
+              '[HomeScreen] Skipping refunded transaction: ${transaction['transactionId']}',
+            );
+            continue;
+          }
+          totalSpent += ((transaction['amount'] ?? 0) as num).toDouble();
+        }
+
+        final double usagePercentage = (totalSpent / budgetAmount) * 100;
+
+        print(
+          '[HomeScreen] Budget $budgetId ($budgetType, $cycleType): $totalSpent / $budgetAmount = ${usagePercentage.toStringAsFixed(1)}%',
+        );
+
+        // Update alert flags based on usage
+        await alertService.updateAlertFlags(budgetId, usagePercentage);
+
+        // Track if we have any caution or exceed alerts
+        if (usagePercentage >= 100) {
+          hasExceedAlert = true;
+        } else if (usagePercentage >= 70) {
+          hasCautionAlert = true;
+        }
+      }
+
+      print(
+        '[HomeScreen] Budget check complete: hasCaution=$hasCautionAlert, hasExceed=$hasExceedAlert',
+      );
+
+      // Update local state
+      setState(() {
+        _hasBudgetCaution = hasCautionAlert;
+        _hasBudgetAlert = hasExceedAlert;
+      });
+
+      // Notify all pages in real-time
+      AlertStatusService().updateCautionAlertStatus(hasCautionAlert);
+      AlertStatusService().updateHighRiskAlertStatus(hasExceedAlert);
+
+      print('[HomeScreen] === Budget flag updates complete ===');
+    } catch (e) {
+      print('[HomeScreen] Error updating budget flags: $e');
+    }
+  }
+
   String _getDayOfWeek(DateTime date) {
     final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return days[date.weekday - 1];
@@ -1143,14 +1289,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _buildSelectedDayTransactionsList() {
     final date = _selectedCalendarDay!;
 
-    // Calculate daily income and expense (excluding transfers)
+    // Calculate daily income and expense (excluding transfers and refunded transactions)
     double dayIncome = 0;
     double dayExpense = 0;
     for (var txn in _selectedDayTransactions) {
       final amount = double.tryParse(txn['amount'].toString()) ?? 0;
       final type = txn['type']?.toString().toLowerCase() ?? 'expense';
       final isTransfer = txn['recordType'] == 'transfer';
-      if (!isTransfer) {
+      final isRefunded = txn['refund'] == true;
+      if (!isTransfer && !isRefunded) {
         if (type == 'income') {
           dayIncome += amount;
         } else {
@@ -1267,7 +1414,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                       );
                       if (result == true) {
-                        _calculateDailyBalances();
+                        await _calculateDailyBalances();
+                        await _updateBudgetFlagsAfterTransaction();
                       }
                     } else {
                       final transactionId =
@@ -1282,7 +1430,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                       );
                       if (result == true) {
-                        _calculateDailyBalances();
+                        await _calculateDailyBalances();
+                        await _updateBudgetFlagsAfterTransaction();
                       }
                     }
                   },
@@ -1473,14 +1622,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         final dateTransactions = groupedByDate[dateKey]!;
         final date = DateTime.parse(dateTransactions[0]['date']);
 
-        // Calculate daily income and expense separately (excluding transfers)
+        // Calculate daily income and expense separately (excluding transfers and refunded transactions)
         double dayIncome = 0;
         double dayExpense = 0;
         for (var txn in dateTransactions) {
           final amount = double.tryParse(txn['amount'].toString()) ?? 0;
           final type = txn['type']?.toString().toLowerCase() ?? 'expense';
           final isTransfer = txn['recordType'] == 'transfer';
-          if (!isTransfer) {
+          final isRefunded = txn['refund'] == true;
+          if (!isTransfer && !isRefunded) {
             if (type == 'income') {
               dayIncome += amount;
             } else {
@@ -1604,7 +1754,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ),
                           );
                           if (result == true) {
-                            _fetchTransactions();
+                            await _fetchTransactions();
+                            await _updateBudgetFlagsAfterTransaction();
                           }
                         } else {
                           final transactionId =
@@ -1623,7 +1774,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           );
                           // Refresh transactions if a transaction was deleted or refunded
                           if (result == true) {
-                            _fetchTransactions();
+                            await _fetchTransactions();
+                            await _updateBudgetFlagsAfterTransaction();
                           }
                         }
                       },
@@ -1805,10 +1957,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => PetHomePage(
-              userId: _currentUserId!,
-              petId: petId,
-            ),
+            builder: (context) =>
+                PetHomePage(userId: _currentUserId!, petId: petId),
           ),
         );
       } else {
@@ -1816,9 +1966,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => PetMainPage(
-              userId: _currentUserId!,
-            ),
+            builder: (context) => PetMainPage(userId: _currentUserId!),
           ),
         );
       }
@@ -2413,17 +2561,102 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () {},
-              child: const Icon(Icons.more_vert, color: Colors.black),
-            ),
           ],
         ),
         titleSpacing: 16,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
+          : _ledgers.isEmpty
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 100,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFA7E399).withOpacity(0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.book_rounded,
+                          size: 50,
+                          color: Color(0xFFA7E399),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'No Ledger Found',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF333333),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'You need to create a ledger to start recording your transactions.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF999999),
+                        height: 1.6,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 32),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  LedgerManager(userId: widget.userId),
+                            ),
+                          ).then((_) {
+                            _fetchLedgers();
+                          });
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFA7E399),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.add_rounded,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Create Your First Ledger',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
           : SingleChildScrollView(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -2790,88 +3023,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             ),
           ),
-          // Bottom Navigation Bar
-          Stack(
-            children: [
-              BottomNavigationBar(
-                currentIndex: _selectedIndex,
-                selectedItemColor: const Color(0xFFA7E399),
-                backgroundColor: const Color(0xFFFEFFD3),
-                type: BottomNavigationBarType.fixed,
-                items: const [
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.home),
-                    label: 'Home',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.account_balance_wallet),
-                    label: 'Account',
-                  ),
-                  BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.savings),
-                    label: 'Saving',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.settings),
-                    label: 'Setting',
-                  ),
-                ],
-                onTap: (index) {
-                  setState(() {
-                    _selectedIndex = index;
-                  });
-                  if (index == 0) {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            HomeScreen(userId: _currentUserId!),
-                      ),
-                    );
-                  } else if (index == 1) {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            AccountPage(userId: _currentUserId!),
-                      ),
-                    );
-                  } else if (index == 2) {
-                    // 🐶 PET LOGIC HERE
-                    _handlePetNavigation();
-                  } else if (index == 3) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            SavingsPage(userId: _currentUserId!),
-                      ),
-                    );
-                  } else if (index == 3) {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            SavingsPage(userId: _currentUserId!),
-                      ),
-                    );
-                  } else if (index == 4) {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            SettingsScreen(userId: _currentUserId!),
-                      ),
-                    ).then((_) {
-                      _checkBudgetAlertFlags();
-                    });
-                  }
-                },
-              ),
-              // Build badges for multiple nav icons
-              ..._buildNavBadges(),
-            ],
+          // Shared Bottom Navigation Bar
+          SharedBottomNavBar(
+            currentIndex: 0,
+            userId: _currentUserId!,
+            ledgerId: _selectedLedgerId,
           ),
         ],
       ),
@@ -2895,8 +3051,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               // Refresh both list view and calendar view
               await _fetchTransactions();
               await _calculateDailyBalances();
-              // Refresh budget alert flags
-              await _checkBudgetAlertFlags();
+              // Update budget flags and check for caution/exceed alerts
+              await _updateBudgetFlagsAfterTransaction();
             }
           },
           child: const Icon(Icons.add, color: Colors.black, size: 30),

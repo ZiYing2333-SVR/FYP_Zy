@@ -10,6 +10,8 @@ import '../Quiz/view_quiz_page.dart';
 import '../pet/pet_home_page.dart';
 import '../pet/pet_main.dart';
 import '../services/budget_alert_service.dart';
+import '../services/alert_status_service.dart';
+import '../widgets/shared_bottom_nav_bar.dart';
 import 'home_screen.dart';
 import 'welcome_screen.dart';
 import 'profile_settings_screen.dart';
@@ -242,12 +244,12 @@ class _SettingsScreenState extends State<SettingsScreen>
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.orange.shade100,
+                          color: const Color(0xFFF39C12).withOpacity(0.15),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(
+                        child: const Icon(
                           Icons.warning_amber_rounded,
-                          color: Colors.orange.shade700,
+                          color: Color(0xFFF39C12),
                           size: 40,
                         ),
                       ),
@@ -281,7 +283,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 checkboxValue = newValue ?? false;
                               });
                             },
-                            activeColor: Colors.orange.shade700,
+                            activeColor: const Color(0xFFF39C12),
                           ),
                           const Expanded(
                             child: Text(
@@ -331,7 +333,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     }
                                   : null,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.orange.shade700,
+                                backgroundColor: const Color(0xFFF39C12),
                                 disabledBackgroundColor: Colors.grey[400],
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 12,
@@ -384,13 +386,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                     children: [
                       Container(
                         padding: const EdgeInsets.all(12),
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFFFE5E5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE74C3C).withOpacity(0.15),
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(
                           Icons.error_rounded,
-                          color: Color(0xFFE53935),
+                          color: Color(0xFFE74C3C),
                           size: 40,
                         ),
                       ),
@@ -424,7 +426,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 checkboxValue = newValue ?? false;
                               });
                             },
-                            activeColor: const Color(0xFFE53935),
+                            activeColor: const Color(0xFFE74C3C),
                           ),
                           const Expanded(
                             child: Text(
@@ -474,7 +476,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     }
                                   : null,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFE53935),
+                                backgroundColor: const Color(0xFFE74C3C),
                                 disabledBackgroundColor: Colors.grey[400],
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 12,
@@ -529,7 +531,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       return badges;
     }
 
-    // Show isAlert (YELLOW) badge
+    // Show isAlert (ORANGE) badge
     if (_hasBudgetAlert) {
       badges.add(
         Positioned(
@@ -538,8 +540,8 @@ class _SettingsScreenState extends State<SettingsScreen>
           child: Container(
             width: badgeSize,
             height: badgeSize,
-            decoration: BoxDecoration(
-              color: Colors.orange.shade700, // YELLOW for isAlert
+            decoration: const BoxDecoration(
+              color: Color(0xFFF39C12),
               shape: BoxShape.circle,
             ),
             child: const Center(
@@ -560,7 +562,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             width: badgeSize,
             height: badgeSize,
             decoration: const BoxDecoration(
-              color: Color(0xFFE53935), // RED for isWarning
+              color: Color(0xFFE74C3C),
               shape: BoxShape.circle,
             ),
             child: const Center(
@@ -598,10 +600,8 @@ class _SettingsScreenState extends State<SettingsScreen>
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => PetHomePage(
-              userId: widget.userId,
-              petId: petId,
-            ),
+            builder: (context) =>
+                PetHomePage(userId: widget.userId, petId: petId),
           ),
         );
       } else {
@@ -609,9 +609,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => PetMainPage(
-              userId: widget.userId,
-            ),
+            builder: (context) => PetMainPage(userId: widget.userId),
           ),
         );
       }
@@ -622,512 +620,746 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFFFF9E6),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Profile Section
-            Stack(
-              children: [
-                Container(
-                  margin: const EdgeInsets.all(24),
-                  padding: const EdgeInsets.all(24),
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF0F5),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      // Avatar
-                      Container(
-                        width: 100,
-                        height: 100,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE85B8A),
-                          shape: BoxShape.circle,
-                        ),
-                        child: _isLoadingProfile
-                            ? const Center(
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
+    return ValueListenableBuilder<bool>(
+      valueListenable: AlertStatusService().hasCautionAlertNotifier,
+      builder: (context, hasCaution, _) {
+        return ValueListenableBuilder<bool>(
+          valueListenable: AlertStatusService().hasHighRiskAlertNotifier,
+          builder: (context, hasHighRisk, _) {
+            return Scaffold(
+              backgroundColor: const Color(0xFFFFF9E6),
+              body: Stack(
+                children: [
+                  SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        // Profile Section
+                        Stack(
+                          children: [
+                            Container(
+                              margin: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+                              padding: const EdgeInsets.all(28),
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    const Color(0xFFFFF0F5),
+                                    const Color(0xFFFFE5F0),
+                                  ],
                                 ),
-                              )
-                            : _profileImageUrl != null &&
-                                  _profileImageUrl!.isNotEmpty
-                            ? ClipOval(
-                                child: Image.network(
-                                  _profileImageUrl!,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Center(
-                                      child: Icon(
-                                        Icons.person,
-                                        size: 60,
-                                        color: Colors.white,
-                                      ),
-                                    );
-                                  },
-                                ),
-                              )
-                            : Center(
-                                child: Icon(
-                                  Icons.person,
-                                  size: 60,
-                                  color: Colors.white,
+                                borderRadius: BorderRadius.circular(25),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(
+                                      0xFF52C77A,
+                                    ).withOpacity(0.15),
+                                    blurRadius: 15,
+                                    offset: const Offset(0, 5),
+                                  ),
+                                ],
+                                border: Border.all(
+                                  color: const Color(0xFFFFE5B4),
+                                  width: 1.5,
                                 ),
                               ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        _userNickname,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Logout Button
-                Positioned(
-                  top: 12,
-                  right: 12,
-                  child: Material(
-                    color: Colors.transparent,
-                    child: Tooltip(
-                      message: 'Logout',
-                      child: Container(
-                        decoration: BoxDecoration(
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFE74C3C).withOpacity(0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
+                              child: Column(
+                                children: [
+                                  // Avatar with border
+                                  Container(
+                                    width: 110,
+                                    height: 110,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF52C77A),
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(
+                                            0xFF52C77A,
+                                          ).withOpacity(0.3),
+                                          blurRadius: 12,
+                                          offset: const Offset(0, 4),
+                                        ),
+                                      ],
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 3,
+                                      ),
+                                    ),
+                                    child: _isLoadingProfile
+                                        ? const Center(
+                                            child: CircularProgressIndicator(
+                                              color: Colors.white,
+                                            ),
+                                          )
+                                        : _profileImageUrl != null &&
+                                              _profileImageUrl!.isNotEmpty
+                                        ? ClipOval(
+                                            child: Image.network(
+                                              _profileImageUrl!,
+                                              fit: BoxFit.cover,
+                                              errorBuilder:
+                                                  (context, error, stackTrace) {
+                                                    return Center(
+                                                      child: Icon(
+                                                        Icons.person,
+                                                        size: 65,
+                                                        color: Colors.white,
+                                                      ),
+                                                    );
+                                                  },
+                                            ),
+                                          )
+                                        : Center(
+                                            child: Icon(
+                                              Icons.person,
+                                              size: 65,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    _userNickname,
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF333333),
+                                      letterSpacing: 0.3,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Profile Settings',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.black.withOpacity(0.5),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () {
-                              showDialog(
-                                context: context,
-                                builder: (context) => AlertDialog(
-                                  backgroundColor: const Color(0xFFFFF9E6),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(20),
+                        // Menu Items Section with better styling
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          child: Column(
+                            children: [
+                              _buildMenuItemCard(
+                                'Ledger Manager',
+                                0,
+                                icon: Icons.book_rounded,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          LedgerManager(userId: widget.userId),
+                                    ),
+                                  );
+                                },
+                              ),
+                              _buildMenuItemCard(
+                                'Account Manager',
+                                1,
+                                icon: Icons.account_balance_wallet_rounded,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          AccountManager(userId: widget.userId),
+                                    ),
+                                  );
+                                },
+                              ),
+                              _buildMenuItemCard(
+                                'Category Manager',
+                                2,
+                                icon: Icons.category_rounded,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => CategoryManager(
+                                        userId: widget.userId,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              _buildMenuItemCard(
+                                'Report',
+                                3,
+                                icon: Icons.assessment_rounded,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          ReportPage(userId: widget.userId),
+                                    ),
+                                  );
+                                },
+                              ),
+                              _buildMenuItemCard(
+                                'Budget',
+                                4,
+                                icon: Icons.attach_money_rounded,
+                                hasAlert: hasHighRisk,
+                                hasCaution: hasCaution,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          BudgetPage(userId: widget.userId),
+                                    ),
+                                  ).then((_) {
+                                    // Refresh alerts when returning from Budget page
+                                    _checkBudgetAlerts();
+                                    _checkBudgetCaution();
+                                  });
+                                },
+                              ),
+                              _buildMenuItemCard(
+                                'Saving',
+                                5,
+                                icon: Icons.savings_rounded,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          SavingsPage(userId: widget.userId),
+                                    ),
+                                  );
+                                },
+                              ),
+                              _buildMenuItemCard(
+                                'Default Currency',
+                                6,
+                                icon: Icons.currency_exchange_rounded,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          CurrencySettingsPage(
+                                            userId: widget.userId,
+                                          ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              _buildMenuItemCard(
+                                'Profile Settings',
+                                7,
+                                icon: Icons.person_outline_rounded,
+                                onTap: () async {
+                                  final result = await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          ProfileSettingsScreen(
+                                            userId: widget.userId,
+                                          ),
+                                    ),
+                                  );
+
+                                  // If returned with true, refresh the profile data
+                                  if (result == true) {
+                                    await _fetchUserProfile();
+                                  }
+                                },
+                              ),
+                              _buildMenuItemCard(
+                                'Finance Tips',
+                                8,
+                                icon: Icons.lightbulb_rounded,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          ViewTipsPage(userId: widget.userId),
+                                    ),
+                                  );
+                                },
+                              ),
+                              _buildMenuItemCard(
+                                'Daily Missions',
+                                9,
+                                icon: Icons.task_alt_rounded,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          MissionPage(userId: widget.userId),
+                                    ),
+                                  );
+                                },
+                              ),
+                              _buildMenuItemCard(
+                                'Challenges',
+                                11,
+                                icon: Icons.emoji_events_rounded,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => ViewChallengePage(
+                                        userId: widget.userId,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              _buildMenuItemCard(
+                                'Achievement',
+                                11,
+                                icon: Icons.star_rounded,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => AchievementPage(
+                                        userId: widget.userId,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              _buildMenuItemCard(
+                                'Quiz',
+                                11,
+                                icon: Icons.quiz_rounded,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          ViewQuizPage(userId: widget.userId),
+                                    ),
+                                  );
+                                },
+                              ),
+                              // Logout Menu Item
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: const Color(0xFFE74C3C),
+                                    width: 2,
                                   ),
-                                  contentPadding: const EdgeInsets.all(24),
-                                  content: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      // Icon
-                                      Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: const BoxDecoration(
-                                          color: Color(0xFFA7E399),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                          Icons.logout_rounded,
-                                          color: Colors.white,
-                                          size: 48,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 20),
-                                      // Title
-                                      const Text(
-                                        'Logout',
-                                        style: TextStyle(
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.w700,
-                                          color: Color(0xFFF39C12),
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                      const SizedBox(height: 12),
-                                      // Description
-                                      const Text(
-                                        'Are you sure you want to logout from your account?',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Color(0xFF666666),
-                                          height: 1.5,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                      const SizedBox(height: 24),
-                                      // Cancel Button
-                                      SizedBox(
-                                        width: double.infinity,
-                                        height: 48,
-                                        child: ElevatedButton(
-                                          onPressed: () =>
-                                              Navigator.pop(context),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: const Color(
-                                              0xFFA7E399,
-                                            ),
-                                            foregroundColor: Colors.black87,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                            ),
-                                            elevation: 0,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.06),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Material(
+                                  color: const Color(0xFFFFEBEE),
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: InkWell(
+                                    onTap: () {
+                                      showDialog(
+                                        context: context,
+                                        builder: (context) => AlertDialog(
+                                          backgroundColor: const Color(
+                                            0xFFFFF9E6,
                                           ),
-                                          child: const Text(
-                                            'Cancel',
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w600,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              20,
                                             ),
                                           ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      // Logout Button
-                                      SizedBox(
-                                        width: double.infinity,
-                                        height: 48,
-                                        child: OutlinedButton(
-                                          onPressed: () {
-                                            Navigator.pop(context);
-                                            Navigator.pushAndRemoveUntil(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (context) =>
-                                                    const WelcomeScreen(),
+                                          contentPadding: const EdgeInsets.all(
+                                            24,
+                                          ),
+                                          content: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              // Icon
+                                              Container(
+                                                padding: const EdgeInsets.all(
+                                                  12,
+                                                ),
+                                                decoration: const BoxDecoration(
+                                                  color: Color(0xFFE74C3C),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.logout_rounded,
+                                                  color: Colors.white,
+                                                  size: 48,
+                                                ),
                                               ),
-                                              (route) => false,
-                                            );
-                                          },
-                                          style: OutlinedButton.styleFrom(
-                                            foregroundColor: Colors.grey[700],
-                                            side: BorderSide(
-                                              color: Colors.grey[300]!,
-                                              width: 1.5,
-                                            ),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                            ),
-                                          ),
-                                          child: const Text(
-                                            'Logout',
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w600,
-                                            ),
+                                              const SizedBox(height: 20),
+                                              // Title
+                                              const Text(
+                                                'Logout',
+                                                style: TextStyle(
+                                                  fontSize: 22,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Color(0xFFE74C3C),
+                                                ),
+                                                textAlign: TextAlign.center,
+                                              ),
+                                              const SizedBox(height: 12),
+                                              // Description
+                                              const Text(
+                                                'Are you sure you want to logout from your account?',
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  color: Color(0xFF666666),
+                                                  height: 1.5,
+                                                ),
+                                                textAlign: TextAlign.center,
+                                              ),
+                                              const SizedBox(height: 24),
+                                              // Cancel Button
+                                              SizedBox(
+                                                width: double.infinity,
+                                                height: 48,
+                                                child: ElevatedButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(context),
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor:
+                                                        const Color(0xFFE74C3C),
+                                                    foregroundColor:
+                                                        Colors.white,
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            12,
+                                                          ),
+                                                    ),
+                                                    elevation: 0,
+                                                  ),
+                                                  child: const Text(
+                                                    'Cancel',
+                                                    style: TextStyle(
+                                                      fontSize: 16,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 12),
+                                              // Logout Button
+                                              SizedBox(
+                                                width: double.infinity,
+                                                height: 48,
+                                                child: OutlinedButton(
+                                                  onPressed: () {
+                                                    Navigator.pop(context);
+                                                    Navigator.pushAndRemoveUntil(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (context) =>
+                                                            const WelcomeScreen(),
+                                                      ),
+                                                      (route) => false,
+                                                    );
+                                                  },
+                                                  style: OutlinedButton.styleFrom(
+                                                    foregroundColor:
+                                                        Colors.grey[700],
+                                                    side: BorderSide(
+                                                      color: Colors.grey[300]!,
+                                                      width: 1.5,
+                                                    ),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            12,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                  child: const Text(
+                                                    'Logout',
+                                                    style: TextStyle(
+                                                      fontSize: 16,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
+                                      );
+                                    },
+                                    borderRadius: BorderRadius.circular(16),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(16),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          // Icon and Text
+                                          Expanded(
+                                            child: Row(
+                                              children: [
+                                                // Icon Container
+                                                Container(
+                                                  width: 50,
+                                                  height: 50,
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(
+                                                      0xFFFFCDD2,
+                                                    ),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          12,
+                                                        ),
+                                                  ),
+                                                  child: const Center(
+                                                    child: Icon(
+                                                      Icons.logout_rounded,
+                                                      color: Color(0xFFE74C3C),
+                                                      size: 26,
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 16),
+                                                // Text
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .center,
+                                                    children: [
+                                                      Text(
+                                                        'Logout',
+                                                        style: const TextStyle(
+                                                          fontSize: 16,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          color: Color(
+                                                            0xFFE74C3C,
+                                                          ),
+                                                          letterSpacing: 0.3,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          Icon(
+                                            Icons.chevron_right_rounded,
+                                            color: Colors.black.withOpacity(
+                                              0.4,
+                                            ),
+                                            size: 26,
+                                          ),
+                                        ],
                                       ),
-                                    ],
+                                    ),
                                   ),
                                 ),
-                              );
-                            },
-                            borderRadius: BorderRadius.circular(50),
-                            child: Container(
-                              width: 50,
-                              height: 50,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFE74C3C),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 2,
-                                ),
                               ),
-                              child: const Center(
-                                child: Icon(
-                                  Icons.logout,
-                                  color: Colors.white,
-                                  size: 26,
-                                ),
-                              ),
-                            ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 30),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              bottomNavigationBar: SharedBottomNavBar(
+                currentIndex: 4,
+                userId: widget.userId,
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildMenuItemCard(
+    String title,
+    int index, {
+    IconData? icon,
+    bool hasNotification = false,
+    bool hasAlert = false,
+    bool hasCaution = false,
+    VoidCallback? onTap,
+  }) {
+    // Color palette matching home page theme with greens, warm tones
+    final List<Color> iconBackgroundColors = [
+      const Color(0xFFC8E6C9), // light green
+      const Color(0xFFFFF9C4), // light yellow
+      const Color(0xFFA7E399), // soft green
+      const Color(0xFFFFE0B2), // light orange
+      const Color(0xFFF0F4C3), // pale green
+      const Color(0xFFFFFACD), // light lemon
+      const Color(0xFFDCEDC8), // soft sage
+      const Color(0xFFFFD4B3), // peach
+      const Color(0xFFB9E4D0), // mint green
+      const Color(0xFFFFE5B2), // butter
+      const Color(0xFFC8E6C9), // light green
+      const Color(0xFFF0F4C3), // pale green
+      const Color(0xFFFFE0B2), // light orange
+    ];
+
+    final List<Color> iconColors = [
+      const Color(0xFF52C77A), // main green
+      const Color(0xFFF39C12), // orange/warm
+      const Color(0xFF388E3C), // dark green
+      const Color(0xFFE65100), // deep orange
+      const Color(0xFF558B2F), // olive green
+      const Color(0xFFF57F17), // amber
+      const Color(0xFF33691E), // forest green
+      const Color(0xFFD84315), // burnt sienna
+      const Color(0xFF00796B), // teal
+      const Color(0xFFE8A700), // gold
+      const Color(0xFF52C77A), // main green
+      const Color(0xFF558B2F), // olive green
+      const Color(0xFFE65100), // deep orange
+    ];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF52C77A), width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: const Color(0xFF90EE90).withOpacity(0.6),
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Icon and Text
+                Expanded(
+                  child: Row(
+                    children: [
+                      // Icon Container
+                      Container(
+                        width: 50,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          color:
+                              iconBackgroundColors[index %
+                                  iconBackgroundColors.length],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Center(
+                          child: Icon(
+                            icon ?? Icons.arrow_forward_rounded,
+                            color: iconColors[index % iconColors.length],
+                            size: 26,
                           ),
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 16),
+                      // Text
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF333333),
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
+                ),
+                // Alert/Caution badge and chevron
+                Row(
+                  children: [
+                    // Alert icon (red ! for >= 100% usage) - HIGH PRIORITY
+                    if (hasAlert)
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFE74C3C),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Center(
+                          child: Text(
+                            '!',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      )
+                    // Caution icon (orange warning for 70-99% usage) - LOWER PRIORITY
+                    else if (hasCaution)
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFF39C12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Center(
+                          child: Icon(
+                            Icons.warning_rounded,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color: Colors.black.withOpacity(0.4),
+                      size: 26,
+                    ),
+                  ],
                 ),
               ],
             ),
-            // Menu Items Section
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFC8E6C9),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                children: [
-                  _buildMenuItem(
-                    'Ledger Manager',
-                    0,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              LedgerManager(userId: widget.userId),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDivider(),
-                  _buildMenuItem(
-                    'Account Manager',
-                    1,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              AccountManager(userId: widget.userId),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDivider(),
-                  _buildMenuItem(
-                    'Category Manager',
-                    2,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              CategoryManager(userId: widget.userId),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDivider(),
-                  _buildMenuItem(
-                    'Report',
-                    3,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              ReportPage(userId: widget.userId),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDivider(),
-                  _buildMenuItem(
-                    'Budget',
-                    4,
-                    hasAlert: _hasBudgetAlert,
-                    hasCaution: _hasBudgetCaution,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              BudgetPage(userId: widget.userId),
-                        ),
-                      ).then((_) {
-                        // Refresh alerts when returning from Budget page
-                        _checkBudgetAlerts();
-                        _checkBudgetCaution();
-                      });
-                    },
-                  ),
-                  _buildDivider(),
-                  _buildMenuItem(
-                    'Saving',
-                    5,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              SavingsPage(userId: widget.userId),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDivider(),
-                  _buildMenuItem(
-                    'Default Currency',
-                    6,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              CurrencySettingsPage(userId: widget.userId),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDivider(),
-                  _buildMenuItem(
-                    'Profile Settings',
-                    7,
-                    onTap: () async {
-                      final result = await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              ProfileSettingsScreen(userId: widget.userId),
-                        ),
-                      );
-
-                      // If returned with true, refresh the profile data
-                      if (result == true) {
-                        await _fetchUserProfile();
-                      }
-                    },
-                  ),
-                  _buildDivider(),
-                  _buildMenuItem(
-                    'Finance Tips',
-                    8,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              ViewTipsPage(userId: widget.userId),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDivider(),
-                  _buildMenuItem(
-                      'Daily Missions',
-                      9,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              MissionPage(userId: widget.userId),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDivider(),
-                  _buildMenuItem(
-                    'Challenges',
-                    11,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ViewChallengePage(userId: widget.userId),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDivider(),
-                  _buildMenuItem(
-                    'Achievement',
-                    11,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => AchievementPage(userId: widget.userId),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDivider(),
-                  _buildMenuItem(
-                    'Quiz',
-                    11,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ViewQuizPage(userId: widget.userId),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDivider(),
-                  _buildMenuItem('FAQ', 12),
-                ],
-              ),
-            ),
-            const SizedBox(height: 30),
-          ],
-        ),
-      ),
-      bottomNavigationBar: Stack(
-        children: [
-          BottomNavigationBar(
-            currentIndex: _selectedIndex,
-            selectedItemColor: const Color(0xFFA7E399),
-            backgroundColor: const Color(0xFFFEFFD3),
-            type: BottomNavigationBarType.fixed,
-            items: const [
-              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.account_balance_wallet),
-                label: 'Account',
-              ),
-              BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.savings),
-                label: 'Saving',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.settings),
-                label: 'Setting',
-              ),
-            ],
-            onTap: (index) {
-              setState(() {
-                _selectedIndex = index;
-              });
-              if (index == 0) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => HomeScreen(userId: widget.userId),
-                  ),
-                );
-              } else if (index == 1) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => AccountPage(userId: widget.userId),
-                  ),
-                );
-              } else if (index == 2) {
-                // 🐶 PET LOGIC HERE
-                _handlePetNavigation();
-              }else if (index == 3) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SavingsPage(userId: widget.userId),
-                  ),
-                );
-              }
-            },
           ),
-          // Build badges for multiple nav icons
-          ..._buildNavBadges(),
-        ],
+        ),
       ),
     );
   }
@@ -1157,25 +1389,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
               ),
             ),
-            // Caution icon (orange warning for 70-79% usage)
-            if (hasCaution)
-              Container(
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade700,
-                  shape: BoxShape.circle,
-                ),
-                child: const Center(
-                  child: Icon(
-                    Icons.warning_rounded,
-                    color: Colors.white,
-                    size: 14,
-                  ),
-                ),
-              ),
-            // Alert icon (red ! for >= 80% usage) - only if no caution
-            if (hasAlert && !hasCaution)
+            // Alert icon (red ! for >= 100% usage) - HIGH PRIORITY
+            if (hasAlert)
               Container(
                 width: 24,
                 height: 24,
@@ -1191,6 +1406,23 @@ class _SettingsScreenState extends State<SettingsScreen>
                       fontWeight: FontWeight.bold,
                       fontSize: 14,
                     ),
+                  ),
+                ),
+              )
+            // Caution icon (orange warning for 70-99% usage) - LOWER PRIORITY
+            else if (hasCaution)
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade700,
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(
+                  child: Icon(
+                    Icons.warning_rounded,
+                    color: Colors.white,
+                    size: 14,
                   ),
                 ),
               ),
