@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/budget_alert_service.dart';
 import 'home_screen.dart';
 import 'account_page.dart';
 import 'settings_screen.dart';
 import 'create_saving_page.dart';
 import 'saving_detail_page.dart';
 import 'saving_goal_assistant_screen.dart';
+import 'ai_features_screen.dart';
 
 class SavingsPage extends StatefulWidget {
   final String userId;
@@ -17,19 +19,54 @@ class SavingsPage extends StatefulWidget {
   State<SavingsPage> createState() => _SavingsPageState();
 }
 
-class _SavingsPageState extends State<SavingsPage> {
+class _SavingsPageState extends State<SavingsPage> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _savingGoals = [];
   Map<String, double> _accountBalances = {};
+  Map<String, String?> _accountCurrencies = {};
+  Map<String, dynamic> _currencies = {};
   bool _isLoading = true;
   int _selectedNavIndex = 3;
   bool _showBalance = true;
   bool _hasBudgetAlert = false;
+  bool _hasBudgetCaution = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _fetchCurrencies();
     _fetchSavingGoals();
     _checkBudgetAlerts();
+    _checkBudgetCaution();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      print('[SavingsPage] App resumed, refreshing badge status...');
+      _checkBudgetCaution();
+    }
+  }
+
+  Future<void> _fetchCurrencies() async {
+    try {
+      final response = await Supabase.instance.client.from('Currency').select();
+      final Map<String, dynamic> currencyMap = {};
+      for (var currency in response) {
+        currencyMap[currency['currencyId']] = currency;
+      }
+      setState(() {
+        _currencies = currencyMap;
+      });
+    } catch (e) {
+      print('Error fetching currencies: $e');
+    }
   }
 
   Future<void> _fetchSavingGoals() async {
@@ -94,6 +131,7 @@ class _SavingsPageState extends State<SavingsPage> {
 
         setState(() {
           _accountBalances[accountId] = (response['balance'] ?? 0).toDouble();
+          _accountCurrencies[accountId] = response['currencyId'] as String?;
         });
       }
     } catch (e) {
@@ -110,10 +148,10 @@ class _SavingsPageState extends State<SavingsPage> {
 
       bool hasAlert = false;
 
-      // Check each budget for >= 80% usage
+      // Check each budget for exceeded (> 100% usage)
       for (var budget in budgets) {
         final double usagePercentage = await _calculateBudgetUsage(budget);
-        if (usagePercentage >= 80) {
+        if (usagePercentage > 100) {
           hasAlert = true;
           break;
         }
@@ -203,6 +241,36 @@ class _SavingsPageState extends State<SavingsPage> {
     }
   }
 
+  Future<void> _checkBudgetCaution() async {
+    try {
+      final budgets = await Supabase.instance.client
+          .from('Budget')
+          .select()
+          .eq('userId', widget.userId);
+
+      final alertService = BudgetAlertService();
+      final Map<String, double> budgetUsageMap = {};
+
+      // Calculate all budget usage percentages
+      for (var budget in budgets) {
+        final double usagePercentage = await _calculateBudgetUsage(budget);
+        budgetUsageMap[budget['budgetId']] = usagePercentage;
+      }
+
+      // Check if any budget has caution alert using the new service
+      final hasCaution = await alertService.hasAnyCautionAlert(
+        widget.userId,
+        budgetUsageMap,
+      );
+
+      setState(() {
+        _hasBudgetCaution = hasCaution;
+      });
+    } catch (e) {
+      print('Error checking budget caution: $e');
+    }
+  }
+
   double _calculateTotalSaved() {
     double total = 0;
     for (final goal in _savingGoals) {
@@ -236,8 +304,41 @@ class _SavingsPageState extends State<SavingsPage> {
     return grouped;
   }
 
+  String _getCurrencySymbol(String? currencyId) {
+    if (currencyId == null || currencyId.isEmpty || currencyId == 'NULL') {
+      return 'RM';
+    }
+    final currency = _currencies[currencyId];
+    if (currency != null && currency['symbol'] != null) {
+      return currency['symbol'];
+    }
+    return currency?['code'] ?? 'RM';
+  }
+
+  String _formatCurrencyWithSymbol(double amount, String? currencyId) {
+    final symbol = _getCurrencySymbol(currencyId);
+    return '$symbol${amount.toStringAsFixed(2)}';
+  }
+
   String _formatCurrency(double value) {
     return 'RM${value.toStringAsFixed(2)}';
+  }
+
+  Map<String, double> _calculateTotalSavedByCurrency() {
+    final totalByCurrency = <String, double>{};
+    for (final goal in _savingGoals) {
+      final destAccountId = goal['destAccountId'] as String?;
+      if (destAccountId != null) {
+        final balance = _accountBalances[destAccountId] ?? 0.0;
+        final currencyId = _accountCurrencies[destAccountId] ?? 'NULL';
+        totalByCurrency.update(
+          currencyId,
+          (existing) => existing + balance,
+          ifAbsent: () => balance,
+        );
+      }
+    }
+    return totalByCurrency;
   }
 
   String _getEndDateText(String? endDate) {
@@ -327,13 +428,15 @@ class _SavingsPageState extends State<SavingsPage> {
   @override
   Widget build(BuildContext context) {
     final totalSaved = _calculateTotalSaved();
+    final totalByCurrency = _calculateTotalSavedByCurrency();
     final groupedGoals = _groupGoalsByStatus();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFFFFFB),
+      backgroundColor: const Color(0xFFFEFFD3),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFFFFFFB),
+        backgroundColor: const Color(0xFFFEFFD3),
         elevation: 0,
+        automaticallyImplyLeading: false,
         title: const Text(
           'Saving',
           style: TextStyle(
@@ -363,16 +466,15 @@ class _SavingsPageState extends State<SavingsPage> {
                 }
               },
               child: Container(
-                width: 40,
-                height: 40,
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade200,
+                  border: Border.all(color: const Color(0xFFA7E399), width: 2),
                   borderRadius: BorderRadius.circular(8),
                 ),
+                padding: const EdgeInsets.all(6),
                 child: const Icon(
                   Icons.auto_awesome,
-                  color: Colors.blue,
-                  size: 24,
+                  color: Color(0xFFA7E399),
+                  size: 20,
                 ),
               ),
             ),
@@ -396,13 +498,16 @@ class _SavingsPageState extends State<SavingsPage> {
                 }
               },
               child: Container(
-                width: 40,
-                height: 40,
                 decoration: BoxDecoration(
-                  color: Colors.green.shade200,
+                  border: Border.all(color: const Color(0xFFA7E399), width: 2),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.add, color: Colors.green, size: 24),
+                padding: const EdgeInsets.all(6),
+                child: const Icon(
+                  Icons.add,
+                  color: Color(0xFFA7E399),
+                  size: 20,
+                ),
               ),
             ),
           ),
@@ -419,33 +524,64 @@ class _SavingsPageState extends State<SavingsPage> {
                     const SizedBox(height: 16),
                     // Total Saved Card
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 24,
-                      ),
+                      padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
-                        color: Colors.green.shade200,
-                        borderRadius: BorderRadius.circular(12),
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            const Color(0xFFA7E399),
+                            const Color(0xFFC8F7DC),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 4,
+                            color: const Color(0xFFA7E399).withOpacity(0.3),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                          BoxShadow(
+                            color: const Color(0xFFA7E399).withOpacity(0.1),
+                            blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
                         ],
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.5),
+                          width: 1.5,
+                        ),
                       ),
                       child: Column(
                         children: [
+                          // Header with icon
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
-                                'Total Saved',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black87,
-                                ),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.3),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Icon(
+                                      Icons.savings,
+                                      color: Colors.white,
+                                      size: 24,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  const Text(
+                                    'Total Saved',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
                               ),
                               GestureDetector(
                                 onTap: () {
@@ -453,81 +589,115 @@ class _SavingsPageState extends State<SavingsPage> {
                                     _showBalance = !_showBalance;
                                   });
                                 },
-                                child: Icon(
-                                  _showBalance
-                                      ? Icons.visibility
-                                      : Icons.visibility_off,
-                                  color: Colors.black87,
-                                  size: 24,
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.3),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    _showBalance
+                                        ? Icons.visibility
+                                        : Icons.visibility_off,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 16),
-                          Text(
-                            _showBalance
-                                ? _formatCurrency(totalSaved)
-                                : '••••••',
-                            style: const TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    // AI Features Button
-                    GestureDetector(
-                      onTap: () async {
-                        final result = await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => SavingGoalAssistantScreen(
-                              userId: widget.userId,
-                              ledgerId: widget.ledgerId,
-                            ),
-                          ),
-                        );
-                        // Refresh the data if a saving goal was created
-                        if (result == true) {
-                          _fetchSavingGoals();
-                        }
-                      },
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.purple.shade100,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Colors.purple.shade300,
-                            width: 2,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.auto_awesome,
-                              color: Colors.purple.shade700,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'AI Features',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.purple.shade700,
+                          const SizedBox(height: 20),
+                          // Amount display - Multi-currency support
+                          if (totalByCurrency.isEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
                               ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Text(
+                                _showBalance ? 'RM0.00' : '***',
+                                style: const TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            )
+                          else if (totalByCurrency.length == 1)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Text(
+                                _showBalance
+                                    ? _formatCurrencyWithSymbol(
+                                        totalByCurrency.values.first,
+                                        totalByCurrency.keys.first,
+                                      )
+                                    : '***',
+                                style: const TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            )
+                          else
+                            Column(
+                              children: totalByCurrency.entries.map((entry) {
+                                final currencyId = entry.key;
+                                final amount = entry.value;
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.white.withOpacity(0.3),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    _showBalance
+                                        ? _formatCurrencyWithSymbol(
+                                            amount,
+                                            currencyId,
+                                          )
+                                        : '***',
+                                    style: const TextStyle(
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
                             ),
-                          ],
-                        ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -579,14 +749,10 @@ class _SavingsPageState extends State<SavingsPage> {
                             return Container(
                               margin: const EdgeInsets.only(bottom: 12),
                               decoration: BoxDecoration(
-                                color: status == 'active'
-                                    ? const Color(0xFFFFF9E6)
-                                    : Colors.white,
+                                color: const Color(0xFFFFF9E6),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
-                                  color: status == 'active'
-                                      ? Colors.grey.shade200
-                                      : Colors.grey.shade300,
+                                  color: const Color(0xFFFFE5B4),
                                   width: 1,
                                 ),
                                 boxShadow: [
@@ -639,9 +805,7 @@ class _SavingsPageState extends State<SavingsPage> {
                                               showDialog(
                                                 context: context,
                                                 builder: (context) => AlertDialog(
-                                                  backgroundColor: const Color(
-                                                    0xFFFFF9E6,
-                                                  ),
+                                                  backgroundColor: Colors.white,
                                                   shape: RoundedRectangleBorder(
                                                     borderRadius:
                                                         BorderRadius.circular(
@@ -743,7 +907,7 @@ class _SavingsPageState extends State<SavingsPage> {
                                           backgroundColor: Colors.grey[300],
                                           valueColor:
                                               AlwaysStoppedAnimation<Color>(
-                                                Colors.green.shade400,
+                                                const Color(0xFFA7E399),
                                               ),
                                         ),
                                       ),
@@ -792,7 +956,7 @@ class _SavingsPageState extends State<SavingsPage> {
                                                 style: const TextStyle(
                                                   fontSize: 14,
                                                   fontWeight: FontWeight.w700,
-                                                  color: Colors.green,
+                                                  color: Color(0xFFA7E399),
                                                 ),
                                               ),
                                             ],
@@ -813,82 +977,160 @@ class _SavingsPageState extends State<SavingsPage> {
                 ),
               ),
             ),
-      bottomNavigationBar: Stack(
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          BottomNavigationBar(
-            currentIndex: _selectedNavIndex,
-            backgroundColor: const Color(0xFFFEFFD3),
-            type: BottomNavigationBarType.fixed,
-            items: const [
-              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.account_balance_wallet),
-                label: 'Account',
-              ),
-              BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.savings),
-                label: 'Saving',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.settings),
-                label: 'Setting',
-              ),
-            ],
-            onTap: (index) {
-              setState(() {
-                _selectedNavIndex = index;
-              });
-              if (index == 0) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => HomeScreen(userId: widget.userId),
+          // AI Feature Button
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF90EE90),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
                   ),
-                );
-              } else if (index == 1) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => AccountPage(userId: widget.userId),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                );
-              } else if (index == 4) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SettingsScreen(userId: widget.userId),
-                  ),
-                ).then((_) {
-                  _checkBudgetAlerts();
-                });
-              }
-            },
-          ),
-          // Alert badge on Settings icon
-          if (_hasBudgetAlert)
-            Positioned(
-              right: 12,
-              top: 8,
-              child: Container(
-                width: 20,
-                height: 20,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFE53935),
-                  shape: BoxShape.circle,
                 ),
-                child: const Center(
-                  child: Text(
-                    '!',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AIFeaturesScreen(
+                        userId: widget.userId,
+                        ledgerId: widget.ledgerId,
+                      ),
                     ),
-                  ),
+                  );
+                },
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.auto_awesome, color: Colors.black, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'AI Features',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
+          ),
+          // Bottom Navigation Bar
+          Stack(
+            children: [
+              BottomNavigationBar(
+                currentIndex: _selectedNavIndex,
+                selectedItemColor: const Color(0xFFA7E399),
+                backgroundColor: const Color(0xFFFEFFD3),
+                type: BottomNavigationBarType.fixed,
+                items: const [
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.home),
+                    label: 'Home',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.account_balance_wallet),
+                    label: 'Account',
+                  ),
+                  BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.savings),
+                    label: 'Saving',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.settings),
+                    label: 'Setting',
+                  ),
+                ],
+                onTap: (index) {
+                  setState(() {
+                    _selectedNavIndex = index;
+                  });
+                  if (index == 0) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => HomeScreen(userId: widget.userId),
+                      ),
+                    );
+                  } else if (index == 1) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            AccountPage(userId: widget.userId),
+                      ),
+                    );
+                  } else if (index == 4) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            SettingsScreen(userId: widget.userId),
+                      ),
+                    ).then((_) {
+                      _checkBudgetAlerts();
+                    });
+                  }
+                },
+              ),
+              // Caution badge on Settings icon
+              if (_hasBudgetCaution)
+                Positioned(
+                  right: 12,
+                  top: 8,
+                  child: Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade700,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.warning_rounded,
+                        color: Colors.white,
+                        size: 12,
+                      ),
+                    ),
+                  ),
+                ),
+              // Alert badge on Settings icon
+              if (_hasBudgetAlert)
+                Positioned(
+                  right: 12,
+                  top: 8,
+                  child: Container(
+                    width: 20,
+                    height: 20,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFE53935),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Center(
+                      child: Text(
+                        '!',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ],
       ),
     );

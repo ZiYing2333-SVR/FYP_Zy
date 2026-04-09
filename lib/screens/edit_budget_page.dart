@@ -15,9 +15,13 @@ class _EditBudgetPageState extends State<EditBudgetPage> {
   late TextEditingController _amountController;
   late String _selectedCycleType;
   late bool _rolloverStatus;
-  late bool _reuseStatus;
   bool _isSaving = false;
   bool _isDeleting = false;
+
+  // Original values for change detection
+  late String _originalAmount;
+  late String _originalCycleType;
+  late bool _originalRolloverStatus;
 
   String _budgetItemName = '';
   String _budgetItemIcon = '';
@@ -31,11 +35,13 @@ class _EditBudgetPageState extends State<EditBudgetPage> {
     _amountController = TextEditingController(
       text: widget.budget['amount'].toString(),
     );
+    _originalAmount = widget.budget['amount'].toString();
     _selectedCycleType = _capitalizeFirstLetter(
       widget.budget['cycleType'] ?? 'month',
     );
+    _originalCycleType = _selectedCycleType;
     _rolloverStatus = widget.budget['rolloverStatus'] ?? false;
-    _reuseStatus = widget.budget['reuseStatus'] ?? false;
+    _originalRolloverStatus = _rolloverStatus;
     _fetchBudgetItemDetails();
   }
 
@@ -109,6 +115,101 @@ class _EditBudgetPageState extends State<EditBudgetPage> {
     return text.isEmpty ? text : text[0].toUpperCase() + text.substring(1);
   }
 
+  bool _hasChanges() {
+    return _amountController.text != _originalAmount ||
+        _selectedCycleType != _originalCycleType ||
+        _rolloverStatus != _originalRolloverStatus;
+  }
+
+  void _showDiscardConfirmation() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: const Color(0xFFFFF9E6),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF9E6),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Title
+              const Text(
+                'Discard Changes?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFF39C12),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Description
+              const Text(
+                'You have unsaved changes. Are you sure you want to discard them?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF666666),
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 24),
+              // Keep Editing Button
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFA7E399),
+                    foregroundColor: Colors.black87,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    'Keep Editing',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Discard Changes Button
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: OutlinedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.pop(context);
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.grey[700],
+                    side: BorderSide(color: Colors.grey[300]!, width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Discard Changes',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _saveBudget() async {
     if (_amountController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -128,7 +229,6 @@ class _EditBudgetPageState extends State<EditBudgetPage> {
             'amount': double.parse(_amountController.text),
             'cycleType': _selectedCycleType.toLowerCase(),
             'rolloverStatus': _rolloverStatus,
-            'reuseStatus': _reuseStatus,
           })
           .eq('budgetId', widget.budget['budgetId']);
 
@@ -243,10 +343,7 @@ class _EditBudgetPageState extends State<EditBudgetPage> {
           .eq('budgetId', widget.budget['budgetId']);
 
       if (mounted) {
-        Navigator.pop(context, true); // Return true to indicate refresh needed
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Budget deleted successfully')),
-        );
+        _showDeleteSuccessDialog();
       }
     } catch (e) {
       if (mounted) {
@@ -258,6 +355,82 @@ class _EditBudgetPageState extends State<EditBudgetPage> {
         _isDeleting = false;
       });
     }
+  }
+
+  void _showDeleteSuccessDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: const Color(0xFFFFF9E6),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF9E6),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Success icon
+              Container(
+                width: 60,
+                height: 60,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFFA7E399),
+                ),
+                child: const Icon(Icons.check, color: Colors.white, size: 32),
+              ),
+              const SizedBox(height: 20),
+              // Success title
+              const Text(
+                'Budget Deleted Successfully!',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFF39C12),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Success message
+              const Text(
+                'Your budget has been deleted successfully.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: Color(0xFF666666)),
+              ),
+              const SizedBox(height: 24),
+              // OK button
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context); // Close dialog
+                    Navigator.pop(context, true); // Return to budget page
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFA7E399),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  child: const Text('OK'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _showDeleteConfirmationDialog() {
@@ -286,11 +459,11 @@ class _EditBudgetPageState extends State<EditBudgetPage> {
                   height: 60,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.red.shade200,
+                    color: Colors.red[100],
                   ),
                   child: Icon(
-                    Icons.warning_rounded,
-                    color: Colors.red.shade600,
+                    Icons.warning_amber_rounded,
+                    color: Colors.red[700],
                     size: 32,
                   ),
                 ),
@@ -325,7 +498,7 @@ class _EditBudgetPageState extends State<EditBudgetPage> {
                             Navigator.pop(context);
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFE8E8E8),
+                            backgroundColor: Colors.grey[300],
                             foregroundColor: Colors.black87,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
@@ -352,7 +525,7 @@ class _EditBudgetPageState extends State<EditBudgetPage> {
                                   _deleteBudget();
                                 },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red.shade400,
+                            backgroundColor: const Color(0xFFFF6B6B),
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
@@ -361,7 +534,7 @@ class _EditBudgetPageState extends State<EditBudgetPage> {
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
                             ),
-                            disabledBackgroundColor: Colors.red.shade200,
+                            disabledBackgroundColor: const Color(0xFFFFB3B3),
                           ),
                           child: _isDeleting
                               ? const SizedBox(
@@ -390,362 +563,349 @@ class _EditBudgetPageState extends State<EditBudgetPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFFEFFD3),
-      appBar: AppBar(
+    return WillPopScope(
+      onWillPop: () async {
+        if (_hasChanges()) {
+          _showDiscardConfirmation();
+          return false;
+        }
+        return true;
+      },
+      child: Scaffold(
         backgroundColor: const Color(0xFFFEFFD3),
-        elevation: 0,
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: const Icon(Icons.arrow_back, size: 28, color: Colors.black87),
-        ),
-        title: const Text(
-          'Edit Budget',
-          style: TextStyle(
-            color: Colors.black87,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
+        appBar: AppBar(
+          backgroundColor: const Color(0xFFFEFFD3),
+          elevation: 0,
+          leading: GestureDetector(
+            onTap: () {
+              if (_hasChanges()) {
+                _showDiscardConfirmation();
+              } else {
+                Navigator.pop(context);
+              }
+            },
+            child: const Icon(
+              Icons.arrow_back,
+              size: 28,
+              color: Colors.black87,
+            ),
           ),
+          title: const Text(
+            'Edit Budget',
+            style: TextStyle(
+              color: Colors.black87,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          centerTitle: true,
         ),
-        centerTitle: true,
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16),
-          child: Column(
-            children: [
-              // Budget Item Display (Category/Ledger/Account)
-              _isLoadingBudgetItem
-                  ? Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF9E6),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: const Color(0xFFFFE5B4),
-                          width: 2,
+        body: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16),
+            child: Column(
+              children: [
+                // Budget Item Display (Category/Ledger/Account)
+                _isLoadingBudgetItem
+                    ? Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF9E6),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFFFFE5B4),
+                            width: 2,
+                          ),
                         ),
-                      ),
-                      child: const Center(child: CircularProgressIndicator()),
-                    )
-                  : Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF9E6),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: const Color(0xFFFFE5B4),
-                          width: 2,
+                        child: const Center(child: CircularProgressIndicator()),
+                      )
+                    : Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF9E6),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFFFFE5B4),
+                            width: 2,
+                          ),
                         ),
-                      ),
-                      child: Row(
-                        children: [
-                          // Icon
-                          if (_budgetItemIcon.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 12),
-                              child: Image.network(
-                                _budgetItemIcon,
-                                width: 48,
-                                height: 48,
-                                fit: BoxFit.contain,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
-                                    width: 48,
-                                    height: 48,
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade300,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Icon(
-                                      Icons.category,
-                                      size: 24,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  );
-                                },
+                        child: Row(
+                          children: [
+                            // Icon
+                            if (_budgetItemIcon.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 12),
+                                child: Image.network(
+                                  _budgetItemIcon,
+                                  width: 48,
+                                  height: 48,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade300,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(
+                                        widget.budget['type'] == 'ledger'
+                                            ? Icons.book
+                                            : Icons.category,
+                                        size: 24,
+                                        color: widget.budget['type'] == 'ledger'
+                                            ? Colors.white
+                                            : Colors.grey.shade600,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              )
+                            else
+                              Padding(
+                                padding: const EdgeInsets.only(right: 12),
+                                child: Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade300,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    widget.budget['type'] == 'ledger'
+                                        ? Icons.book
+                                        : Icons.category,
+                                    size: 24,
+                                    color: widget.budget['type'] == 'ledger'
+                                        ? Colors.white
+                                        : Colors.grey.shade600,
+                                  ),
+                                ),
                               ),
-                            )
-                          else
-                            Padding(
-                              padding: const EdgeInsets.only(right: 12),
-                              child: Container(
-                                width: 48,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  color: Colors.grey.shade300,
-                                  borderRadius: BorderRadius.circular(8),
+                            // Name
+                            Expanded(
+                              child: Text(
+                                _budgetItemName,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.black87,
                                 ),
-                                child: Icon(
-                                  Icons.category,
-                                  size: 24,
-                                  color: Colors.grey.shade600,
-                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                          // Name
-                          Expanded(
-                            child: Text(
-                              _budgetItemName,
-                              style: const TextStyle(
+                          ],
+                        ),
+                      ),
+                const SizedBox(height: 24),
+                // Budget Amount Input
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Budget Amount',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFFE8D5F2),
+                      width: 2,
+                    ),
+                  ),
+                  child: TextField(
+                    controller: _amountController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      hintText: 'Enter amount',
+                      border: InputBorder.none,
+                      hintStyle: TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFFC8A5D8),
+                      ),
+                    ),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Cycle Type Dropdown
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Cycle Type',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFFE8D5F2),
+                      width: 2,
+                    ),
+                  ),
+                  child: DropdownButton<String>(
+                    value: _selectedCycleType,
+                    isExpanded: true,
+                    underline: Container(),
+                    items: _cycleTypes.map((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(
+                          value,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (String? newValue) {
+                      if (newValue != null) {
+                        setState(() {
+                          _selectedCycleType = newValue;
+                        });
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Rollover Status Toggle
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF9E6),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFFFFE5B4),
+                      width: 2,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Rollover Status',
+                              style: TextStyle(
                                 fontSize: 16,
-                                fontWeight: FontWeight.w700,
+                                fontWeight: FontWeight.w600,
                                 color: Colors.black87,
                               ),
-                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-              const SizedBox(height: 24),
-              // Budget Amount Input
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Budget Amount',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE8D5F2), width: 2),
-                ),
-                child: TextField(
-                  controller: _amountController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(
-                    hintText: 'Enter amount',
-                    border: InputBorder.none,
-                    hintStyle: TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFFC8A5D8),
-                    ),
-                  ),
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Cycle Type Dropdown
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Cycle Type',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE8D5F2), width: 2),
-                ),
-                child: DropdownButton<String>(
-                  value: _selectedCycleType,
-                  isExpanded: true,
-                  underline: Container(),
-                  items: _cycleTypes.map((String value) {
-                    return DropdownMenuItem<String>(
-                      value: value,
-                      child: Text(
-                        value,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black87,
+                            SizedBox(height: 4),
+                            Text(
+                              'Carry over remaining budget to next cycle',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF999999),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    );
-                  }).toList(),
-                  onChanged: (String? newValue) {
-                    if (newValue != null) {
-                      setState(() {
-                        _selectedCycleType = newValue;
-                      });
-                    }
-                  },
+                      Switch(
+                        value: _rolloverStatus,
+                        onChanged: (bool value) {
+                          setState(() {
+                            _rolloverStatus = value;
+                          });
+                        },
+                        activeColor: const Color(0xFFA7E399),
+                        inactiveThumbColor: Colors.grey.shade400,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 24),
+                const SizedBox(height: 32),
 
-              // Rollover Status Toggle
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF9E6),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+                // Save Button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: _isSaving ? null : _saveBudget,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFA7E399),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      disabledBackgroundColor: const Color(0xFFD3F8D3),
+                    ),
+                    child: _isSaving
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
+                            ),
+                          )
+                        : const Text('Save Changes'),
+                  ),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Rollover Status',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            'Carry over remaining budget to next cycle',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF999999),
-                            ),
-                          ),
-                        ],
+                const SizedBox(height: 16),
+
+                // Delete Button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: OutlinedButton(
+                    onPressed: _showDeleteConfirmationDialog,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red.shade600,
+                      side: BorderSide(color: Colors.red.shade600, width: 2),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    Switch(
-                      value: _rolloverStatus,
-                      onChanged: (bool value) {
-                        setState(() {
-                          _rolloverStatus = value;
-                        });
-                      },
-                      activeColor: const Color(0xFFA7E399),
-                      inactiveThumbColor: Colors.grey.shade400,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Reuse Status Toggle
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF9E6),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Reuse Status',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            'Automatically reuse this budget',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF999999),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Switch(
-                      value: _reuseStatus,
-                      onChanged: (bool value) {
-                        setState(() {
-                          _reuseStatus = value;
-                        });
-                      },
-                      activeColor: const Color(0xFFA7E399),
-                      inactiveThumbColor: Colors.grey.shade400,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              // Save Button
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: _isSaving ? null : _saveBudget,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFA7E399),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    disabledBackgroundColor: const Color(0xFFD3F8D3),
+                    child: const Text('Delete Budget'),
                   ),
-                  child: _isSaving
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white,
-                            ),
-                          ),
-                        )
-                      : const Text('Save Changes'),
                 ),
-              ),
-              const SizedBox(height: 16),
-
-              // Delete Button
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: OutlinedButton(
-                  onPressed: _showDeleteConfirmationDialog,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red.shade600,
-                    side: BorderSide(color: Colors.red.shade600, width: 2),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  child: const Text('Delete Budget'),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
+                const SizedBox(height: 16),
+              ],
+            ),
           ),
         ),
       ),

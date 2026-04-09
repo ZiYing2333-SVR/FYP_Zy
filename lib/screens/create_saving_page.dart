@@ -141,20 +141,16 @@ class _CreateSavingPageState extends State<CreateSavingPage> {
                   vertical: 16,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.purple.shade100,
+                  color: Colors.green.shade200,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.purple.shade300, width: 2),
+                  border: Border.all(color: Colors.green, width: 2),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
                       children: [
-                        Icon(
-                          Icons.auto_awesome,
-                          color: Colors.purple.shade700,
-                          size: 24,
-                        ),
+                        Icon(Icons.auto_awesome, color: Colors.green, size: 24),
                         const SizedBox(width: 12),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -164,14 +160,14 @@ class _CreateSavingPageState extends State<CreateSavingPage> {
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.purple.shade700,
+                                color: Colors.green.shade700,
                               ),
                             ),
                             Text(
                               'Get personalized suggestions',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.purple.shade600,
+                                color: Colors.green.shade600,
                               ),
                             ),
                           ],
@@ -180,7 +176,7 @@ class _CreateSavingPageState extends State<CreateSavingPage> {
                     ),
                     Icon(
                       Icons.arrow_forward_ios,
-                      color: Colors.purple.shade700,
+                      color: Colors.green.shade700,
                       size: 20,
                     ),
                   ],

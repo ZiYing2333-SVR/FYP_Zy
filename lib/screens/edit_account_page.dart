@@ -429,11 +429,11 @@ class _EditAccountPageState extends State<EditAccountPage> {
                   height: 60,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: const Color(0xFFFF9800),
+                    color: Colors.red[100],
                   ),
-                  child: const Icon(
-                    Icons.warning,
-                    color: Colors.white,
+                  child: Icon(
+                    Icons.warning_amber_rounded,
+                    color: Colors.red[700],
                     size: 32,
                   ),
                 ),
@@ -1220,15 +1220,26 @@ class _EditAccountPageState extends State<EditAccountPage> {
                       const SizedBox(height: 16),
 
                       // Delete Button
-                      GestureDetector(
-                        onTap: _deleteAccount,
-                        child: const Text(
-                          'Delete',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.red,
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: OutlinedButton(
+                          onPressed: _deleteAccount,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red.shade600,
+                            side: BorderSide(
+                              color: Colors.red.shade600,
+                              width: 2,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
+                          child: const Text('Delete Account'),
                         ),
                       ),
                       const SizedBox(height: 40),

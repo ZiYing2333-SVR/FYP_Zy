@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/bank_icon_helper.dart';
 import '../services/budget_forecast_service.dart';
+import '../services/budget_alert_service.dart';
 import 'home_screen.dart';
 import 'settings_screen.dart';
 import 'add_account_page1.dart';
@@ -18,7 +19,7 @@ class AccountPage extends StatefulWidget {
   State<AccountPage> createState() => _AccountPageState();
 }
 
-class _AccountPageState extends State<AccountPage> {
+class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _accounts = [];
   List<Map<String, dynamic>> _filteredAccounts = [];
   List<Map<String, dynamic>> _accountGroups = [];
@@ -29,37 +30,63 @@ class _AccountPageState extends State<AccountPage> {
   int _selectedNavIndex = 1;
   bool _showBalance = true;
   bool _hasBudgetAlert = false;
+  bool _hasBudgetCaution = false;
+  bool _alertsShownThisSession = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _fetchCurrencies();
     _fetchAccountGroups();
     _fetchAccounts();
-    _checkBudgetAlerts();
+    _initializeAlerts();
+  }
+
+  Future<void> _initializeAlerts() async {
+    await _checkBudgetAlerts();
+    await _checkBudgetCaution();
+
+    if (mounted && !_alertsShownThisSession) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _alertsShownThisSession = true;
+          if (_hasBudgetCaution) {
+            _showCautionAlertDialog();
+          } else if (_hasBudgetAlert) {
+            _showAlertDialog();
+          }
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      print('[AccountPage] App resumed, refreshing badge status...');
+      _checkBudgetCaution();
+    }
   }
 
   Future<Map<String, dynamic>?> _fetchGoalForAccount(String accountId) async {
     try {
-      // Find goal linked to this savings account
-      final goalAccountResult = await Supabase.instance.client
-          .from('goalAccount')
-          .select()
-          .eq('accountId', accountId)
-          .maybeSingle();
-
-      if (goalAccountResult == null) {
-        return null;
-      }
-
-      final goalId = goalAccountResult['goalId'];
-
-      // Fetch the goal details
+      // Query SavingGoal table directly using linkedAccountId
       final goalResult = await Supabase.instance.client
           .from('SavingGoal')
           .select()
-          .eq('goalId', goalId)
-          .single();
+          .eq('linkedAccountId', accountId)
+          .maybeSingle();
+
+      if (goalResult == null) {
+        return null;
+      }
 
       return goalResult as Map<String, dynamic>?;
     } catch (e) {
@@ -114,7 +141,7 @@ class _AccountPageState extends State<AccountPage> {
         decoration: BoxDecoration(
           color: const Color(0xFFFFF9E6),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
+          border: Border.all(color: const Color(0xFFFFE5B4)),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.05),
@@ -182,6 +209,17 @@ class _AccountPageState extends State<AccountPage> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Goal name
+                  Text(
+                    'Saving goal: ${goal['name'] ?? 'Unnamed'}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF8B7355),
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
                   // Progress bar
                   ClipRRect(
                     borderRadius: BorderRadius.circular(4),
@@ -190,7 +228,7 @@ class _AccountPageState extends State<AccountPage> {
                       minHeight: 6,
                       backgroundColor: Colors.grey[300],
                       valueColor: AlwaysStoppedAnimation<Color>(
-                        Colors.green.shade400,
+                        const Color(0xFFA7E399),
                       ),
                     ),
                   ),
@@ -204,7 +242,7 @@ class _AccountPageState extends State<AccountPage> {
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: Colors.green,
+                          color: Color(0xFFA7E399),
                         ),
                       ),
                       Text(
@@ -224,7 +262,7 @@ class _AccountPageState extends State<AccountPage> {
                 children: [
                   // No goal message
                   Text(
-                    'No set goal yet',
+                    'No saving goal linked',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.grey.shade600,
@@ -528,6 +566,394 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
+  Future<void> _checkBudgetCaution() async {
+    try {
+      final budgets = await Supabase.instance.client
+          .from('Budget')
+          .select()
+          .eq('userId', widget.userId);
+
+      final alertService = BudgetAlertService();
+      final Map<String, double> budgetUsageMap = {};
+
+      // Calculate all budget usage percentages
+      for (var budget in budgets) {
+        final double usagePercentage = await _calculateBudgetUsage(budget);
+        budgetUsageMap[budget['budgetId']] = usagePercentage;
+      }
+
+      // Check if any budget has caution alert using the new service
+      final hasCaution = await alertService.hasAnyCautionAlert(
+        widget.userId,
+        budgetUsageMap,
+      );
+
+      setState(() {
+        _hasBudgetCaution = hasCaution;
+      });
+    } catch (e) {
+      print('Error checking budget caution: $e');
+    }
+  }
+
+  void _showCautionAlertDialog() {
+    bool checkboxValue = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade100,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.warning_amber_rounded,
+                          color: Colors.orange.shade700,
+                          size: 40,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Budget Caution',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Your budget spending is over 70%. Please monitor your expenses to avoid exceeding your budget.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.black87,
+                          height: 1.5,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: checkboxValue,
+                            onChanged: (newValue) {
+                              setDialogState(() {
+                                checkboxValue = newValue ?? false;
+                              });
+                            },
+                            activeColor: Colors.orange.shade700,
+                          ),
+                          const Expanded(
+                            child: Text(
+                              'I understand, don\'t show this again',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.grey[300],
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text(
+                                'Close',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: checkboxValue
+                                  ? () {
+                                      Navigator.pop(context);
+                                    }
+                                  : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.orange.shade700,
+                                disabledBackgroundColor: Colors.grey[400],
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text(
+                                'Confirm',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showAlertDialog() {
+    bool checkboxValue = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFFFE5E5),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.error_rounded,
+                          color: Color(0xFFE53935),
+                          size: 40,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Budget Alert',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Your budget has been exceeded! Please review your expenses immediately.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.black87,
+                          height: 1.5,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: checkboxValue,
+                            onChanged: (newValue) {
+                              setDialogState(() {
+                                checkboxValue = newValue ?? false;
+                              });
+                            },
+                            activeColor: const Color(0xFFE53935),
+                          ),
+                          const Expanded(
+                            child: Text(
+                              'I understand, don\'t show this again',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.grey[300],
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text(
+                                'Close',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: checkboxValue
+                                  ? () {
+                                      Navigator.pop(context);
+                                    }
+                                  : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFE53935),
+                                disabledBackgroundColor: Colors.grey[400],
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text(
+                                'Confirm',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<double> _calculateBudgetUsage(Map<String, dynamic> budget) async {
+    try {
+      final budgetType = budget['type'] ?? '';
+      final budgetAmount = (budget['amount'] ?? 0).toDouble();
+      final cycleType = (budget['cycleType'] ?? 'month').toLowerCase();
+
+      if (budgetAmount <= 0) return 0;
+
+      final now = DateTime.now();
+      final DateTime startDate;
+
+      switch (cycleType) {
+        case 'day':
+          startDate = DateTime(now.year, now.month, now.day);
+          break;
+        case 'week':
+          startDate = now.subtract(Duration(days: now.weekday - 1));
+          break;
+        case 'month':
+          startDate = DateTime(now.year, now.month, 1);
+          break;
+        case 'year':
+          startDate = DateTime(now.year, 1, 1);
+          break;
+        default:
+          startDate = DateTime(now.year, now.month, 1);
+      }
+
+      List<dynamic> transactions = [];
+      if (budgetType == 'account') {
+        final accountId = budget['accountId'];
+        if (accountId != null) {
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('accountId', accountId)
+              .gte('date', startDate.toIso8601String());
+        }
+      } else if (budgetType == 'category') {
+        final categoryId = budget['categoryId'];
+        if (categoryId != null) {
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('categoryId', categoryId)
+              .eq('type', 'expense')
+              .gte('date', startDate.toIso8601String());
+        }
+      } else if (budgetType == 'ledger') {
+        final ledgerId = budget['ledgerId'];
+        if (ledgerId != null) {
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('ledgerId', ledgerId)
+              .eq('type', 'expense')
+              .gte('date', startDate.toIso8601String());
+        }
+      }
+
+      double totalSpent = 0;
+      for (var transaction in transactions) {
+        totalSpent += ((transaction['amount'] ?? 0) as num).toDouble();
+      }
+
+      return (totalSpent / budgetAmount) * 100;
+    } catch (e) {
+      print('Error calculating budget usage: $e');
+      return 0;
+    }
+  }
+
   Map<String, double> _calculateCategoryBalance() {
     Map<String, double> categoryBalances = {};
     for (var account in _accounts) {
@@ -692,6 +1118,69 @@ class _AccountPageState extends State<AccountPage> {
       }
     }
     return total;
+  }
+
+  List<Widget> _buildNavBadges() {
+    // Position badge only on Settings icon (index 4)
+    final badges = <Widget>[];
+    const badgeSize = 20.0;
+    const badgeTopOffset = 8.0;
+    const badgeRightOffset = 12.0;
+
+    if (!(_hasBudgetCaution || _hasBudgetAlert)) {
+      return badges;
+    }
+
+    // Show caution badge (YELLOW for 70-100% usage)
+    if (_hasBudgetCaution) {
+      badges.add(
+        Positioned(
+          right: badgeRightOffset,
+          top: badgeTopOffset,
+          child: Container(
+            width: badgeSize,
+            height: badgeSize,
+            decoration: BoxDecoration(
+              color: Colors.orange.shade700, // YELLOW for caution
+              shape: BoxShape.circle,
+            ),
+            child: const Center(
+              child: Icon(Icons.warning_rounded, color: Colors.white, size: 12),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Show alert/exceeded badge (RED for >100% usage) - only if no caution
+    if (_hasBudgetAlert && !_hasBudgetCaution) {
+      badges.add(
+        Positioned(
+          right: badgeRightOffset,
+          top: badgeTopOffset,
+          child: Container(
+            width: badgeSize,
+            height: badgeSize,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE53935), // RED for exceeded
+              shape: BoxShape.circle,
+            ),
+            child: const Center(
+              child: Text(
+                '!',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return badges;
   }
 
   @override
@@ -910,7 +1399,7 @@ class _AccountPageState extends State<AccountPage> {
                           child: const Icon(
                             Icons.add,
                             size: 28,
-                            color: Colors.green,
+                            color: Color(0xFFA7E399),
                           ),
                         ),
                       ],
@@ -923,14 +1412,14 @@ class _AccountPageState extends State<AccountPage> {
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFFA7E399).withOpacity(0.4),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
+                            color: const Color(0xFFA7E399).withOpacity(0.25),
+                            blurRadius: 15,
+                            offset: const Offset(0, 8),
                           ),
                           BoxShadow(
-                            color: const Color(0xFFA7E399).withOpacity(0.2),
-                            blurRadius: 40,
-                            offset: const Offset(0, 20),
+                            color: const Color(0xFFA7E399).withOpacity(0.1),
+                            blurRadius: 30,
+                            offset: const Offset(0, 15),
                           ),
                         ],
                       ),
@@ -940,7 +1429,7 @@ class _AccountPageState extends State<AccountPage> {
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 24,
-                              vertical: 20,
+                              vertical: 24,
                             ),
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
@@ -948,7 +1437,7 @@ class _AccountPageState extends State<AccountPage> {
                                 end: Alignment.bottomRight,
                                 colors: [
                                   const Color(0xFFA7E399),
-                                  const Color(0xFF90EE90),
+                                  const Color(0xFFC8F7DC),
                                 ],
                               ),
                               borderRadius: const BorderRadius.only(
@@ -978,9 +1467,9 @@ class _AccountPageState extends State<AccountPage> {
                                     Text(
                                       'Total Assets',
                                       style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.black.withOpacity(0.7),
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
                                         letterSpacing: 0.5,
                                       ),
                                     ),
@@ -1002,31 +1491,35 @@ class _AccountPageState extends State<AccountPage> {
                                       _showBalance
                                           ? Icons.visibility
                                           : Icons.visibility_off,
-                                      color: Colors.black.withOpacity(0.7),
-                                      size: 20,
+                                      color: Colors.white,
+                                      size: 22,
                                     ),
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                          // Dark Green Separator
+                          // Separator
                           Container(
-                            height: 3,
+                            height: 2,
                             decoration: BoxDecoration(
-                              color: Colors.green.shade800,
-                              borderRadius: BorderRadius.circular(2),
+                              color: Colors.white.withOpacity(0.3),
+                              borderRadius: BorderRadius.circular(1),
                             ),
                           ),
-                          // Balance Section with Darker Background
+                          // Balance Section with Gradient Background
                           Container(
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(
                               horizontal: 24,
-                              vertical: 28,
+                              vertical: 32,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.green.shade50,
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [Colors.white, const Color(0xFFFAFFFD)],
+                              ),
                               borderRadius: const BorderRadius.only(
                                 bottomLeft: Radius.circular(20),
                                 bottomRight: Radius.circular(20),
@@ -1059,10 +1552,10 @@ class _AccountPageState extends State<AccountPage> {
                                               _currencies[currencyId]?['name'] ??
                                                   currencyId,
                                               style: TextStyle(
-                                                fontSize: 12,
+                                                fontSize: 13,
                                                 fontWeight: FontWeight.w500,
                                                 color: Colors.black.withOpacity(
-                                                  0.6,
+                                                  0.7,
                                                 ),
                                                 letterSpacing: 0.3,
                                               ),
@@ -1074,11 +1567,11 @@ class _AccountPageState extends State<AccountPage> {
                                                       balance,
                                                       currencyId,
                                                     )
-                                                  : '********',
+                                                  : '*********',
                                               style: TextStyle(
-                                                fontSize: 28,
+                                                fontSize: 32,
                                                 fontWeight: FontWeight.w900,
-                                                color: Colors.green.shade800,
+                                                color: const Color(0xFFA7E399),
                                               ),
                                             ),
                                           ],
@@ -1102,11 +1595,11 @@ class _AccountPageState extends State<AccountPage> {
                                                           .first['currencyId']
                                                     : null,
                                               )
-                                            : '********',
+                                            : '••••••••',
                                         style: TextStyle(
-                                          fontSize: 36,
+                                          fontSize: 40,
                                           fontWeight: FontWeight.w900,
-                                          color: Colors.green.shade800,
+                                          color: const Color(0xFFA7E399),
                                         ),
                                       ),
                                       const SizedBox(height: 12),
@@ -1114,9 +1607,9 @@ class _AccountPageState extends State<AccountPage> {
                                       Text(
                                         'Available Balance',
                                         style: TextStyle(
-                                          fontSize: 12,
+                                          fontSize: 13,
                                           fontWeight: FontWeight.w500,
-                                          color: Colors.black.withOpacity(0.6),
+                                          color: Colors.black.withOpacity(0.7),
                                           letterSpacing: 0.3,
                                         ),
                                       ),
@@ -1248,7 +1741,7 @@ class _AccountPageState extends State<AccountPage> {
                               color: const Color(0xFFFFF9E6),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: Colors.grey.shade200,
+                                color: const Color(0xFFFFE5B4),
                                 width: 1,
                               ),
                             ),
@@ -1290,14 +1783,6 @@ class _AccountPageState extends State<AccountPage> {
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 16,
                                         vertical: 12,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        border: Border(
-                                          bottom: BorderSide(
-                                            color: Colors.grey.shade200,
-                                            width: 1,
-                                          ),
-                                        ),
                                       ),
                                       child: Row(
                                         mainAxisAlignment:
@@ -1401,123 +1886,114 @@ class _AccountPageState extends State<AccountPage> {
                         ],
                       );
                     }).toList(),
-
-                    // AI Features placeholder
-                    const SizedBox(height: 24),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: Colors.grey.shade300,
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.auto_awesome,
-                            size: 18,
-                            color: Colors.black87,
-                          ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'AI Features',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.black87,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                     const SizedBox(height: 40),
                   ],
                 ),
               ),
             ),
-      bottomNavigationBar: Stack(
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          BottomNavigationBar(
-            currentIndex: _selectedNavIndex,
-            backgroundColor: const Color(0xFFFEFFD3),
-            type: BottomNavigationBarType.fixed,
-            items: const [
-              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.account_balance_wallet),
-                label: 'Account',
-              ),
-              BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.savings),
-                label: 'Saving',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.settings),
-                label: 'Setting',
-              ),
-            ],
-            onTap: (index) {
-              setState(() {
-                _selectedNavIndex = index;
-              });
-              if (index == 0) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => HomeScreen(userId: widget.userId),
+          // AI Feature Button
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF90EE90),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
                   ),
-                );
-              } else if (index == 3) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SavingsPage(userId: widget.userId),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                );
-              } else if (index == 4) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SettingsScreen(userId: widget.userId),
-                  ),
-                ).then((_) {
-                  _checkBudgetAlerts();
-                });
-              }
-            },
-          ),
-          // Alert badge on Settings icon
-          if (_hasBudgetAlert)
-            Positioned(
-              right: 12,
-              top: 8,
-              child: Container(
-                width: 20,
-                height: 20,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFE53935),
-                  shape: BoxShape.circle,
                 ),
-                child: const Center(
-                  child: Text(
-                    '!',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
+                onPressed: () {
+                  // TODO: Navigate to AI Features
+                },
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.auto_awesome, color: Colors.black, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'AI Features',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ),
+          ),
+          // Bottom Navigation Bar
+          Stack(
+            children: [
+              BottomNavigationBar(
+                currentIndex: _selectedNavIndex,
+                selectedItemColor: const Color(0xFFA7E399),
+                backgroundColor: const Color(0xFFFEFFD3),
+                type: BottomNavigationBarType.fixed,
+                items: const [
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.home),
+                    label: 'Home',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.account_balance_wallet),
+                    label: 'Account',
+                  ),
+                  BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.savings),
+                    label: 'Saving',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.settings),
+                    label: 'Setting',
+                  ),
+                ],
+                onTap: (index) {
+                  setState(() {
+                    _selectedNavIndex = index;
+                  });
+                  if (index == 0) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => HomeScreen(userId: widget.userId),
+                      ),
+                    );
+                  } else if (index == 3) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            SavingsPage(userId: widget.userId),
+                      ),
+                    );
+                  } else if (index == 4) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            SettingsScreen(userId: widget.userId),
+                      ),
+                    ).then((_) {
+                      _checkBudgetAlerts();
+                    });
+                  }
+                },
+              ),
+              // Build badges for multiple nav icons
+              ..._buildNavBadges(),
+            ],
+          ),
         ],
       ),
     );

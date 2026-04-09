@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'saving_goal_assistant_screen.dart';
 
 class CircleSavingPage extends StatefulWidget {
   final String userId;
@@ -20,11 +21,16 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
   late TextEditingController _endDateController;
   late TextEditingController _amountController;
 
-  List<Map<String, dynamic>> _accounts = [];
+  List<Map<String, dynamic>> _sourceAccounts = [];
+  List<Map<String, dynamic>> _destAccounts = [];
   String? _selectedSourceAccount;
   String? _selectedDestAccount;
   String _selectedCycleFrequency = 'Monthly';
-  bool _enableAutoDeduction = false;
+  bool _enableAutoDeduction = true;
+  bool _isLoadingAccounts = true;
+  Set<String> _usedSourceAccountIds = {};
+  Set<String> _usedDestAccountIds = {};
+  String? _ledgerId;
 
   final List<String> _cycleFrequencies = ['Daily', 'Weekly', 'Monthly'];
 
@@ -37,6 +43,7 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
     _startDateController = TextEditingController();
     _endDateController = TextEditingController();
     _amountController = TextEditingController();
+    _fetchLedgerId();
     _fetchAccounts();
   }
 
@@ -51,19 +58,74 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
     super.dispose();
   }
 
+  Future<void> _fetchLedgerId() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('Ledger')
+          .select('ledgerId')
+          .eq('userId', widget.userId)
+          .limit(1);
+
+      if (response.isNotEmpty) {
+        setState(() {
+          _ledgerId = response[0]['ledgerId'] as String;
+        });
+      }
+    } catch (e) {
+      print('Error fetching ledger: $e');
+    }
+  }
+
   Future<void> _fetchAccounts() async {
     try {
+      // Fetch all saving goals for the user to identify used accounts
+      final savingGoals = await Supabase.instance.client
+          .from('SavingGoal')
+          .select('sourceAcountId, destAccountId')
+          .eq('userId', widget.userId);
+
+      // Build sets of used account IDs
+      final usedSourceIds = <String>{};
+      final usedDestIds = <String>{};
+
+      for (final goal in savingGoals as List) {
+        final sourceId = goal['sourceAcountId'] as String?;
+        final destId = goal['destAccountId'] as String?;
+        if (sourceId != null) usedSourceIds.add(sourceId);
+        if (destId != null) usedDestIds.add(destId);
+      }
+
+      // Fetch all accounts for the user
       final response = await Supabase.instance.client
           .from('Account')
           .select()
           .eq('userId', widget.userId);
 
-      setState(() {
-        _accounts = List<Map<String, dynamic>>.from(response);
-      });
+      if (mounted) {
+        setState(() {
+          // Filter source accounts: exclude Savings type
+          _sourceAccounts = (response as List)
+              .map((acc) => Map<String, dynamic>.from(acc as Map))
+              .where((acc) => (acc['accountType'] as String?) != 'Savings')
+              .toList();
+
+          // Filter destination accounts: only Savings type
+          _destAccounts = (response as List)
+              .map((acc) => Map<String, dynamic>.from(acc as Map))
+              .where((acc) => (acc['accountType'] as String?) == 'Savings')
+              .toList();
+
+          _usedSourceAccountIds = usedSourceIds;
+          _usedDestAccountIds = usedDestIds;
+          _isLoadingAccounts = false;
+        });
+      }
     } catch (e) {
       print('Error fetching accounts: $e');
       if (mounted) {
+        setState(() {
+          _isLoadingAccounts = false;
+        });
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Error loading accounts: $e')));
@@ -87,6 +149,288 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
         controller.text = DateFormat('yyyy-MM-dd').format(pickedDate);
       });
     }
+  }
+
+  String _formatCurrency(double amount) {
+    return 'RM${amount.toStringAsFixed(2)}';
+  }
+
+  String _getIconUrl(String imagePath) {
+    if (imagePath.startsWith('http')) {
+      return imagePath;
+    }
+    return imagePath;
+  }
+
+  List<Widget> _buildSelectedAccountDisplay(
+    List<Map<String, dynamic>> accounts,
+    String? accountId,
+  ) {
+    if (accountId == null) return [];
+
+    final account = accounts.firstWhere(
+      (acc) => acc['accountId'] == accountId,
+      orElse: () => {},
+    );
+
+    if (account.isEmpty) return [];
+
+    final accountName = account['accountName'] as String? ?? 'Unnamed';
+    final balance = ((account['balance'] ?? 0) as num).toDouble();
+    final iconImage = account['iconImage'] as String?;
+
+    return [
+      Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        child: iconImage != null && iconImage.isNotEmpty
+            ? Image.network(
+                _getIconUrl(iconImage),
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Icon(Icons.account_balance_wallet, size: 20);
+                },
+              )
+            : const Icon(Icons.account_balance_wallet, size: 20),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              accountName,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              _formatCurrency(balance),
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  void _showSourceAccountsModal() {
+    _showAccountsModal(
+      'Select Source Account',
+      _sourceAccounts,
+      _selectedSourceAccount,
+      (accountId) {
+        setState(() {
+          _selectedSourceAccount = accountId;
+        });
+        Navigator.pop(context);
+      },
+      true, // isSourceAccount
+    );
+  }
+
+  void _showDestAccountsModal() {
+    _showAccountsModal(
+      'Select Destination Account',
+      _destAccounts,
+      _selectedDestAccount,
+      (accountId) {
+        setState(() {
+          _selectedDestAccount = accountId;
+        });
+        Navigator.pop(context);
+      },
+      false, // isSourceAccount
+    );
+  }
+
+  void _showAccountsModal(
+    String title,
+    List<Map<String, dynamic>> accounts,
+    String? selectedAccountId,
+    Function(String) onSelect,
+    bool isSourceAccount,
+  ) {
+    final usedAccountIds = isSourceAccount
+        ? _usedSourceAccountIds
+        : _usedDestAccountIds;
+
+    // Sort accounts: unused first, then used (for destination accounts only)
+    final sortedAccounts = List<Map<String, dynamic>>.from(accounts);
+    if (!isSourceAccount) {
+      sortedAccounts.sort((a, b) {
+        final aUsed = usedAccountIds.contains(a['accountId']);
+        final bUsed = usedAccountIds.contains(b['accountId']);
+        if (aUsed == bUsed) return 0;
+        return aUsed ? 1 : -1; // Used accounts last
+      });
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.4,
+        maxChildSize: 0.85,
+        expand: false,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFFFFFFB),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Header with close button
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.close, size: 20),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              // Accounts list
+              Expanded(
+                child: sortedAccounts.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.account_balance_wallet,
+                              size: 48,
+                              color: Colors.grey.shade400,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'No accounts available',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: scrollController,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        itemCount: sortedAccounts.length,
+                        itemBuilder: (context, index) {
+                          final account = sortedAccounts[index];
+                          final accountId = account['accountId'] as String;
+                          final isSelected = accountId == selectedAccountId;
+                          final isAccountUsed = usedAccountIds.contains(
+                            accountId,
+                          );
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: GestureDetector(
+                              onTap: () => onSelect(accountId),
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? Colors.green.shade50
+                                      : (isAccountUsed
+                                            ? Colors.blue.shade50
+                                            : Colors.white),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? Colors.green.shade400
+                                        : (isAccountUsed
+                                              ? Colors.blue.shade300
+                                              : Colors.grey.shade300),
+                                    width: isSelected ? 2 : 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    ..._buildSelectedAccountDisplay(
+                                      sortedAccounts,
+                                      accountId,
+                                    ),
+                                    if (isSelected)
+                                      Container(
+                                        width: 24,
+                                        height: 24,
+                                        decoration: BoxDecoration(
+                                          color: Colors.green,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.check,
+                                          color: Colors.white,
+                                          size: 14,
+                                        ),
+                                      )
+                                    else if (isAccountUsed && !isSourceAccount)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          left: 12,
+                                        ),
+                                        child: Tooltip(
+                                          message: 'Already in use',
+                                          child: Icon(
+                                            Icons.info_outline,
+                                            color: Colors.blue.shade400,
+                                            size: 16,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _createSavingGoal() async {
@@ -232,75 +576,146 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
                 },
               ),
               const SizedBox(height: 16),
-              // Source Account Dropdown
-              DropdownButtonFormField<String>(
-                value: _selectedSourceAccount,
-                decoration: InputDecoration(
-                  hintText: 'Source Account',
-                  filled: true,
-                  fillColor: Colors.green.shade200,
-                  border: OutlineInputBorder(
+              // Source Account Selection
+              GestureDetector(
+                onTap: _isLoadingAccounts ? null : _showSourceAccountsModal,
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    border: Border.all(
+                      color: _selectedSourceAccount != null
+                          ? Colors.green.shade300
+                          : Colors.grey.shade300,
+                      width: _selectedSourceAccount != null ? 2 : 1,
+                    ),
+                    boxShadow: _selectedSourceAccount != null
+                        ? [
+                            BoxShadow(
+                              color: Colors.green.withOpacity(0.1),
+                              blurRadius: 8,
+                            ),
+                          ]
+                        : [],
                   ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 16,
+                  child: Row(
+                    children: [
+                      // Source account icon and info
+                      if (_selectedSourceAccount != null) ...[
+                        ..._buildSelectedAccountDisplay(
+                          _sourceAccounts,
+                          _selectedSourceAccount,
+                        ),
+                      ] else
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Source Account (Transfer from)',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _isLoadingAccounts
+                                    ? 'Loading...'
+                                    : 'Tap to select',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      const Spacer(),
+                      Icon(
+                        Icons.arrow_forward_ios,
+                        size: 16,
+                        color: Colors.grey.shade400,
+                      ),
+                    ],
                   ),
                 ),
-                items: _accounts.map((account) {
-                  return DropdownMenuItem<String>(
-                    value: account['accountId'],
-                    child: Text(account['accountName'] ?? 'Unknown Account'),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedSourceAccount = value;
-                  });
-                },
-                validator: (value) {
-                  if (value == null) {
-                    return 'Please select a source account';
-                  }
-                  return null;
-                },
               ),
               const SizedBox(height: 16),
-              // Destination Account Dropdown
-              DropdownButtonFormField<String>(
-                value: _selectedDestAccount,
-                decoration: InputDecoration(
-                  hintText: 'Dest Account',
-                  filled: true,
-                  fillColor: Colors.green.shade200,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 16,
+              // Destination Account Selection - Only show if source is selected
+              if (_selectedSourceAccount != null)
+                AnimatedOpacity(
+                  opacity: 1.0,
+                  duration: const Duration(milliseconds: 300),
+                  child: GestureDetector(
+                    onTap: _isLoadingAccounts ? null : _showDestAccountsModal,
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _selectedDestAccount != null
+                              ? Colors.green.shade300
+                              : Colors.grey.shade300,
+                          width: _selectedDestAccount != null ? 2 : 1,
+                        ),
+                        boxShadow: _selectedDestAccount != null
+                            ? [
+                                BoxShadow(
+                                  color: Colors.green.withOpacity(0.1),
+                                  blurRadius: 8,
+                                ),
+                              ]
+                            : [],
+                      ),
+                      child: Row(
+                        children: [
+                          // Destination account icon and info
+                          if (_selectedDestAccount != null) ...[
+                            ..._buildSelectedAccountDisplay(
+                              _destAccounts,
+                              _selectedDestAccount,
+                            ),
+                          ] else
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Destination Account (Save to)',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _isLoadingAccounts
+                                        ? 'Loading...'
+                                        : 'Tap to select',
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          const Spacer(),
+                          Icon(
+                            Icons.arrow_forward_ios,
+                            size: 16,
+                            color: Colors.grey.shade400,
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-                items: _accounts.map((account) {
-                  return DropdownMenuItem<String>(
-                    value: account['accountId'],
-                    child: Text(account['accountName'] ?? 'Unknown Account'),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedDestAccount = value;
-                  });
-                },
-                validator: (value) {
-                  if (value == null) {
-                    return 'Please select a destination account';
-                  }
-                  return null;
-                },
-              ),
               const SizedBox(height: 16),
               // Start Date Field
               TextFormField(
@@ -458,40 +873,79 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
               ),
               const SizedBox(height: 24),
               // Saving Suggestion Button
-              Center(
-                child: ElevatedButton(
-                  onPressed: () {
-                    // TODO: Implement saving suggestion logic
+              GestureDetector(
+                onTap: () async {
+                  // Validate ledger exists
+                  if (_ledgerId == null || _ledgerId!.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Saving suggestion feature coming soon'),
+                        content: Text(
+                          'Please create a ledger first before generating suggestions',
+                        ),
                       ),
                     );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.purple.shade200,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                    return;
+                  }
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => SavingGoalAssistantScreen(
+                        userId: widget.userId,
+                        ledgerId: _ledgerId!,
+                      ),
                     ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
+                  );
+                  if (result == true && mounted) {
+                    Navigator.pop(context, true);
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade200,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green, width: 2),
                   ),
                   child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Icon(
-                        Icons.lightbulb_outline,
-                        color: Colors.purple.shade700,
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.auto_awesome,
+                            color: Colors.green,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 12),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Saving Suggestion',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green.shade700,
+                                ),
+                              ),
+                              Text(
+                                'Get AI-powered recommendations',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.green.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Saving Suggestion',
-                        style: TextStyle(
-                          color: Colors.purple.shade700,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      Icon(
+                        Icons.arrow_forward_ios,
+                        color: Colors.green.shade700,
+                        size: 20,
                       ),
                     ],
                   ),

@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:collection/collection.dart';
 import 'dart:io';
+import '../services/budget_alert_service.dart';
 
 class AddTransaction extends StatefulWidget {
   final String userId;
@@ -21,6 +22,9 @@ class _AddTransactionState extends State<AddTransaction> {
   bool _isLoading = true;
 
   String _amountText = '0';
+  String? _currentOperation; // Tracks + or *
+  double _previousNumber = 0;
+  bool _isNewNumber = true; // Flag to track if we're starting a new number
   Map<String, dynamic>? _selectedCategory;
   String _selectedType = 'expense';
   DateTime _selectedDate = DateTime.now();
@@ -46,6 +50,109 @@ class _AddTransactionState extends State<AddTransaction> {
     _noteController.dispose();
     _accountController.dispose();
     super.dispose();
+  }
+
+  /// Update budget alert flags based on current usage
+  Future<void> _updateBudgetAlertFlags() async {
+    try {
+      // Get all budgets for this user
+      final budgets = await Supabase.instance.client
+          .from('Budget')
+          .select()
+          .eq('userId', widget.userId);
+
+      if (budgets.isEmpty) return;
+
+      final alertService = BudgetAlertService();
+
+      // Check each budget and update flags
+      for (var budget in budgets) {
+        final budgetId = budget['budgetId'];
+        final budgetType = budget['type'] ?? '';
+        final budgetAmount = (budget['amount'] ?? 0).toDouble();
+        final cycleType = (budget['cycleType'] ?? 'month').toLowerCase();
+
+        if (budgetAmount <= 0) continue;
+
+        // Calculate date range based on cycle type
+        final now = DateTime.now();
+        final DateTime startDate;
+
+        switch (cycleType) {
+          case 'day':
+            startDate = DateTime(now.year, now.month, now.day);
+            break;
+          case 'week':
+            startDate = now.subtract(Duration(days: now.weekday - 1));
+            break;
+          case 'month':
+            startDate = DateTime(now.year, now.month, 1);
+            break;
+          case 'year':
+            startDate = DateTime(now.year, 1, 1);
+            break;
+          default:
+            startDate = DateTime(now.year, now.month, 1);
+        }
+
+        // Fetch transactions for this budget
+        List<dynamic> transactions = [];
+
+        if (budgetType == 'account') {
+          final accountId = budget['accountId'];
+          if (accountId != null) {
+            transactions = await Supabase.instance.client
+                .from('Transaction')
+                .select()
+                .eq('accountId', accountId)
+                .gte('date', startDate.toIso8601String());
+          }
+        } else if (budgetType == 'category') {
+          final categoryId = budget['categoryId'];
+          if (categoryId != null) {
+            transactions = await Supabase.instance.client
+                .from('Transaction')
+                .select()
+                .eq('categoryId', categoryId)
+                .eq('type', 'expense')
+                .gte('date', startDate.toIso8601String());
+          }
+        } else if (budgetType == 'ledger') {
+          final ledgerId = budget['ledgerId'];
+          if (ledgerId != null) {
+            transactions = await Supabase.instance.client
+                .from('Transaction')
+                .select()
+                .eq('ledgerId', ledgerId)
+                .eq('type', 'expense')
+                .gte('date', startDate.toIso8601String());
+          }
+        }
+
+        // Calculate total spent
+        double totalSpent = 0;
+        for (var transaction in transactions) {
+          final amount = ((transaction['amount'] ?? 0) as num).toDouble();
+          final isRefund = transaction['refund'] == true;
+
+          if (isRefund) {
+            totalSpent -= amount;
+          } else {
+            totalSpent += amount;
+          }
+        }
+
+        totalSpent = totalSpent < 0 ? 0 : totalSpent;
+        final usagePercentage = (totalSpent / budgetAmount) * 100;
+
+        // Update alert flags using the service
+        await alertService.updateAlertFlags(budgetId, usagePercentage);
+      }
+
+      print('Budget alert flags updated after transaction');
+    } catch (e) {
+      print('Error updating budget alert flags: $e');
+    }
   }
 
   Future<void> _fetchCategories() async {
@@ -173,6 +280,9 @@ class _AddTransactionState extends State<AddTransaction> {
     setState(() {
       if (value == 'C') {
         _amountText = '0';
+        _currentOperation = null;
+        _previousNumber = 0;
+        _isNewNumber = true;
       } else if (value == '<') {
         if (_amountText.length > 1) {
           _amountText = _amountText.substring(0, _amountText.length - 1);
@@ -183,18 +293,76 @@ class _AddTransactionState extends State<AddTransaction> {
         if (!_amountText.contains('.')) {
           _amountText += '.';
         }
+      } else if (value == '+' || value == '*') {
+        // Handle operation: + or *
+        final currentNum = double.tryParse(_amountText) ?? 0;
+
+        // If there was a previous operation, calculate the result first
+        if (_currentOperation != null) {
+          final result = _calculateResult(
+            _previousNumber,
+            currentNum,
+            _currentOperation!,
+          );
+          _amountText = _formatNumber(result);
+          _previousNumber = result;
+        } else {
+          _previousNumber = currentNum;
+        }
+
+        _currentOperation = value;
+        _isNewNumber = true;
       } else if (value == '✓') {
+        // Complete the operation if there's a pending one
+        if (_currentOperation != null) {
+          final currentNum = double.tryParse(_amountText) ?? 0;
+          final result = _calculateResult(
+            _previousNumber,
+            currentNum,
+            _currentOperation!,
+          );
+          _amountText = _formatNumber(result);
+          _currentOperation = null;
+          _previousNumber = 0;
+          _isNewNumber = true;
+        }
         // Save transaction
         _saveTransaction();
         return;
       } else {
-        if (_amountText == '0' && value != '.') {
+        // Regular number input
+        if (_isNewNumber) {
           _amountText = value;
+          _isNewNumber = false;
         } else {
-          _amountText += value;
+          if (_amountText == '0' && value != '.') {
+            _amountText = value;
+          } else {
+            _amountText += value;
+          }
         }
       }
     });
+  }
+
+  double _calculateResult(double num1, double num2, String operation) {
+    if (operation == '+') {
+      return num1 + num2;
+    } else if (operation == '*') {
+      return num1 * num2;
+    }
+    return num2;
+  }
+
+  String _formatNumber(double num) {
+    // Format the number, remove unnecessary trailing zeros and decimal point
+    final result = num.toStringAsFixed(2);
+    final formatted = double.parse(result).toString();
+    // If result is a whole number, return without decimal
+    if (formatted.endsWith('.0')) {
+      return formatted.substring(0, formatted.length - 2);
+    }
+    return formatted;
   }
 
   Future<void> _saveTransaction() async {
@@ -254,6 +422,8 @@ class _AddTransactionState extends State<AddTransaction> {
     // Get from/to account details for transfer
     Map<String, dynamic>? fromAccount;
     Map<String, dynamic>? toAccount;
+    String categoryName = '';
+    String accountName = '';
 
     if (_selectedType == 'transfer') {
       fromAccount = _accounts.firstWhereOrNull(
@@ -262,110 +432,28 @@ class _AddTransactionState extends State<AddTransaction> {
       toAccount = _accounts.firstWhereOrNull(
         (acc) => acc['accountId'] == _selectedToAccountId,
       );
+    } else {
+      categoryName = _selectedCategory!['name'] ?? '';
+      accountName = _selectedAccount!['accountName'] ?? '';
     }
 
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFFFFF9E6),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          contentPadding: const EdgeInsets.all(24),
-          title: const Text(
-            'Transaction Preview',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFFF39C12),
-            ),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildPreviewItem('Type', _selectedType.toUpperCase()),
-                if (_selectedType == 'transfer') ...[
-                  _buildPreviewItem(
-                    'From Account',
-                    fromAccount?['accountName'] ?? 'Unknown',
-                  ),
-                  _buildPreviewItem(
-                    'To Account',
-                    toAccount?['accountName'] ?? 'Unknown',
-                  ),
-                ] else ...[
-                  _buildPreviewItem(
-                    'Category',
-                    _selectedCategory!['name'] ?? '',
-                  ),
-                  _buildPreviewItem(
-                    'Account',
-                    _selectedAccount!['accountName'] ?? '',
-                  ),
-                ],
-                _buildPreviewItem('Amount', 'RM${_amountText}'),
-                _buildPreviewItem(
-                  'Date',
-                  _selectedDate.toLocal().toString().split(' ')[0],
-                ),
-                if (_noteController.text.isNotEmpty)
-                  _buildPreviewItem('Note', _noteController.text),
-                if (_selectedImage != null)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Image:',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          height: 120,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.grey),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.file(
-                              File(_selectedImage!.path),
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Center(
-                                  child: Icon(
-                                    Icons.image,
-                                    color: Colors.grey,
-                                    size: 40,
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _confirmSaveTransaction();
-              },
-              child: const Text('Confirm'),
-            ),
-          ],
+        return _TransactionTicketDialog(
+          selectedType: _selectedType,
+          amount: _amountText,
+          selectedDate: _selectedDate,
+          categoryName: categoryName,
+          accountName: accountName,
+          fromAccountName: fromAccount?['accountName'] ?? 'Unknown',
+          toAccountName: toAccount?['accountName'] ?? 'Unknown',
+          noteText: _noteController.text,
+          selectedImage: _selectedImage,
+          onConfirm: () {
+            Navigator.pop(context);
+            _confirmSaveTransaction();
+          },
         );
       },
     );
@@ -495,16 +583,110 @@ class _AddTransactionState extends State<AddTransaction> {
         }
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Transaction saved successfully')),
-      );
+      // Update budget alert flags if this is an expense transaction
+      if (_selectedType == 'expense') {
+        await _updateBudgetAlertFlags();
+      }
 
-      Navigator.pop(context, true);
+      if (mounted) {
+        // Show success dialog
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              backgroundColor: const Color(0xFFFFF9E6),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF9E6),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Success icon
+                    Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFFA7E399),
+                      ),
+                      child: const Icon(
+                        Icons.check,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Success title
+                    Text(
+                      _selectedType == 'transfer'
+                          ? 'Transfer Successful!'
+                          : '${_selectedType == 'expense' ? 'Expense' : 'Income'} Added Successfully!',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFF39C12),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Success message
+                    Text(
+                      _selectedType == 'transfer'
+                          ? 'RM${amount.toStringAsFixed(2)} has been transferred successfully.'
+                          : 'RM${amount.toStringAsFixed(2)} has been recorded successfully.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF666666),
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    // Done button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context); // Close dialog
+                          Navigator.pop(context, true); // Return to home page
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFA7E399),
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        child: const Text('Done'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      }
     } catch (e) {
       print('Error saving transaction: $e');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error saving transaction: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error saving transaction: $e')));
+      }
     }
   }
 
@@ -573,7 +755,7 @@ class _AddTransactionState extends State<AddTransaction> {
                     ),
                     decoration: BoxDecoration(
                       color: _selectedType == 'income'
-                          ? const Color(0xFFB0E0E6)
+                          ? const Color(0xFF90EE90)
                           : const Color(0xFFE8E8E8),
                       borderRadius: BorderRadius.circular(20),
                     ),
@@ -667,7 +849,7 @@ class _AddTransactionState extends State<AddTransaction> {
                                 decoration: BoxDecoration(
                                   color: isSelected
                                       ? const Color(0xFF90EE90)
-                                      : const Color(0xFFB0E0E6),
+                                      : const Color(0xFFFFF9E6),
                                   borderRadius: BorderRadius.circular(12),
                                   border: isSelected
                                       ? Border.all(
@@ -743,7 +925,7 @@ class _AddTransactionState extends State<AddTransaction> {
           ),
           // Amount Display and Compact Keyboard Section
           Container(
-            color: const Color(0xFFB0E0E6),
+            color: const Color(0xFFFFF9E6),
             padding: const EdgeInsets.all(8),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -937,7 +1119,7 @@ class _AddTransactionState extends State<AddTransaction> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // From Account Section
+          // From Account Field
           const Text(
             'From Account',
             style: TextStyle(
@@ -947,129 +1129,75 @@ class _AddTransactionState extends State<AddTransaction> {
             ),
           ),
           const SizedBox(height: 12),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: _accounts.map((account) {
-                final isSelected =
-                    _selectedFromAccountId == account['accountId'];
-                final isSavingsAccount = account['accountType'] == 'Savings';
-
-                return GestureDetector(
-                  onTap: isSavingsAccount
-                      ? null
-                      : () {
-                          setState(() {
-                            _selectedFromAccountId = account['accountId'];
-                          });
-                        },
-                  child: Opacity(
-                    opacity: isSavingsAccount ? 0.5 : 1.0,
-                    child: Tooltip(
-                      message: isSavingsAccount
-                          ? 'Cannot transfer from Savings account'
-                          : account['accountName'] ?? 'Unknown',
-                      child: Container(
-                        margin: const EdgeInsets.only(right: 12),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
+          GestureDetector(
+            onTap: () => _showAccountPickerModal(
+              'Select From Account',
+              'from',
+              _selectedFromAccountId,
+              (accountId) {
+                setState(() {
+                  _selectedFromAccountId = accountId;
+                });
+                Navigator.pop(context);
+              },
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: _selectedFromAccountId != null
+                      ? Colors.green.shade300
+                      : Colors.grey.shade300,
+                  width: _selectedFromAccountId != null ? 2 : 1,
+                ),
+                boxShadow: _selectedFromAccountId != null
+                    ? [
+                        BoxShadow(
+                          color: Colors.green.withOpacity(0.1),
+                          blurRadius: 8,
                         ),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? const Color(0xFF90EE90)
-                              : (isSavingsAccount
-                                    ? Colors.grey[200]
-                                    : Colors.white),
-                          border: Border.all(
-                            color: isSelected
-                                ? Colors.black
-                                : (isSavingsAccount
-                                      ? Colors.grey[400]!
-                                      : Colors.grey[300]!),
-                            width: isSelected ? 2 : 1,
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Stack(
-                          children: [
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 32,
-                                  height: 32,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFB0E0E6),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child:
-                                      account['iconImage'] != null &&
-                                          account['iconImage']
-                                              .toString()
-                                              .isNotEmpty
-                                      ? ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            6,
-                                          ),
-                                          child: Image.network(
-                                            account['iconImage'],
-                                            fit: BoxFit.cover,
-                                            errorBuilder:
-                                                (context, error, stackTrace) {
-                                                  return Icon(
-                                                    Icons
-                                                        .account_balance_wallet,
-                                                    color: Colors.grey[600],
-                                                    size: 16,
-                                                  );
-                                                },
-                                          ),
-                                        )
-                                      : Icon(
-                                          Icons.account_balance_wallet,
-                                          color: Colors.grey[600],
-                                          size: 16,
-                                        ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  account['accountName'] ?? 'Unknown',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (isSavingsAccount)
-                              Positioned(
-                                top: -4,
-                                right: -4,
-                                child: Container(
-                                  padding: const EdgeInsets.all(2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.lock,
-                                    color: Colors.white,
-                                    size: 10,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
+                      ]
+                    : [],
+              ),
+              child: Row(
+                children: [
+                  if (_selectedFromAccountId != null) ...[
+                    ..._buildAccountDisplayItem(
+                      _accounts.firstWhere(
+                        (acc) => acc['accountId'] == _selectedFromAccountId,
+                        orElse: () => {},
                       ),
                     ),
+                  ] else
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Tap to select',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const Spacer(),
+                  Icon(
+                    Icons.arrow_forward_ios,
+                    size: 16,
+                    color: Colors.grey.shade400,
                   ),
-                );
-              }).toList(),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 24),
-          // To Account Section
+          // To Account Field
           const Text(
             'To Account',
             style: TextStyle(
@@ -1079,101 +1207,363 @@ class _AddTransactionState extends State<AddTransaction> {
             ),
           ),
           const SizedBox(height: 12),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: _accounts.map((account) {
-                final isSelected = _selectedToAccountId == account['accountId'];
-                final isFromAccount =
-                    _selectedFromAccountId == account['accountId'];
-                return GestureDetector(
-                  onTap: isFromAccount
-                      ? null
-                      : () {
-                          setState(() {
-                            _selectedToAccountId = account['accountId'];
-                          });
-                        },
-                  child: Opacity(
-                    opacity: isFromAccount ? 0.5 : 1.0,
-                    child: Tooltip(
-                      message: isFromAccount
-                          ? 'Cannot use same account for from and to'
-                          : account['accountName'] ?? 'Unknown',
-                      child: Container(
-                        margin: const EdgeInsets.only(right: 12),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
+          GestureDetector(
+            onTap: () => _showAccountPickerModal(
+              'Select To Account',
+              'to',
+              _selectedToAccountId,
+              (accountId) {
+                setState(() {
+                  _selectedToAccountId = accountId;
+                });
+                Navigator.pop(context);
+              },
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: _selectedToAccountId != null
+                      ? Colors.green.shade300
+                      : Colors.grey.shade300,
+                  width: _selectedToAccountId != null ? 2 : 1,
+                ),
+                boxShadow: _selectedToAccountId != null
+                    ? [
+                        BoxShadow(
+                          color: Colors.green.withOpacity(0.1),
+                          blurRadius: 8,
                         ),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? const Color(0xFFA7E399)
-                              : (isFromAccount
-                                    ? Colors.grey[200]
-                                    : Colors.white),
-                          border: Border.all(
-                            color: isSelected
-                                ? Colors.black
-                                : (isFromAccount
-                                      ? Colors.grey[400]!
-                                      : Colors.grey[300]!),
-                            width: isSelected ? 2 : 1,
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFB0E0E6),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child:
-                                  account['iconImage'] != null &&
-                                      account['iconImage'].toString().isNotEmpty
-                                  ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(6),
-                                      child: Image.network(
-                                        account['iconImage'],
-                                        fit: BoxFit.cover,
-                                        errorBuilder:
-                                            (context, error, stackTrace) {
-                                              return Icon(
-                                                Icons.account_balance_wallet,
-                                                color: Colors.grey[600],
-                                                size: 16,
-                                              );
-                                            },
-                                      ),
-                                    )
-                                  : Icon(
-                                      Icons.account_balance_wallet,
-                                      color: Colors.grey[600],
-                                      size: 16,
-                                    ),
+                      ]
+                    : [],
+              ),
+              child: Row(
+                children: [
+                  if (_selectedToAccountId != null) ...[
+                    ..._buildAccountDisplayItem(
+                      _accounts.firstWhere(
+                        (acc) => acc['accountId'] == _selectedToAccountId,
+                        orElse: () => {},
+                      ),
+                    ),
+                  ] else
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Tap to select',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey.shade600,
                             ),
-                            const SizedBox(width: 8),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const Spacer(),
+                  Icon(
+                    Icons.arrow_forward_ios,
+                    size: 16,
+                    color: Colors.grey.shade400,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildAccountDisplayItem(Map<String, dynamic> account) {
+    if (account.isEmpty) return [];
+
+    return [
+      Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF9E6),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child:
+            account['iconImage'] != null &&
+                account['iconImage'].toString().isNotEmpty
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  account['iconImage'],
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Icon(
+                      Icons.account_balance_wallet,
+                      color: Colors.grey[600],
+                      size: 24,
+                    );
+                  },
+                ),
+              )
+            : Icon(
+                Icons.account_balance_wallet,
+                color: Colors.grey[600],
+                size: 24,
+              ),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              account['accountName'] ?? 'Unknown',
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.black,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              account['hideBalanceStatus'] == false
+                  ? 'RM${account['balance']?.toStringAsFixed(2) ?? '0.00'}'
+                  : '*****',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  void _showAccountPickerModal(
+    String title,
+    String type,
+    String? selectedAccountId,
+    Function(String) onSelect,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.4,
+        maxChildSize: 0.8,
+        expand: false,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFFFF9E6),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.close, size: 20),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              // Account Cards Grid
+              Expanded(
+                child: _accounts.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.account_balance_wallet,
+                              size: 48,
+                              color: Colors.grey.shade400,
+                            ),
+                            const SizedBox(height: 12),
                             Text(
-                              account['accountName'] ?? 'Unknown',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 12,
+                              'No accounts available',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade600,
                               ),
                             ),
                           ],
                         ),
+                      )
+                    : GridView.builder(
+                        controller: scrollController,
+                        padding: const EdgeInsets.all(16),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              childAspectRatio: 2.0,
+                              crossAxisSpacing: 12,
+                              mainAxisSpacing: 12,
+                            ),
+                        itemCount: _accounts.length,
+                        itemBuilder: (context, index) {
+                          final account = _accounts[index];
+                          final accountId = account['accountId'] as String;
+                          final isSelected = accountId == selectedAccountId;
+                          final isFromAccount =
+                              type == 'to' &&
+                              accountId == _selectedFromAccountId;
+
+                          return GestureDetector(
+                            onTap: isFromAccount
+                                ? null
+                                : () => onSelect(accountId),
+                            child: Opacity(
+                              opacity: isFromAccount ? 0.5 : 1.0,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? const Color(0xFFA7E399)
+                                      : (isFromAccount
+                                            ? Colors.grey.shade100
+                                            : const Color(0xFFFFF9E6)),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? const Color(0xFFF39C12)
+                                        : (isFromAccount
+                                              ? Colors.grey.shade400
+                                              : const Color(0xFFFFE5B4)),
+                                    width: isSelected ? 2 : 1,
+                                  ),
+                                ),
+                                padding: const EdgeInsets.all(10),
+                                child: Row(
+                                  children: [
+                                    // Account Icon
+                                    Container(
+                                      width: 40,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFF9E6),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child:
+                                          account['iconImage'] != null &&
+                                              account['iconImage']
+                                                  .toString()
+                                                  .isNotEmpty
+                                          ? ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              child: Image.network(
+                                                account['iconImage'],
+                                                fit: BoxFit.contain,
+                                                errorBuilder:
+                                                    (
+                                                      context,
+                                                      error,
+                                                      stackTrace,
+                                                    ) {
+                                                      return Icon(
+                                                        Icons
+                                                            .account_balance_wallet,
+                                                        color: Colors.grey[600],
+                                                        size: 20,
+                                                      );
+                                                    },
+                                              ),
+                                            )
+                                          : Icon(
+                                              Icons.account_balance_wallet,
+                                              color: Colors.grey[600],
+                                              size: 20,
+                                            ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    // Account Details
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          // Account Name
+                                          Text(
+                                            account['accountName'] ?? 'Unknown',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.black87,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          // Account Balance
+                                          Text(
+                                            account['hideBalanceStatus'] ==
+                                                    false
+                                                ? 'RM${account['balance']?.toStringAsFixed(2) ?? '0.00'}'
+                                                : '*****',
+                                            style: TextStyle(
+                                              fontSize: 9,
+                                              color: Colors.grey.shade600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    // Check mark for selected
+                                    if (isSelected) ...[
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        width: 20,
+                                        height: 20,
+                                        decoration: BoxDecoration(
+                                          color: Colors.green,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.check,
+                                          color: Colors.white,
+                                          size: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1296,7 +1686,7 @@ class _AddTransactionState extends State<AddTransaction> {
                             borderRadius: BorderRadius.circular(6),
                             child: Image.network(
                               _selectedAccount!['iconImage'],
-                              fit: BoxFit.cover,
+                              fit: BoxFit.contain,
                               errorBuilder: (context, error, stackTrace) {
                                 return Icon(
                                   Icons.account_balance_wallet,
@@ -1432,161 +1822,229 @@ class _AddTransactionState extends State<AddTransaction> {
   }
 
   void _showAccountDialog() {
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFFFFF9E6),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.4,
+        maxChildSize: 0.8,
+        expand: false,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFFFF9E6),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
-          contentPadding: const EdgeInsets.all(24),
-          title: const Text(
-            'Account',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFFF39C12),
-            ),
-          ),
-          content: SingleChildScrollView(
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: _accounts.map((account) {
-                final isSelected = _selectedAccountId == account['accountId'];
-                final isSavingsAccount = account['accountType'] == 'Savings';
-
-                return GestureDetector(
-                  onTap: isSavingsAccount
-                      ? null
-                      : () {
-                          setState(() {
-                            _selectedAccountId = account['accountId'];
-                            _selectedAccount = account;
-                          });
-                          Navigator.pop(context);
-                        },
-                  child: Opacity(
-                    opacity: isSavingsAccount ? 0.5 : 1.0,
-                    child: Tooltip(
-                      message: isSavingsAccount
-                          ? 'Savings accounts cannot be used for transactions'
-                          : account['accountName'] ?? 'Unknown',
-                      child: Container(
-                        width: 140,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? const Color(0xFFA7E399)
-                              : (isSavingsAccount
-                                    ? Colors.grey[200]
-                                    : Colors.white),
-                          border: Border.all(
-                            color: isSelected
-                                ? const Color(0xFFF39C12)
-                                : (isSavingsAccount
-                                      ? Colors.grey[400]!
-                                      : Colors.grey[300]!),
-                            width: isSelected ? 2 : 1,
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Stack(
-                          children: [
-                            Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                // Account Logo
-                                Container(
-                                  width: 48,
-                                  height: 48,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFB0E0E6),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child:
-                                      account['iconImage'] != null &&
-                                          account['iconImage']
-                                              .toString()
-                                              .isNotEmpty
-                                      ? ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                          child: Image.network(
-                                            account['iconImage'],
-                                            fit: BoxFit.cover,
-                                            errorBuilder:
-                                                (context, error, stackTrace) {
-                                                  return Icon(
-                                                    Icons
-                                                        .account_balance_wallet,
-                                                    color: Colors.grey[600],
-                                                    size: 24,
-                                                  );
-                                                },
-                                          ),
-                                        )
-                                      : Icon(
-                                          Icons.account_balance_wallet,
-                                          color: Colors.grey[600],
-                                          size: 24,
-                                        ),
-                                ),
-                                const SizedBox(height: 8),
-                                // Account Name
-                                Text(
-                                  account['accountName'] ?? 'Unknown',
-                                  textAlign: TextAlign.center,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                // Account Balance
-                                Text(
-                                  'RM${account['balance']?.toString() ?? '0.00'}',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (isSavingsAccount)
-                              Positioned(
-                                top: 4,
-                                right: 4,
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.lock,
-                                    color: Colors.white,
-                                    size: 12,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
+          child: Column(
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Select Account',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
                       ),
                     ),
-                  ),
-                );
-              }).toList(),
-            ),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.close, size: 20),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              // Account Cards Grid
+              Expanded(
+                child: _accounts.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.account_balance_wallet,
+                              size: 48,
+                              color: Colors.grey.shade400,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'No accounts available',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : GridView.builder(
+                        controller: scrollController,
+                        padding: const EdgeInsets.all(16),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              childAspectRatio: 2.0,
+                              crossAxisSpacing: 12,
+                              mainAxisSpacing: 12,
+                            ),
+                        itemCount: _accounts.length,
+                        itemBuilder: (context, index) {
+                          final account = _accounts[index];
+                          final accountId = account['accountId'] as String;
+                          final isSelected = accountId == _selectedAccountId;
+                          final isSavingsAccount =
+                              account['accountType'] == 'Savings';
+
+                          return GestureDetector(
+                            onTap: isSavingsAccount
+                                ? null
+                                : () {
+                                    setState(() {
+                                      _selectedAccountId = accountId;
+                                      _selectedAccount = account;
+                                    });
+                                    Navigator.pop(context);
+                                  },
+                            child: Opacity(
+                              opacity: isSavingsAccount ? 0.5 : 1.0,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? const Color(0xFFA7E399)
+                                      : (isSavingsAccount
+                                            ? Colors.grey.shade100
+                                            : const Color(0xFFFFF9E6)),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? const Color(0xFFF39C12)
+                                        : (isSavingsAccount
+                                              ? Colors.grey.shade400
+                                              : const Color(0xFFFFE5B4)),
+                                    width: isSelected ? 2 : 1,
+                                  ),
+                                ),
+                                padding: const EdgeInsets.all(10),
+                                child: Row(
+                                  children: [
+                                    // Account Icon
+                                    Container(
+                                      width: 40,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFF9E6),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child:
+                                          account['iconImage'] != null &&
+                                              account['iconImage']
+                                                  .toString()
+                                                  .isNotEmpty
+                                          ? ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              child: Image.network(
+                                                account['iconImage'],
+                                                fit: BoxFit.contain,
+                                                errorBuilder:
+                                                    (
+                                                      context,
+                                                      error,
+                                                      stackTrace,
+                                                    ) {
+                                                      return Icon(
+                                                        Icons
+                                                            .account_balance_wallet,
+                                                        color: Colors.grey[600],
+                                                        size: 20,
+                                                      );
+                                                    },
+                                              ),
+                                            )
+                                          : Icon(
+                                              Icons.account_balance_wallet,
+                                              color: Colors.grey[600],
+                                              size: 20,
+                                            ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    // Account Details
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Text(
+                                            account['accountName'] ?? 'Unknown',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.black87,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            account['hideBalanceStatus'] ==
+                                                    false
+                                                ? 'RM${account['balance']?.toStringAsFixed(2) ?? '0.00'}'
+                                                : '*****',
+                                            style: TextStyle(
+                                              fontSize: 9,
+                                              color: Colors.grey.shade600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    // Check mark for selected
+                                    if (isSelected) ...[
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        width: 20,
+                                        height: 20,
+                                        decoration: BoxDecoration(
+                                          color: Colors.green,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.check,
+                                          color: Colors.white,
+                                          size: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -1647,4 +2105,358 @@ class _AddTransactionState extends State<AddTransaction> {
       ).showSnackBar(SnackBar(content: Text('Error refunding transfer: $e')));
     }
   }
+}
+
+// Ticket-shaped transaction preview dialog with animation
+class _TransactionTicketDialog extends StatefulWidget {
+  final String selectedType;
+  final String amount;
+  final DateTime selectedDate;
+  final String categoryName;
+  final String accountName;
+  final String fromAccountName;
+  final String toAccountName;
+  final String noteText;
+  final XFile? selectedImage;
+  final VoidCallback onConfirm;
+
+  const _TransactionTicketDialog({
+    required this.selectedType,
+    required this.amount,
+    required this.selectedDate,
+    required this.categoryName,
+    required this.accountName,
+    required this.fromAccountName,
+    required this.toAccountName,
+    required this.noteText,
+    required this.selectedImage,
+    required this.onConfirm,
+  });
+
+  @override
+  State<_TransactionTicketDialog> createState() =>
+      _TransactionTicketDialogState();
+}
+
+class _TransactionTicketDialogState extends State<_TransactionTicketDialog>
+    with TickerProviderStateMixin {
+  late AnimationController _checkmarkController;
+  late Animation<double> _scaleAnimation;
+  bool _isConfirmed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkmarkController = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    );
+
+    _scaleAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _checkmarkController, curve: Curves.elasticOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _checkmarkController.dispose();
+    super.dispose();
+  }
+
+  void _handleConfirm() async {
+    if (_isConfirmed) return;
+
+    setState(() {
+      _isConfirmed = true;
+    });
+
+    _checkmarkController.forward();
+
+    await Future.delayed(const Duration(milliseconds: 1500));
+
+    widget.onConfirm();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 8,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.75,
+        ),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF9E6),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header with checkmark animation
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Column(
+                  children: [
+                    if (!_isConfirmed)
+                      Text(
+                        widget.selectedType.toUpperCase(),
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFF39C12),
+                        ),
+                      )
+                    else
+                      ScaleTransition(
+                        scale: _scaleAnimation,
+                        child: Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(0xFFA7E399),
+                          ),
+                          child: const Icon(
+                            Icons.check,
+                            color: Colors.white,
+                            size: 48,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
+              // Ticket body with dashed divider
+              // Dashed divider
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: CustomPaint(
+                  size: const Size(double.infinity, 2),
+                  painter: DashedLinePainter(),
+                ),
+              ),
+
+              // Transaction details
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildDetailRow(
+                      'Date',
+                      widget.selectedDate.toLocal().toString().split(' ')[0],
+                    ),
+                    const SizedBox(height: 12),
+                    _buildDetailRow(
+                      'Time',
+                      '${widget.selectedDate.hour.toString().padLeft(2, '0')}:${widget.selectedDate.minute.toString().padLeft(2, '0')}',
+                    ),
+                    const SizedBox(height: 12),
+                    _buildDetailRow(
+                      'Amount',
+                      'RM${widget.amount}',
+                      isHighlight: true,
+                    ),
+                    const SizedBox(height: 16),
+                    // Dashed divider
+                    CustomPaint(
+                      size: const Size(double.infinity, 2),
+                      painter: DashedLinePainter(),
+                    ),
+                    const SizedBox(height: 16),
+                    if (widget.selectedType == 'transfer') ...[
+                      _buildDetailRow('From', widget.fromAccountName),
+                      const SizedBox(height: 12),
+                      _buildDetailRow('To', widget.toAccountName),
+                    ] else ...[
+                      _buildDetailRow('Category', widget.categoryName),
+                      const SizedBox(height: 12),
+                      _buildDetailRow('Account', widget.accountName),
+                    ],
+                    if (widget.noteText.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      // Dashed divider
+                      CustomPaint(
+                        size: const Size(double.infinity, 2),
+                        painter: DashedLinePainter(),
+                      ),
+                      const SizedBox(height: 16),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Note',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFAA8866),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            widget.noteText,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (widget.selectedImage != null) ...[
+                      const SizedBox(height: 16),
+                      // Dashed divider
+                      CustomPaint(
+                        size: const Size(double.infinity, 2),
+                        painter: DashedLinePainter(),
+                      ),
+                      const SizedBox(height: 16),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.file(
+                          File(widget.selectedImage!.path),
+                          height: 100,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              height: 100,
+                              color: Colors.grey[200],
+                              child: const Icon(Icons.image),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              // Action buttons
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _isConfirmed
+                            ? null
+                            : () => Navigator.pop(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey[300],
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _isConfirmed ? null : _handleConfirm,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFA7E399),
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: _isConfirmed
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.black,
+                                  ),
+                                ),
+                              )
+                            : const Text(
+                                'Confirm',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(
+    String label,
+    String value, {
+    bool isHighlight = false,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFFAA8866),
+          ),
+        ),
+        Flexible(
+          child: Text(
+            value,
+            style: TextStyle(
+              fontSize: isHighlight ? 16 : 14,
+              fontWeight: isHighlight ? FontWeight.bold : FontWeight.w500,
+              color: isHighlight ? const Color(0xFFA7E399) : Colors.black87,
+            ),
+            textAlign: TextAlign.end,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Custom painter for dashed lines
+class DashedLinePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFFFFE5B4)
+      ..strokeWidth = 2;
+
+    double x = 0;
+    final dashWidth = 8;
+    final dashSpace = 4;
+
+    while (x < size.width) {
+      canvas.drawLine(Offset(x, 0), Offset(x + dashWidth, 0), paint);
+      x += dashWidth + dashSpace;
+    }
+  }
+
+  @override
+  bool shouldRepaint(DashedLinePainter oldDelegate) => false;
 }

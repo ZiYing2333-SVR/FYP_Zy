@@ -25,38 +25,97 @@ class _RefundScreenState extends State<RefundScreen> {
   Future<void> _confirmRefund() async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFFFFF9E6),
+      builder: (context) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        contentPadding: const EdgeInsets.all(24),
-        title: const Text(
-          'Confirm Refund',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFFF39C12),
+        backgroundColor: const Color(0xFFFFF9E6),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF9E6),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Title
+              const Text(
+                'Confirm Refund',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFF39C12),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Description
+              Text(
+                'Are you sure you want to refund RM${widget.amount.toStringAsFixed(2)} to ${widget.accountName}?\n\nThe record will be marked as refunded but not deleted.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF666666),
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 24),
+              // Buttons Row
+              Row(
+                children: [
+                  // Cancel Button
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.grey[700],
+                        side: BorderSide(color: Colors.grey[300]!, width: 1.5),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Text(
+                          'Cancel',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Confirm Button
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFA7E399),
+                        foregroundColor: Colors.black87,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Text(
+                          'Confirm',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
-        content: Text(
-          'Are you sure you want to refund RM${widget.amount.toStringAsFixed(2)} to ${widget.accountName}?',
-          style: const TextStyle(color: Color(0xFF666666)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: Color(0xFFF39C12)),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text(
-              'Confirm',
-              style: TextStyle(color: Color(0xFFA7E399)),
-            ),
-          ),
-        ],
       ),
     );
 
@@ -96,14 +155,94 @@ class _RefundScreenState extends State<RefundScreen> {
           .eq('accountId', widget.accountId);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Refund of RM${widget.amount.toStringAsFixed(2)} processed successfully',
-            ),
-          ),
+        // Show success dialog
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              backgroundColor: const Color(0xFFFFF9E6),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF9E6),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Success icon
+                    Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFFA7E399),
+                      ),
+                      child: const Icon(
+                        Icons.check,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Success title
+                    const Text(
+                      'Refund Successful!',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFF39C12),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Success message
+                    Text(
+                      'RM${widget.amount.toStringAsFixed(2)} has been refunded to ${widget.accountName}.\n\nThe transaction record has been marked as refunded.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF666666),
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    // Done button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.of(context).popUntil(
+                            (route) =>
+                                route.settings.name == '/' || route.isFirst,
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFA7E399),
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        child: const Text('Done'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
-        Navigator.pop(context, true);
       }
     } catch (e) {
       print('Error processing refund: $e');

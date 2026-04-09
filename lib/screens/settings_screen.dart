@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 // import 'package:image_picker/image_picker.dart';
 // import 'dart:typed_data';
+import '../services/budget_alert_service.dart';
 import 'home_screen.dart';
 import 'welcome_screen.dart';
 import 'profile_settings_screen.dart';
@@ -23,18 +24,54 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen>
+    with WidgetsBindingObserver {
   int _selectedIndex = 4;
   String _userNickname = 'Nickname';
   String? _profileImageUrl;
   bool _isLoadingProfile = true;
   bool _hasBudgetAlert = false;
+  bool _hasBudgetCaution = false;
+  bool _alertsShownThisSession = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _fetchUserProfile();
-    _checkBudgetAlerts();
+    // _initializeAlerts(); // DISABLED: Prevent automatic budget alert popups
+  }
+
+  Future<void> _initializeAlerts() async {
+    await _checkBudgetAlerts();
+    await _checkBudgetCaution();
+
+    if (mounted && !_alertsShownThisSession) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _alertsShownThisSession = true;
+          if (_hasBudgetCaution) {
+            _showCautionAlertDialog();
+          } else if (_hasBudgetAlert) {
+            _showAlertDialog();
+          }
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      print('[SettingsScreen] App resumed, refreshing badge status...');
+      _checkBudgetCaution();
+    }
   }
 
   Future<void> _fetchUserProfile() async {
@@ -58,21 +95,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _checkBudgetAlerts() async {
     try {
-      final budgets = await Supabase.instance.client
-          .from('Budget')
-          .select()
-          .eq('userId', widget.userId);
-
-      bool hasAlert = false;
-
-      // Check each budget for >= 80% usage
-      for (var budget in budgets) {
-        final double usagePercentage = await _calculateBudgetUsage(budget);
-        if (usagePercentage >= 80) {
-          hasAlert = true;
-          break;
-        }
-      }
+      // Check if any budget has isAlert or isWarning flags
+      final alertService = BudgetAlertService();
+      final hasAlert = await alertService.hasAnyBudgetAlert(widget.userId);
 
       setState(() {
         _hasBudgetAlert = hasAlert;
@@ -156,6 +181,397 @@ class _SettingsScreenState extends State<SettingsScreen> {
       print('Error calculating budget usage: $e');
       return 0;
     }
+  }
+
+  Future<void> _checkBudgetCaution() async {
+    try {
+      final budgets = await Supabase.instance.client
+          .from('Budget')
+          .select()
+          .eq('userId', widget.userId);
+
+      final alertService = BudgetAlertService();
+      final Map<String, double> budgetUsageMap = {};
+
+      // Calculate all budget usage percentages
+      for (var budget in budgets) {
+        final double usagePercentage = await _calculateBudgetUsage(budget);
+        budgetUsageMap[budget['budgetId']] = usagePercentage;
+      }
+
+      // Check if any budget has caution alert using the new service
+      final hasCaution = await alertService.hasAnyCautionAlert(
+        widget.userId,
+        budgetUsageMap,
+      );
+
+      setState(() {
+        _hasBudgetCaution = hasCaution;
+      });
+    } catch (e) {
+      print('Error checking budget caution: $e');
+    }
+  }
+
+  void _showCautionAlertDialog() {
+    bool checkboxValue = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade100,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.warning_amber_rounded,
+                          color: Colors.orange.shade700,
+                          size: 40,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Budget Caution',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Your budget spending is over 70%. Please monitor your expenses to avoid exceeding your budget.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.black87,
+                          height: 1.5,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: checkboxValue,
+                            onChanged: (newValue) {
+                              setDialogState(() {
+                                checkboxValue = newValue ?? false;
+                              });
+                            },
+                            activeColor: Colors.orange.shade700,
+                          ),
+                          const Expanded(
+                            child: Text(
+                              'I understand, don\'t show this again',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.grey[300],
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text(
+                                'Close',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: checkboxValue
+                                  ? () {
+                                      Navigator.pop(context);
+                                    }
+                                  : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.orange.shade700,
+                                disabledBackgroundColor: Colors.grey[400],
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text(
+                                'Confirm',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showAlertDialog() {
+    bool checkboxValue = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFFFE5E5),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.error_rounded,
+                          color: Color(0xFFE53935),
+                          size: 40,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Budget Alert',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Your budget has been exceeded! Please review your expenses immediately.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.black87,
+                          height: 1.5,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: checkboxValue,
+                            onChanged: (newValue) {
+                              setDialogState(() {
+                                checkboxValue = newValue ?? false;
+                              });
+                            },
+                            activeColor: const Color(0xFFE53935),
+                          ),
+                          const Expanded(
+                            child: Text(
+                              'I understand, don\'t show this again',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.grey[300],
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text(
+                                'Close',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: checkboxValue
+                                  ? () {
+                                      Navigator.pop(context);
+                                    }
+                                  : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFE53935),
+                                disabledBackgroundColor: Colors.grey[400],
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text(
+                                'Confirm',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _dismissBudgetCaution(String budgetId) async {
+    try {
+      final alertService = BudgetAlertService();
+      await alertService.dismissCautionAlert(budgetId, widget.userId);
+
+      // Refresh caution status
+      _checkBudgetCaution();
+    } catch (e) {
+      print('Error dismissing budget caution: $e');
+    }
+  }
+
+  List<Widget> _buildNavBadges() {
+    // Position badge only on Settings icon (index 4)
+    final badges = <Widget>[];
+    const badgeSize = 20.0;
+    const badgeTopOffset = 8.0;
+    const badgeRightOffset = 12.0;
+
+    if (!(_hasBudgetCaution || _hasBudgetAlert)) {
+      return badges;
+    }
+
+    // Show isAlert (YELLOW) badge
+    if (_hasBudgetAlert) {
+      badges.add(
+        Positioned(
+          right: badgeRightOffset,
+          top: badgeTopOffset,
+          child: Container(
+            width: badgeSize,
+            height: badgeSize,
+            decoration: BoxDecoration(
+              color: Colors.orange.shade700, // YELLOW for isAlert
+              shape: BoxShape.circle,
+            ),
+            child: const Center(
+              child: Icon(Icons.warning_rounded, color: Colors.white, size: 12),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Show isWarning (RED) badge
+    if (_hasBudgetCaution) {
+      badges.add(
+        Positioned(
+          right: badgeRightOffset,
+          top: badgeTopOffset,
+          child: Container(
+            width: badgeSize,
+            height: badgeSize,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE53935), // RED for isWarning
+              shape: BoxShape.circle,
+            ),
+            child: const Center(
+              child: Text(
+                '!',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return badges;
   }
 
   @override
@@ -470,7 +886,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _buildMenuItem(
                     'Budget',
                     4,
-                    hasNotification: _hasBudgetAlert,
+                    hasAlert: _hasBudgetAlert,
+                    hasCaution: _hasBudgetCaution,
                     onTap: () {
                       Navigator.push(
                         context,
@@ -481,11 +898,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ).then((_) {
                         // Refresh alerts when returning from Budget page
                         _checkBudgetAlerts();
+                        _checkBudgetCaution();
                       });
                     },
                   ),
                   _buildDivider(),
-                  _buildMenuItem('Saving', 5),
+                  _buildMenuItem(
+                    'Saving',
+                    5,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              SavingsPage(userId: widget.userId),
+                        ),
+                      );
+                    },
+                  ),
                   _buildDivider(),
                   _buildMenuItem(
                     'Default Currency',
@@ -540,6 +970,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           BottomNavigationBar(
             currentIndex: _selectedIndex,
+            selectedItemColor: const Color(0xFFA7E399),
             backgroundColor: const Color(0xFFFEFFD3),
             type: BottomNavigationBarType.fixed,
             items: const [
@@ -586,30 +1017,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               }
             },
           ),
-          // Alert badge on Settings icon
-          if (_hasBudgetAlert)
-            Positioned(
-              right: 12,
-              top: 8,
-              child: Container(
-                width: 20,
-                height: 20,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFE53935),
-                  shape: BoxShape.circle,
-                ),
-                child: const Center(
-                  child: Text(
-                    '!',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          // Build badges for multiple nav icons
+          ..._buildNavBadges(),
         ],
       ),
     );
@@ -619,6 +1028,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     String title,
     int index, {
     bool hasNotification = false,
+    bool hasAlert = false,
+    bool hasCaution = false,
     VoidCallback? onTap,
   }) {
     return GestureDetector(
@@ -638,7 +1049,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ),
-            if (hasNotification)
+            // Caution icon (orange warning for 70-79% usage)
+            if (hasCaution)
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade700,
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(
+                  child: Icon(
+                    Icons.warning_rounded,
+                    color: Colors.white,
+                    size: 14,
+                  ),
+                ),
+              ),
+            // Alert icon (red ! for >= 80% usage) - only if no caution
+            if (hasAlert && !hasCaution)
+              Container(
+                width: 24,
+                height: 24,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE53935),
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(
+                  child: Text(
+                    '!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ),
+            // Generic notification icon (for backwards compatibility)
+            if (hasNotification && !hasAlert && !hasCaution)
               Container(
                 width: 24,
                 height: 24,

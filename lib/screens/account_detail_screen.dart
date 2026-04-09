@@ -213,20 +213,21 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFFFFB),
+      backgroundColor: const Color(0xFFFEFFD3),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFFFFFFB),
+        backgroundColor: const Color(0xFFFEFFD3),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: Text(
           'Account Details',
           style: TextStyle(
-            color: Colors.black,
+            color: Colors.black.withOpacity(0.8),
             fontSize: 18,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.3,
           ),
         ),
         centerTitle: true,
@@ -286,39 +287,49 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
                       }
                     },
                     child: Container(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFF8E7),
+                        color: const Color(0xFFF8FFFB),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: const Color(0xFFFFE5B4),
+                          color: const Color(0xFFE8F8F0),
                           width: 2,
                         ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF52C77A).withOpacity(0.08),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
                       child: Row(
                         children: [
                           // Account Icon
                           if (accountIcon != null && accountIcon.isNotEmpty)
                             Container(
-                              width: 60,
-                              height: 60,
+                              width: 50,
+                              height: 50,
                               decoration: BoxDecoration(
-                                shape: BoxShape.circle,
+                                color: const Color(0xFFE8F8F0),
+                                borderRadius: BorderRadius.circular(10),
                                 border: Border.all(
-                                  color: const Color(0xFFFFE5B4),
-                                  width: 2,
+                                  color: const Color(0xFFA7E399),
+                                  width: 1.5,
                                 ),
                               ),
-                              child: ClipOval(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
                                 child: Image.network(
                                   accountIcon,
                                   fit: BoxFit.contain,
                                   errorBuilder: (context, error, stackTrace) {
                                     return Container(
                                       color: Colors.grey[300],
-                                      child: const Icon(
+                                      child: Icon(
                                         Icons.account_balance,
-                                        size: 30,
+                                        size: 28,
+                                        color: Colors.black.withOpacity(0.6),
                                       ),
                                     );
                                   },
@@ -333,22 +344,24 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
                               children: [
                                 Text(
                                   accountName,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.black.withOpacity(0.8),
+                                    letterSpacing: 0.3,
                                   ),
                                 ),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 12),
                                 Text(
                                   _formatCurrencyWithSymbol(
                                     balance,
                                     accountData['currencyId'],
                                   ),
-                                  style: const TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF52C77A),
+                                  style: TextStyle(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.w900,
+                                    color: const Color(0xFF52C77A),
+                                    letterSpacing: -0.5,
                                   ),
                                 ),
                               ],
@@ -365,22 +378,34 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
                     ),
                   ),
                 ),
-                // Transactions Section
+                // Transactions Section Header
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: const Text(
-                      'Transaction',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFFBCBCBC),
+                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Transaction History',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black.withOpacity(0.8),
+                          letterSpacing: 0.3,
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 4),
+                      Container(
+                        height: 3,
+                        width: 40,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF39C12),
+                          borderRadius: BorderRadius.circular(1.5),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 // Transactions List
                 FutureBuilder<List<Map<String, dynamic>>>(
                   future: _transactionsFuture,
@@ -595,19 +620,28 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
                                       },
                                       child: Container(
                                         margin: const EdgeInsets.symmetric(
-                                          horizontal: 12,
+                                          horizontal: 16,
                                           vertical: 8,
                                         ),
                                         padding: const EdgeInsets.all(16),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFFFFFDD0),
+                                          color: const Color(0xFFFFF9E6),
                                           borderRadius: BorderRadius.circular(
                                             12,
                                           ),
                                           border: Border.all(
                                             color: const Color(0xFFFFE5B4),
-                                            width: 1,
+                                            width: 1.5,
                                           ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withOpacity(
+                                                0.05,
+                                              ),
+                                              blurRadius: 8,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ],
                                         ),
                                         child: Row(
                                           crossAxisAlignment:
@@ -618,9 +652,15 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
                                               width: 50,
                                               height: 50,
                                               decoration: BoxDecoration(
-                                                color: const Color(0xFFC8A5D8),
+                                                color: const Color(0xFFFFF9E6),
                                                 borderRadius:
-                                                    BorderRadius.circular(8),
+                                                    BorderRadius.circular(10),
+                                                border: Border.all(
+                                                  color: const Color(
+                                                    0xFFFFE5B4,
+                                                  ),
+                                                  width: 1.5,
+                                                ),
                                               ),
                                               child: isTransfer
                                                   ? const Icon(
@@ -741,7 +781,7 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
                                                             color: const Color(
                                                               0xFFFFE5B4,
                                                             ),
-                                                            width: 1,
+                                                            width: 1.5,
                                                           ),
                                                         ),
                                                         child: ClipOval(

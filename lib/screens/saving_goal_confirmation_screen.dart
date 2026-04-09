@@ -1293,21 +1293,6 @@ class _SavingGoalConfirmationScreenState
                                             color: Colors.white,
                                             size: 14,
                                           ),
-                                        )
-                                      else if (isAccountUsed)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            left: 12,
-                                          ),
-                                          child: Tooltip(
-                                            message:
-                                                'This account is already used in another goal',
-                                            child: Icon(
-                                              Icons.lock,
-                                              color: Colors.grey.shade400,
-                                              size: 16,
-                                            ),
-                                          ),
                                         ),
                                     ],
                                   ),

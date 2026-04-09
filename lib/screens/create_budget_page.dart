@@ -225,6 +225,8 @@ class _SelectionPage extends StatefulWidget {
 class _SelectionPageState extends State<_SelectionPage> {
   List<Map<String, dynamic>> _items = [];
   bool _isLoading = true;
+  Set<String> _itemsWithBudgets =
+      {}; // Store IDs of items that already have budgets
 
   @override
   void initState() {
@@ -232,9 +234,39 @@ class _SelectionPageState extends State<_SelectionPage> {
     _fetchItems();
   }
 
+  Future<void> _fetchExistingBudgets() async {
+    try {
+      final budgets = await Supabase.instance.client
+          .from('Budget')
+          .select()
+          .eq('userId', widget.userId);
+
+      final budgetIds = <String>{};
+      for (final budget in budgets) {
+        if (widget.tableName == 'Ledger' && budget['ledgerId'] != null) {
+          budgetIds.add(budget['ledgerId']);
+        } else if (widget.tableName == 'Account' &&
+            budget['accountId'] != null) {
+          budgetIds.add(budget['accountId']);
+        } else if (widget.tableName == 'Category' &&
+            budget['categoryId'] != null) {
+          budgetIds.add(budget['categoryId']);
+        }
+      }
+      setState(() {
+        _itemsWithBudgets = budgetIds;
+      });
+    } catch (e) {
+      print('Error fetching budgets: $e');
+    }
+  }
+
   Future<void> _fetchItems() async {
     try {
       setState(() => _isLoading = true);
+
+      // Fetch existing budgets first
+      await _fetchExistingBudgets();
 
       List<dynamic> response = [];
 
@@ -243,6 +275,13 @@ class _SelectionPageState extends State<_SelectionPage> {
             .from('Account')
             .select()
             .eq('userId', widget.userId);
+        // Filter out Savings accounts (case insensitive)
+        response = response.where((account) {
+          final accountType = (account['accountType'] ?? '')
+              .toString()
+              .toUpperCase();
+          return accountType != 'SAVINGS';
+        }).toList();
       } else if (widget.tableName == 'Ledger') {
         response = await Supabase.instance.client
             .from('Ledger')
@@ -261,6 +300,11 @@ class _SelectionPageState extends State<_SelectionPage> {
             .eq('userId', widget.userId);
 
         response = [...defaultCategories, ...userCategories];
+        // Filter to only show Expense categories (case insensitive)
+        response = response.where((category) {
+          final type = (category['type'] ?? '').toString().toUpperCase();
+          return type == 'EXPENSE';
+        }).toList();
       }
 
       setState(() {
@@ -336,6 +380,7 @@ class _SelectionPageState extends State<_SelectionPage> {
                 final idField = _getIdField();
                 final itemId = item[idField];
                 final itemName = item[widget.displayField] ?? 'Unknown';
+                final isDisabled = _itemsWithBudgets.contains(itemId);
 
                 // Get icon based on table type
                 String? iconPath;
@@ -345,67 +390,102 @@ class _SelectionPageState extends State<_SelectionPage> {
                   iconPath = item['icon'];
                 }
 
-                return GestureDetector(
-                  onTap: () {
-                    Navigator.pop(context, {'id': itemId, 'name': itemName});
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.green.shade200,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
+                return Column(
+                  children: [
+                    GestureDetector(
+                      onTap: isDisabled
+                          ? null
+                          : () {
+                              Navigator.pop(context, {
+                                'id': itemId,
+                                'name': itemName,
+                              });
+                            },
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
                         ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        // Icon display
-                        if (iconPath != null && iconPath.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 12),
-                            child: Image.network(
-                              iconPath,
-                              width: 32,
-                              height: 32,
-                              fit: BoxFit.contain,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Icon(
-                                  Icons.image_not_supported,
-                                  size: 32,
-                                  color: Colors.grey.shade400,
-                                );
-                              },
+                        decoration: BoxDecoration(
+                          color: isDisabled
+                              ? Colors.grey.shade200
+                              : Colors.green.shade200,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
                             ),
-                          ),
-                        Expanded(
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Icon display
+                            if (iconPath != null && iconPath.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 12),
+                                child: Image.network(
+                                  iconPath,
+                                  width: 32,
+                                  height: 32,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Icon(
+                                      Icons.image_not_supported,
+                                      size: 32,
+                                      color: Colors.grey.shade400,
+                                    );
+                                  },
+                                ),
+                              ),
+                            Expanded(
+                              child: Text(
+                                itemName,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDisabled
+                                      ? Colors.grey.shade600
+                                      : Colors.black87,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Icon(
+                              Icons.check_circle,
+                              color: isDisabled
+                                  ? Colors.grey.shade400
+                                  : Colors.green.shade600,
+                              size: 20,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    // Show message for disabled ledgers
+                    if (isDisabled && widget.tableName == 'Ledger')
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          left: 16,
+                          right: 16,
+                          bottom: 12,
+                        ),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
                           child: Text(
-                            itemName,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
+                            'Already set budget',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.orange.shade600,
+                              fontStyle: FontStyle.italic,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        Icon(
-                          Icons.check_circle,
-                          color: Colors.green.shade600,
-                          size: 20,
-                        ),
-                      ],
-                    ),
-                  ),
+                      ),
+                  ],
                 );
               },
             ),

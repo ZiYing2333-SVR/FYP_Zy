@@ -24,6 +24,7 @@ class _EditLedgerState extends State<EditLedger> {
   final _descriptionController = TextEditingController();
   String _errorMessage = '';
   bool _isLoading = false;
+  bool _isDeleting = false;
 
   @override
   void initState() {
@@ -251,6 +252,236 @@ class _EditLedgerState extends State<EditLedger> {
     }
   }
 
+  Future<void> _deleteLedger() async {
+    setState(() {
+      _isDeleting = true;
+    });
+
+    try {
+      await Supabase.instance.client
+          .from('Ledger')
+          .delete()
+          .eq('ledgerId', widget.ledgerId);
+
+      if (mounted) {
+        _showDeleteSuccessDialog();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error deleting ledger: $e')));
+      }
+      setState(() {
+        _isDeleting = false;
+      });
+    }
+  }
+
+  void _showDeleteConfirmationDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Warning icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.red[100],
+                  ),
+                  child: Icon(
+                    Icons.warning_amber_rounded,
+                    color: Colors.red[700],
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Title
+                const Text(
+                  'Delete Ledger',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFF39C12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Message
+                const Text(
+                  'Are you sure you want to delete this ledger? This action cannot be undone.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: Color(0xFF666666)),
+                ),
+                const SizedBox(height: 24),
+                // Buttons
+                Row(
+                  children: [
+                    // Cancel button
+                    Expanded(
+                      child: SizedBox(
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey[300],
+                            foregroundColor: Colors.black87,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Delete button
+                    Expanded(
+                      child: SizedBox(
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: _isDeleting
+                              ? null
+                              : () {
+                                  Navigator.pop(context);
+                                  _deleteLedger();
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFF6B6B),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            disabledBackgroundColor: const Color(0xFFFFB3B3),
+                          ),
+                          child: _isDeleting
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                  ),
+                                )
+                              : const Text('Delete'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showDeleteSuccessDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: const Color(0xFFFFF9E6),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF9E6),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Success icon
+              Container(
+                width: 60,
+                height: 60,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFFA7E399),
+                ),
+                child: const Icon(Icons.check, color: Colors.white, size: 32),
+              ),
+              const SizedBox(height: 20),
+              // Success title
+              const Text(
+                'Ledger Deleted Successfully!',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFF39C12),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Success message
+              const Text(
+                'Your ledger has been deleted successfully.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: Color(0xFF666666)),
+              ),
+              const SizedBox(height: 24),
+              // OK button
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context); // Close dialog
+                    Navigator.pop(context, true); // Return to ledger page
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFA7E399),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  child: const Text('OK'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -466,70 +697,60 @@ class _EditLedgerState extends State<EditLedger> {
               ),
               const SizedBox(height: 28),
               // Button Row
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // Cancel Button
-                  Expanded(
-                    child: SizedBox(
-                      height: 52,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _handleCancel,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.grey[200],
-                          foregroundColor: Colors.black87,
-                          disabledBackgroundColor: Colors.grey[300],
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          textStyle: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        child: const Text('Cancel'),
-                      ),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _updateLedger,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFA7E399),
+                    foregroundColor: Colors.black87,
+                    disabledBackgroundColor: const Color(
+                      0xFFA7E399,
+                    ).withOpacity(0.5),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(width: 16),
-                  // Save Button
-                  Expanded(
-                    child: SizedBox(
-                      height: 52,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _updateLedger,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFA7E399),
-                          foregroundColor: Colors.black87,
-                          disabledBackgroundColor: const Color(
-                            0xFFA7E399,
-                          ).withOpacity(0.5),
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.black87,
+                            ),
+                            strokeWidth: 2,
                           ),
-                          textStyle: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        child: _isLoading
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.black87,
-                                  ),
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text('Save Changes'),
-                      ),
+                        )
+                      : const Text('Save Changes'),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Delete Button
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: OutlinedButton(
+                  onPressed: _showDeleteConfirmationDialog,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red.shade600,
+                    side: BorderSide(color: Colors.red.shade600, width: 2),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                ],
+                  child: const Text('Delete Ledger'),
+                ),
               ),
               const SizedBox(height: 24),
             ],

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/budget_alert_service.dart';
+import '../services/alert_status_service.dart';
 import 'settings_screen.dart';
 import 'account_page.dart';
 import 'add_transaction.dart';
@@ -17,7 +19,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _selectedIndex = 0;
   DateTime _selectedDate = DateTime.now();
   DateTime _calendarDate = DateTime.now(); // For calendar view
@@ -29,6 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLoading = true;
   bool _showAmounts = true;
   bool _hasBudgetAlert = false;
+  bool _hasBudgetCaution = false;
   bool _isCalendarView = false; // Track view mode
   String _calendarFilter = 'Total'; // Calendar filter: Total, Income, Expenses
   Map<String, double> _dailyBalances = {}; // Daily balances for calendar
@@ -42,13 +45,52 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _selectedLedgerId;
   String? _currentUserId;
   bool _isLoadingLedgers = true;
+  bool _alertsShownThisSession =
+      false; // Track if alerts already shown this session
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _currentUserId = widget.userId;
     _fetchLedgers();
-    _checkBudgetAlerts();
+    // _initializeAlerts(); // DISABLED: Prevent automatic budget alert popups
+  }
+
+  Future<void> _initializeAlerts() async {
+    await _checkBudgetAlertFlags();
+    await _checkBudgetCaution();
+
+    // Show alerts once per session after a short delay
+    if (mounted && !_alertsShownThisSession) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _alertsShownThisSession = true;
+          if (_hasBudgetCaution) {
+            _showCautionAlertDialog();
+          } else if (_hasBudgetAlert) {
+            _showAlertDialog();
+          }
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      print(
+        '[HomeScreen] App resumed, refreshing badge status and transactions...',
+      );
+      _checkBudgetAlertFlags();
+      _fetchTransactions();
+    }
   }
 
   Future<void> _fetchLedgers() async {
@@ -512,29 +554,36 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _checkBudgetAlerts() async {
+  Future<void> _checkBudgetAlertFlags() async {
     try {
+      // Check if any budget has isAlert = true (yellow/orange badge)
       final budgets = await Supabase.instance.client
           .from('Budget')
-          .select()
+          .select('isAlert, isWarning')
           .eq('userId', _currentUserId ?? widget.userId);
 
       bool hasAlert = false;
+      bool hasWarning = false;
 
-      // Check each budget for >= 80% usage
       for (var budget in budgets) {
-        final double usagePercentage = await _calculateBudgetUsage(budget);
-        if (usagePercentage >= 80) {
+        if (budget['isAlert'] == true) {
           hasAlert = true;
-          break;
+        }
+        if (budget['isWarning'] == true) {
+          hasWarning = true;
         }
       }
 
       setState(() {
         _hasBudgetAlert = hasAlert;
+        _hasBudgetCaution = hasWarning;
       });
+
+      print(
+        '[HomeScreen] Badge status: isAlert=$hasAlert, isWarning=$hasWarning',
+      );
     } catch (e) {
-      print('Error checking budget alerts: $e');
+      print('Error checking budget alert flags: $e');
     }
   }
 
@@ -611,6 +660,39 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       print('Error calculating budget usage: $e');
       return 0;
+    }
+  }
+
+  Future<void> _checkBudgetCaution() async {
+    try {
+      final budgets = await Supabase.instance.client
+          .from('Budget')
+          .select()
+          .eq('userId', _currentUserId ?? widget.userId);
+
+      final alertService = BudgetAlertService();
+      final Map<String, double> budgetUsageMap = {};
+
+      // Calculate all budget usage percentages
+      for (var budget in budgets) {
+        final double usagePercentage = await _calculateBudgetUsage(budget);
+        budgetUsageMap[budget['budgetId']] = usagePercentage;
+      }
+
+      // Check if any budget has caution alert using the new service
+      final hasCaution = await alertService.hasAnyCautionAlert(
+        _currentUserId ?? widget.userId,
+        budgetUsageMap,
+      );
+
+      setState(() {
+        _hasBudgetCaution = hasCaution;
+      });
+
+      // Notify global service for real-time updates across all pages
+      AlertStatusService().updateCautionAlertStatus(hasCaution);
+    } catch (e) {
+      print('Error checking budget caution: $e');
     }
   }
 
@@ -727,7 +809,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: iconImage.isNotEmpty
                 ? Image.network(
                     iconImage,
-                    fit: BoxFit.cover,
+                    fit: BoxFit.contain,
                     errorBuilder: (context, error, stackTrace) {
                       return Container(
                         color: Colors.grey[300],
@@ -764,7 +846,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: iconImage.isNotEmpty
                 ? Image.network(
                     iconImage,
-                    fit: BoxFit.cover,
+                    fit: BoxFit.contain,
                     errorBuilder: (context, error, stackTrace) {
                       return Container(
                         color: Colors.grey[300],
@@ -1059,16 +1141,19 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildSelectedDayTransactionsList() {
     final date = _selectedCalendarDay!;
 
-    // Calculate daily income and expense
+    // Calculate daily income and expense (excluding transfers)
     double dayIncome = 0;
     double dayExpense = 0;
     for (var txn in _selectedDayTransactions) {
       final amount = double.tryParse(txn['amount'].toString()) ?? 0;
       final type = txn['type']?.toString().toLowerCase() ?? 'expense';
-      if (type == 'income') {
-        dayIncome += amount;
-      } else {
-        dayExpense += amount;
+      final isTransfer = txn['recordType'] == 'transfer';
+      if (!isTransfer) {
+        if (type == 'income') {
+          dayIncome += amount;
+        } else {
+          dayExpense += amount;
+        }
       }
     }
 
@@ -1209,7 +1294,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           width: 50,
                           height: 50,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFC8A5D8),
+                            color: const Color(0xFFFFF9E6),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: isTransfer
@@ -1260,13 +1345,17 @@ class _HomeScreenState extends State<HomeScreen> {
                               children: [
                                 // Amount
                                 Text(
-                                  '${type == 'income' ? '+' : '-'}RM${amount.toStringAsFixed(2)}',
+                                  isTransfer
+                                      ? 'RM${amount.toStringAsFixed(2)}'
+                                      : '${type == 'income' ? '+' : '-'}RM${amount.toStringAsFixed(2)}',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
-                                    color: type == 'income'
-                                        ? const Color(0xFF52C77A)
-                                        : const Color(0xFFE74C3C),
+                                    color: isTransfer
+                                        ? Colors.black
+                                        : (type == 'income'
+                                              ? const Color(0xFF52C77A)
+                                              : const Color(0xFFE74C3C)),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
@@ -1382,16 +1471,19 @@ class _HomeScreenState extends State<HomeScreen> {
         final dateTransactions = groupedByDate[dateKey]!;
         final date = DateTime.parse(dateTransactions[0]['date']);
 
-        // Calculate daily income and expense separately
+        // Calculate daily income and expense separately (excluding transfers)
         double dayIncome = 0;
         double dayExpense = 0;
         for (var txn in dateTransactions) {
           final amount = double.tryParse(txn['amount'].toString()) ?? 0;
           final type = txn['type']?.toString().toLowerCase() ?? 'expense';
-          if (type == 'income') {
-            dayIncome += amount;
-          } else {
-            dayExpense += amount;
+          final isTransfer = txn['recordType'] == 'transfer';
+          if (!isTransfer) {
+            if (type == 'income') {
+              dayIncome += amount;
+            } else {
+              dayExpense += amount;
+            }
           }
         }
 
@@ -1543,7 +1635,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               width: 50,
                               height: 50,
                               decoration: BoxDecoration(
-                                color: const Color(0xFFC8A5D8),
+                                color: const Color(0xFFFFF9E6),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: isTransfer
@@ -1594,13 +1686,17 @@ class _HomeScreenState extends State<HomeScreen> {
                                   children: [
                                     // Amount
                                     Text(
-                                      '${type == 'income' ? '+' : '-'}RM${amount.toStringAsFixed(2)}',
+                                      isTransfer
+                                          ? 'RM${amount.toStringAsFixed(2)}'
+                                          : '${type == 'income' ? '+' : '-'}RM${amount.toStringAsFixed(2)}',
                                       style: TextStyle(
                                         fontSize: 14,
                                         fontWeight: FontWeight.bold,
-                                        color: type == 'income'
-                                            ? const Color(0xFF52C77A)
-                                            : const Color(0xFFE74C3C),
+                                        color: isTransfer
+                                            ? Colors.black
+                                            : (type == 'income'
+                                                  ? const Color(0xFF52C77A)
+                                                  : const Color(0xFFE74C3C)),
                                       ),
                                     ),
                                     const SizedBox(width: 8),
@@ -1685,6 +1781,356 @@ class _HomeScreenState extends State<HomeScreen> {
               }).toList(),
             ],
           ),
+        );
+      },
+    );
+  }
+
+  List<Widget> _buildNavBadges() {
+    // Position badge only on Budget icon (index 2)
+    final badges = <Widget>[];
+    const badgeIndex = 2; // Budget button
+    const badgeSize = 20.0;
+    const badgeTopOffset = 8.0;
+    const badgeRightOffset = 12.0;
+
+    if (!(_hasBudgetCaution || _hasBudgetAlert)) {
+      return badges;
+    }
+
+    // Show isAlert (YELLOW/ORANGE) badge
+    if (_hasBudgetAlert) {
+      badges.add(
+        Positioned(
+          right: badgeRightOffset,
+          top: badgeTopOffset,
+          child: Container(
+            width: badgeSize,
+            height: badgeSize,
+            decoration: BoxDecoration(
+              color: Colors.orange.shade700, // YELLOW/ORANGE for isAlert
+              shape: BoxShape.circle,
+            ),
+            child: const Center(
+              child: Icon(Icons.warning_rounded, color: Colors.white, size: 12),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Show isWarning (RED) badge
+    if (_hasBudgetCaution) {
+      badges.add(
+        Positioned(
+          right: badgeRightOffset,
+          top: badgeTopOffset,
+          child: Container(
+            width: badgeSize,
+            height: badgeSize,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE53935), // RED for isWarning
+              shape: BoxShape.circle,
+            ),
+            child: const Center(
+              child: Text(
+                '!',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return badges;
+  }
+
+  void _showCautionAlertDialog() {
+    bool checkboxValue = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade100,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.warning_amber_rounded,
+                          color: Colors.orange.shade700,
+                          size: 40,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Budget Caution',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Your budget spending is over 70%. Please monitor your expenses to avoid exceeding your budget.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.black87,
+                          height: 1.5,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: checkboxValue,
+                            onChanged: (newValue) {
+                              setDialogState(() {
+                                checkboxValue = newValue ?? false;
+                              });
+                            },
+                            activeColor: Colors.orange.shade700,
+                          ),
+                          const Expanded(
+                            child: Text(
+                              'I understand, don\'t show this again',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.grey[300],
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text(
+                                'Close',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: checkboxValue
+                                  ? () {
+                                      Navigator.pop(context);
+                                    }
+                                  : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.orange.shade700,
+                                disabledBackgroundColor: Colors.grey[400],
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text(
+                                'Confirm',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showAlertDialog() {
+    bool checkboxValue = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFFFE5E5),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.error_rounded,
+                          color: Color(0xFFE53935),
+                          size: 40,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Budget Alert',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Your budget has been exceeded! Please review your expenses immediately.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.black87,
+                          height: 1.5,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: checkboxValue,
+                            onChanged: (newValue) {
+                              setDialogState(() {
+                                checkboxValue = newValue ?? false;
+                              });
+                            },
+                            activeColor: const Color(0xFFE53935),
+                          ),
+                          const Expanded(
+                            child: Text(
+                              'I understand, don\'t show this again',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.grey[300],
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text(
+                                'Close',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: checkboxValue
+                                  ? () {
+                                      Navigator.pop(context);
+                                    }
+                                  : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFE53935),
+                                disabledBackgroundColor: Colors.grey[400],
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text(
+                                'Confirm',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
         );
       },
     );
@@ -1990,33 +2436,23 @@ class _HomeScreenState extends State<HomeScreen> {
                             ],
                           ),
                           const SizedBox(height: 16),
-                          // Premium Card Design
+                          // Premium Card Design - Green Base
                           Container(
-                            padding: const EdgeInsets.all(24),
+                            padding: const EdgeInsets.all(20),
                             decoration: BoxDecoration(
-                              gradient: LinearGradient(
+                              gradient: const LinearGradient(
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
-                                colors: [
-                                  const Color(0xFFA7E399),
-                                  const Color(0xFF90EE90),
-                                ],
+                                colors: [Color(0xFFA7E399), Color(0xFFC8F7DC)],
                               ),
-                              borderRadius: BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
                                   color: const Color(
                                     0xFFA7E399,
-                                  ).withOpacity(0.4),
-                                  blurRadius: 20,
-                                  offset: const Offset(0, 10),
-                                ),
-                                BoxShadow(
-                                  color: const Color(
-                                    0xFFA7E399,
-                                  ).withOpacity(0.2),
-                                  blurRadius: 40,
-                                  offset: const Offset(0, 20),
+                                  ).withOpacity(0.3),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 6),
                                 ),
                               ],
                             ),
@@ -2032,8 +2468,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                       'Balance Overview',
                                       style: TextStyle(
                                         fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.black.withOpacity(0.6),
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
                                         letterSpacing: 0.5,
                                       ),
                                     ),
@@ -2055,14 +2491,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                           _showAmounts
                                               ? Icons.visibility
                                               : Icons.visibility_off,
-                                          color: Colors.black.withOpacity(0.7),
-                                          size: 18,
+                                          color: Colors.white,
+                                          size: 20,
                                         ),
                                       ),
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 20),
+                                const SizedBox(height: 16),
                                 // Total Balance (Large)
                                 Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2071,8 +2507,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                       'Total Balance',
                                       style: TextStyle(
                                         fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                        color: Colors.black.withOpacity(0.6),
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white.withOpacity(0.85),
+                                        letterSpacing: 0.3,
                                       ),
                                     ),
                                     const SizedBox(height: 8),
@@ -2081,14 +2518,15 @@ class _HomeScreenState extends State<HomeScreen> {
                                           ? 'RM${_totalAmount.toStringAsFixed(2)}'
                                           : '****',
                                       style: const TextStyle(
-                                        fontSize: 32,
+                                        fontSize: 36,
                                         fontWeight: FontWeight.w900,
-                                        color: Colors.black87,
+                                        color: Colors.white,
+                                        letterSpacing: -0.5,
                                       ),
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 28),
+                                const SizedBox(height: 16),
                                 // Income and Expense Row
                                 Row(
                                   mainAxisAlignment:
@@ -2097,57 +2535,64 @@ class _HomeScreenState extends State<HomeScreen> {
                                     // Income Card
                                     Expanded(
                                       child: Container(
-                                        padding: const EdgeInsets.all(12),
+                                        padding: const EdgeInsets.all(14),
                                         decoration: BoxDecoration(
-                                          color: Colors.white.withOpacity(0.96),
+                                          color: Colors.white,
                                           borderRadius: BorderRadius.circular(
                                             12,
                                           ),
+                                          border: Border.all(
+                                            color: const Color(0xFFE8F8F0),
+                                            width: 1.5,
+                                          ),
                                           boxShadow: [
                                             BoxShadow(
-                                              color: Colors.black.withOpacity(
-                                                0.08,
-                                              ),
-                                              blurRadius: 8,
+                                              color: const Color(
+                                                0xFF52C77A,
+                                              ).withOpacity(0.08),
+                                              blurRadius: 10,
                                               offset: const Offset(0, 2),
                                             ),
                                           ],
                                         ),
                                         child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.center,
                                           children: [
                                             Container(
                                               padding: const EdgeInsets.all(8),
                                               decoration: BoxDecoration(
                                                 color: const Color(
                                                   0xFF52C77A,
-                                                ).withOpacity(0.1),
+                                                ).withOpacity(0.12),
                                                 borderRadius:
-                                                    BorderRadius.circular(8),
+                                                    BorderRadius.circular(10),
                                               ),
                                               child: const Icon(
-                                                Icons.arrow_downward,
+                                                Icons.trending_down_rounded,
                                                 color: Color(0xFF52C77A),
-                                                size: 16,
+                                                size: 18,
                                               ),
                                             ),
-                                            const SizedBox(height: 8),
+                                            const SizedBox(height: 10),
                                             Text(
                                               'Income',
                                               style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
                                                 color: Colors.black.withOpacity(
-                                                  0.6,
+                                                  0.7,
                                                 ),
+                                                letterSpacing: 0.2,
                                               ),
                                             ),
-                                            const SizedBox(height: 4),
+                                            const SizedBox(height: 6),
                                             Text(
                                               _showAmounts
                                                   ? 'RM${_incomeAmount.toStringAsFixed(2)}'
                                                   : '****',
                                               style: const TextStyle(
-                                                fontSize: 14,
+                                                fontSize: 16,
                                                 fontWeight: FontWeight.w800,
                                                 color: Color(0xFF52C77A),
                                               ),
@@ -2160,57 +2605,64 @@ class _HomeScreenState extends State<HomeScreen> {
                                     // Expense Card
                                     Expanded(
                                       child: Container(
-                                        padding: const EdgeInsets.all(12),
+                                        padding: const EdgeInsets.all(14),
                                         decoration: BoxDecoration(
-                                          color: Colors.white.withOpacity(0.96),
+                                          color: Colors.white,
                                           borderRadius: BorderRadius.circular(
                                             12,
                                           ),
+                                          border: Border.all(
+                                            color: const Color(0xFFFAE8E3),
+                                            width: 1.5,
+                                          ),
                                           boxShadow: [
                                             BoxShadow(
-                                              color: Colors.black.withOpacity(
-                                                0.08,
-                                              ),
-                                              blurRadius: 8,
+                                              color: const Color(
+                                                0xFFE74C3C,
+                                              ).withOpacity(0.08),
+                                              blurRadius: 10,
                                               offset: const Offset(0, 2),
                                             ),
                                           ],
                                         ),
                                         child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.center,
                                           children: [
                                             Container(
                                               padding: const EdgeInsets.all(8),
                                               decoration: BoxDecoration(
                                                 color: const Color(
                                                   0xFFE74C3C,
-                                                ).withOpacity(0.1),
+                                                ).withOpacity(0.12),
                                                 borderRadius:
-                                                    BorderRadius.circular(8),
+                                                    BorderRadius.circular(10),
                                               ),
                                               child: const Icon(
-                                                Icons.arrow_upward,
+                                                Icons.trending_up_rounded,
                                                 color: Color(0xFFE74C3C),
-                                                size: 16,
+                                                size: 18,
                                               ),
                                             ),
-                                            const SizedBox(height: 8),
+                                            const SizedBox(height: 10),
                                             Text(
                                               'Expense',
                                               style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
                                                 color: Colors.black.withOpacity(
-                                                  0.6,
+                                                  0.7,
                                                 ),
+                                                letterSpacing: 0.2,
                                               ),
                                             ),
-                                            const SizedBox(height: 4),
+                                            const SizedBox(height: 6),
                                             Text(
                                               _showAmounts
                                                   ? 'RM${_expenseAmount.toStringAsFixed(2)}'
                                                   : '****',
                                               style: const TextStyle(
-                                                fontSize: 14,
+                                                fontSize: 16,
                                                 fontWeight: FontWeight.w800,
                                                 color: Color(0xFFE74C3C),
                                               ),
@@ -2282,7 +2734,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.smart_toy, color: Colors.black, size: 20),
+                    Icon(Icons.auto_awesome, color: Colors.black, size: 20),
                     SizedBox(width: 8),
                     Text(
                       'AI Features',
@@ -2302,6 +2754,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               BottomNavigationBar(
                 currentIndex: _selectedIndex,
+                selectedItemColor: const Color(0xFFA7E399),
                 backgroundColor: const Color(0xFFFEFFD3),
                 type: BottomNavigationBarType.fixed,
                 items: const [
@@ -2327,8 +2780,16 @@ class _HomeScreenState extends State<HomeScreen> {
                   setState(() {
                     _selectedIndex = index;
                   });
-                  if (index == 1) {
-                    Navigator.push(
+                  if (index == 0) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            HomeScreen(userId: _currentUserId!),
+                      ),
+                    );
+                  } else if (index == 1) {
+                    Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
                         builder: (context) =>
@@ -2336,7 +2797,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     );
                   } else if (index == 3) {
-                    Navigator.push(
+                    Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
                         builder: (context) =>
@@ -2344,42 +2805,20 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     );
                   } else if (index == 4) {
-                    Navigator.push(
+                    Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
                         builder: (context) =>
                             SettingsScreen(userId: _currentUserId!),
                       ),
                     ).then((_) {
-                      _checkBudgetAlerts();
+                      _checkBudgetAlertFlags();
                     });
                   }
                 },
               ),
-              // Alert badge on Settings icon
-              if (_hasBudgetAlert)
-                Positioned(
-                  right: 12,
-                  top: 8,
-                  child: Container(
-                    width: 20,
-                    height: 20,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFE53935),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Center(
-                      child: Text(
-                        '!',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              // Build badges for multiple nav icons
+              ..._buildNavBadges(),
             ],
           ),
         ],
@@ -2401,7 +2840,11 @@ class _HomeScreenState extends State<HomeScreen> {
             );
             // Refresh transactions if a new one was added
             if (result == true) {
+              // Refresh both list view and calendar view
               await _fetchTransactions();
+              await _calculateDailyBalances();
+              // Refresh budget alert flags
+              await _checkBudgetAlertFlags();
             }
           },
           child: const Icon(Icons.add, color: Colors.black, size: 30),
