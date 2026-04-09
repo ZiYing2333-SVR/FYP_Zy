@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:fyp_wx/FinancialTip/tip_detail_page.dart';
-import 'package:fyp_wx/FinancialTip/view_tips_page.dart';
+import 'package:fyp_zy/FinancialTip/tip_detail_page.dart';
+import 'package:fyp_zy/FinancialTip/view_tips_page.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';

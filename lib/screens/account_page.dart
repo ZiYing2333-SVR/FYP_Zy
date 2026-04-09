@@ -1106,10 +1106,8 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => PetHomePage(
-              userId: widget.userId,
-              petId: petId,
-            ),
+            builder: (context) =>
+                PetHomePage(userId: widget.userId, petId: petId),
           ),
         );
       } else {
@@ -1117,9 +1115,7 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => PetMainPage(
-              userId: widget.userId,
-            ),
+            builder: (context) => PetMainPage(userId: widget.userId),
           ),
         );
       }
@@ -1932,145 +1928,7 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
                 ),
               ),
             ),
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // AI Feature Button
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF90EE90),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                onPressed: () {
-                  // TODO: Navigate to AI Features
-                },
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.auto_awesome, color: Colors.black, size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      'AI Features',
-                      style: TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          // Bottom Navigation Bar
-          Stack(
-            children: [
-              BottomNavigationBar(
-                currentIndex: _selectedNavIndex,
-                selectedItemColor: const Color(0xFFA7E399),
-                backgroundColor: const Color(0xFFFEFFD3),
-                type: BottomNavigationBarType.fixed,
-                items: const [
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.home),
-                    label: 'Home',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.account_balance_wallet),
-                    label: 'Account',
-                  ),
-                  BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.savings),
-                    label: 'Saving',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.settings),
-                    label: 'Setting',
-                  ),
-                ],
-                onTap: (index) {
-                  setState(() {
-                    _selectedNavIndex = index;
-                  });
-                  if (index == 0) {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => HomeScreen(userId: widget.userId),
-                      ),
-                    );
-                  } else if (index == 3) {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            SavingsPage(userId: widget.userId),
-                      ),
-                    );
-                  } else if (index == 4) {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            SettingsScreen(userId: widget.userId),
-                      ),
-                    ).then((_) {
-                      _checkBudgetAlerts();
-                    });
-                  }
-                },
 
-                    // AI Features placeholder
-                    const SizedBox(height: 24),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: Colors.grey.shade300,
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.auto_awesome,
-                            size: 18,
-                            color: Colors.black87,
-                          ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'AI Features',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.black87,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 40),
-                  ],
-                ),
-              ),
-            ),
       bottomNavigationBar: Stack(
         children: [
           BottomNavigationBar(
@@ -2104,10 +1962,10 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
                     builder: (context) => HomeScreen(userId: widget.userId),
                   ),
                 );
-              }else if (index == 2) {
+              } else if (index == 2) {
                 // 🐶 PET LOGIC HERE
                 _handlePetNavigation();
-              }  else if (index == 3) {
+              } else if (index == 3) {
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
@@ -2149,10 +2007,9 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
                   ),
                 ),
               ),
-              // Build badges for multiple nav icons
-              ..._buildNavBadges(),
-            ],
-          ),
+            ),
+          // Build badges for multiple nav icons
+          ..._buildNavBadges(),
         ],
       ),
     );

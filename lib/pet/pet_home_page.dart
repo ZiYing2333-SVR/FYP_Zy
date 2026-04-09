@@ -1,18 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:fyp_wx/pet/pet_shop_page.dart';
+import 'package:fyp_zy/pet/pet_shop_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:fyp_wx/main.dart';
+import 'package:fyp_zy/main.dart';
+import 'package:fyp_zy/screens/home_screen.dart';
 import 'dart:async';
-import 'package:fyp_wx/pet/pet_game_widget.dart';
+import 'package:fyp_zy/pet/pet_game_widget.dart';
 
 class PetHomePage extends StatefulWidget {
   final String petId;
   final String userId;
 
-  const PetHomePage({
-    required this.petId,
-    required this.userId
-  });
+  const PetHomePage({required this.petId, required this.userId});
 
   @override
   State<PetHomePage> createState() => _PetHomePageState();
@@ -27,11 +25,9 @@ class _PetHomePageState extends State<PetHomePage> {
 
   List get filteredItems {
     return purchasedItems.where((item) {
-      return item['ShopItem']['category'] ==
-          selectedInventoryCategory;
+      return item['ShopItem']['category'] == selectedInventoryCategory;
     }).toList();
   }
-
 
   Map<String, dynamic>? petData;
   int coinBalance = 0;
@@ -59,23 +55,9 @@ class _PetHomePageState extends State<PetHomePage> {
   List equippedItems = [];
 
   Map<String, Map<String, dynamic>> slotConfig = {
-    "Hat": {
-      "top": 10,
-      "left": 0,
-      "right": 0,
-      "scale": 1.0,
-    },
-    "Clothes": {
-      "top": 60,
-      "left": 0,
-      "right": 0,
-      "scale": 1.0,
-    },
-    "Accessory": {
-      "top": 40,
-      "left": 20,
-      "scale": 0.6,
-    },
+    "Hat": {"top": 10, "left": 0, "right": 0, "scale": 1.0},
+    "Clothes": {"top": 60, "left": 0, "right": 0, "scale": 1.0},
+    "Accessory": {"top": 40, "left": 20, "scale": 0.6},
   };
 
   Future<void> fetchUser() async {
@@ -156,32 +138,28 @@ class _PetHomePageState extends State<PetHomePage> {
   }
 
   void startHappinessDecay() {
-    happinessTimer = Timer.periodic(
-      const Duration(seconds: 10),
-          (_) async {
-        if (!mounted) return; // 🔥 IMPORTANT
+    happinessTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+      if (!mounted) return; // 🔥 IMPORTANT
 
-        if (petData == null) return;
+      if (petData == null) return;
 
-        int current =
-        (petData!['happinessScore'] as num).toInt();
+      int current = (petData!['happinessScore'] as num).toInt();
 
-        if (current <= 0) return;
+      if (current <= 0) return;
 
-        int newScore = current - 1;
+      int newScore = current - 1;
 
-        await supabase
-            .from('Pet')
-            .update({'happinessScore': newScore})
-            .eq('petId', widget.petId);
+      await supabase
+          .from('Pet')
+          .update({'happinessScore': newScore})
+          .eq('petId', widget.petId);
 
-        if (!mounted) return; // 🔥 DOUBLE SAFETY
+      if (!mounted) return; // 🔥 DOUBLE SAFETY
 
-        setState(() {
-          petData!['happinessScore'] = newScore;
-        });
-      },
-    );
+      setState(() {
+        petData!['happinessScore'] = newScore;
+      });
+    });
   }
 
   Future<void> removeAllEquipment() async {
@@ -192,15 +170,12 @@ class _PetHomePageState extends State<PetHomePage> {
 
     await fetchEquippedItems();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("All equipment removed 🚫"),
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text("All equipment removed 🚫")));
   }
 
   Future<void> removeBySlot(String slotType) async {
-
     final data = await supabase
         .from('PetCustomization')
         .select('''
@@ -213,8 +188,7 @@ class _PetHomePageState extends State<PetHomePage> {
         .eq('isEquipped', true);
 
     for (var item in data) {
-      final itemSlot =
-      item['UserPurchasedItem']?['ShopItem']?['slotType'];
+      final itemSlot = item['UserPurchasedItem']?['ShopItem']?['slotType'];
 
       if (itemSlot == slotType) {
         await supabase
@@ -226,24 +200,19 @@ class _PetHomePageState extends State<PetHomePage> {
 
     await fetchEquippedItems();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("$slotType removed 🚫"),
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text("$slotType removed 🚫")));
   }
 
   Future<List<String>> _getSameSlotItems(String slotType) async {
-    final data = await supabase
-        .from('UserPurchasedItem')
-        .select('''
+    final data = await supabase.from('UserPurchasedItem').select('''
         purchasedItemId,
         ShopItem (slotType)
       ''');
 
     return data
-        .where((item) =>
-    item['ShopItem']['slotType'] == slotType)
+        .where((item) => item['ShopItem']['slotType'] == slotType)
         .map<String>((item) => item['purchasedItemId'])
         .toList();
   }
@@ -252,21 +221,14 @@ class _PetHomePageState extends State<PetHomePage> {
     final shopItem = purchasedItem['ShopItem'];
 
     String slotType = shopItem['slotType'];
-    int happinessBoost =
-        (shopItem['happinessBoost'] as num?)?.toInt() ?? 0;
+    int happinessBoost = (shopItem['happinessBoost'] as num?)?.toInt() ?? 0;
 
-    String purchasedItemId =
-    purchasedItem['purchasedItemId'];
+    String purchasedItemId = purchasedItem['purchasedItemId'];
 
-    String customizationId =
-    await generateCustomizationId();
+    String customizationId = await generateCustomizationId();
 
     if (slotType == "Consumable") {
-      await consumeFood(
-        purchasedItemId,
-        customizationId,
-        happinessBoost,
-      );
+      await consumeFood(purchasedItemId, customizationId, happinessBoost);
     } else {
       await equipItem(
         purchasedItemId,
@@ -301,11 +263,10 @@ class _PetHomePageState extends State<PetHomePage> {
   }
 
   Future<void> consumeFood(
-      String purchasedItemId,
-      String customizationId,
-      int happinessBoost,
-      ) async {
-
+    String purchasedItemId,
+    String customizationId,
+    int happinessBoost,
+  ) async {
     await supabase.from('PetCustomization').insert({
       'customizationId': customizationId,
       'appliedAt': DateTime.now().toIso8601String(),
@@ -345,12 +306,11 @@ class _PetHomePageState extends State<PetHomePage> {
   }
 
   Future<void> equipItem(
-      String purchasedItemId,
-      String customizationId,
-      int happinessBoost,
-      String slotType,
-      ) async {
-
+    String purchasedItemId,
+    String customizationId,
+    int happinessBoost,
+    String slotType,
+  ) async {
     /// 1️⃣ Unequip same slot
     final existing = await supabase
         .from('PetCustomization')
@@ -364,8 +324,7 @@ class _PetHomePageState extends State<PetHomePage> {
         .eq('isEquipped', true);
 
     for (var item in existing) {
-      final existingSlot =
-      item['UserPurchasedItem']?['ShopItem']?['slotType'];
+      final existingSlot = item['UserPurchasedItem']?['ShopItem']?['slotType'];
 
       if (existingSlot == slotType) {
         await supabase
@@ -388,10 +347,10 @@ class _PetHomePageState extends State<PetHomePage> {
       await supabase
           .from('PetCustomization')
           .update({
-        'isEquipped': true,
-        'isConsumed': false,
-        'appliedAt': DateTime.now().toIso8601String(),
-      })
+            'isEquipped': true,
+            'isConsumed': false,
+            'appliedAt': DateTime.now().toIso8601String(),
+          })
           .eq('customizationId', existingItem['customizationId']);
     } else {
       /// ✅ INSERT
@@ -408,7 +367,6 @@ class _PetHomePageState extends State<PetHomePage> {
     /// 3️⃣ Update happiness
     await increaseHappiness(happinessBoost);
   }
-
 
   Future<void> increaseHappiness(int boost) async {
     int current = (petData!['happinessScore'] as num).toInt();
@@ -438,27 +396,18 @@ class _PetHomePageState extends State<PetHomePage> {
           decoration: BoxDecoration(
             color: const Color(0xFFF5EBD9),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: const Color(0xFFA77A5C),
-              width: 3,
-            ),
+            border: Border.all(color: const Color(0xFFA77A5C), width: 3),
           ),
 
           child: Text(
             msg,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
         ),
       ),
     );
   }
-
-
-
 
   /// 🧠 Decide which image to show
   String getPetImage() {
@@ -479,9 +428,7 @@ class _PetHomePageState extends State<PetHomePage> {
   @override
   Widget build(BuildContext context) {
     if (petData == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -507,9 +454,14 @@ class _PetHomePageState extends State<PetHomePage> {
                       iconButton(
                         icon: Icons.home,
                         onTap: () {
-                          Navigator.of(context).popUntil((route) => route.isFirst);
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  HomeScreen(userId: widget.userId),
+                            ),
+                          );
                         },
-
                       ),
 
                       const SizedBox(height: 12),
@@ -520,11 +472,10 @@ class _PetHomePageState extends State<PetHomePage> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
-                                  PetShopPage(
-                                    petId: widget.petId,
-                                    userId: widget.userId,
-                                  ),
+                              builder: (_) => PetShopPage(
+                                petId: widget.petId,
+                                userId: widget.userId,
+                              ),
                             ),
                           );
                         },
@@ -541,15 +492,12 @@ class _PetHomePageState extends State<PetHomePage> {
                     children: [
                       statBox(
                         icon: Icons.monetization_on,
-                        value:
-                        coinBalance.toString(),
+                        value: coinBalance.toString(),
                       ),
                       const SizedBox(height: 8),
                       statBox(
-                        icon: Icons
-                            .sentiment_satisfied,
-                        value:
-                        "${petData!['happinessScore']}%",
+                        icon: Icons.sentiment_satisfied,
+                        value: "${petData!['happinessScore']}%",
                       ),
                     ],
                   ),
@@ -562,14 +510,15 @@ class _PetHomePageState extends State<PetHomePage> {
                     height: 220,
                     child: ClipRect(
                       child: PetGameWidget(
-                        key: ValueKey("${petData!['happinessScore']}_${equippedItems.length}"),
+                        key: ValueKey(
+                          "${petData!['happinessScore']}_${equippedItems.length}",
+                        ),
                         petData: petData!,
                         equippedItems: equippedItems,
                       ),
                     ),
                   ),
                 ),
-
 
                 /// Arrow
                 /// 🔽⬆ Toggle Arrow
@@ -582,7 +531,6 @@ class _PetHomePageState extends State<PetHomePage> {
                         : Icons.keyboard_arrow_up,
 
                     onTap: () async {
-
                       if (!showInventory) {
                         await fetchInventory();
                       }
@@ -593,7 +541,6 @@ class _PetHomePageState extends State<PetHomePage> {
                     },
                   ),
                 ),
-
               ],
             ),
           ),
@@ -606,23 +553,15 @@ class _PetHomePageState extends State<PetHomePage> {
                 ? MediaQuery.of(context).size.height * 0.5
                 : 0,
 
-            child: showInventory
-                ? inventoryPanel()
-                : null,
+            child: showInventory ? inventoryPanel() : null,
           ),
-
-
         ],
       ),
     );
-
   }
 
   /// Rounded Icon Button
-  Widget iconButton({
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
+  Widget iconButton({required IconData icon, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -635,50 +574,29 @@ class _PetHomePageState extends State<PetHomePage> {
             width: 3,
           ),
         ),
-        child: Icon(
-          icon,
-          size: 28,
-          color: Colors.black,
-        ),
+        child: Icon(icon, size: 28, color: Colors.black),
       ),
     );
   }
 
   /// Stat Box (Coin / Happiness)
-  Widget statBox({
-    required IconData icon,
-    required String value,
-  }) {
+  Widget statBox({required IconData icon, required String value}) {
     return Container(
-      padding:
-      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0xFFF5EBD9),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: const Color(0xFFA77A5C),
-          width: 2,
-        ),
+        border: Border.all(color: const Color(0xFFA77A5C), width: 2),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-
           /// Equal icon width
-          SizedBox(
-            width: 24,
-            height: 24,
-            child: Icon(icon, size: 20),
-          ),
+          SizedBox(width: 24, height: 24, child: Icon(icon, size: 20)),
 
           const SizedBox(width: 6),
 
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -691,23 +609,14 @@ class _PetHomePageState extends State<PetHomePage> {
       decoration: BoxDecoration(
         color: const Color(0xFFF4F1EA),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: const Color(0xFFD8C3A5),
-          width: 2,
-        ),
+        border: Border.all(color: const Color(0xFFD8C3A5), width: 2),
       ),
 
       child: Column(
         children: [
-
-          Expanded(
-            child: Image.network(
-              item['imagePath'],
-            ),
-          ),
+          Expanded(child: Image.network(item['imagePath'])),
 
           const SizedBox(height: 4),
-
         ],
       ),
     );
@@ -715,48 +624,29 @@ class _PetHomePageState extends State<PetHomePage> {
 
   Widget inventoryPanel() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(
-          16, 18, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
 
       decoration: BoxDecoration(
         color: const Color(0xFFF5EBD9).withValues(alpha: 0.95),
 
-        borderRadius:
-        const BorderRadius.vertical(
-          top: Radius.circular(30),
-        ),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
 
-        border: Border.all(
-          color: const Color(0xFFA77A5C),
-          width: 3,
-        ),
+        border: Border.all(color: const Color(0xFFA77A5C), width: 3),
       ),
 
       child: Column(
         children: [
-
           const SizedBox(height: 12),
 
           /// 📂 Categories
           Row(
-            mainAxisAlignment:
-            MainAxisAlignment.spaceEvenly,
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
+              inventoryCategoryBtn("Food", Icons.restaurant),
 
-              inventoryCategoryBtn(
-                "Food",
-                Icons.restaurant,
-              ),
+              inventoryCategoryBtn("Accessories", Icons.diamond),
 
-              inventoryCategoryBtn(
-                "Accessories",
-                Icons.diamond,
-              ),
-
-              inventoryCategoryBtn(
-                "Clothes",
-                Icons.checkroom,
-              ),
+              inventoryCategoryBtn("Clothes", Icons.checkroom),
             ],
           ),
 
@@ -769,30 +659,24 @@ class _PetHomePageState extends State<PetHomePage> {
                   ? filteredItems.length
                   : filteredItems.length + 1,
 
-
-              gridDelegate:
-              const SliverGridDelegateWithFixedCrossAxisCount(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 3,
                 crossAxisSpacing: 12,
                 mainAxisSpacing: 12,
               ),
 
               itemBuilder: (_, i) {
-
                 /// 🚫 FIRST ITEM ONLY for Accessories / Clothes
-                if (i == 0 &&
-                    selectedInventoryCategory != "Food") {
+                if (i == 0 && selectedInventoryCategory != "Food") {
                   return restrictItem();
                 }
 
                 /// Adjust index
-                final itemIndex =
-                selectedInventoryCategory == "Food"
+                final itemIndex = selectedInventoryCategory == "Food"
                     ? i
                     : i - 1;
 
-                final item =
-                filteredItems[itemIndex]['ShopItem'];
+                final item = filteredItems[itemIndex]['ShopItem'];
 
                 return GestureDetector(
                   onTap: () async {
@@ -800,70 +684,45 @@ class _PetHomePageState extends State<PetHomePage> {
                   },
                   child: inventoryItem(item),
                 );
-
               },
-
             ),
           ),
-
         ],
       ),
     );
   }
 
-  Widget inventoryCategoryBtn(
-      String category,
-      IconData icon,
-      ) {
-    bool isSelected =
-        selectedInventoryCategory ==
-            category;
+  Widget inventoryCategoryBtn(String category, IconData icon) {
+    bool isSelected = selectedInventoryCategory == category;
 
     return GestureDetector(
       onTap: () {
         setState(() {
-          selectedInventoryCategory =
-              category;
+          selectedInventoryCategory = category;
         });
       },
 
       child: Container(
-        padding:
-        const EdgeInsets.symmetric(
-          horizontal: 9,
-          vertical: 6,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
 
         decoration: BoxDecoration(
           color: isSelected
               ? const Color(0xFFF5EBD9)
-              : const Color(0xFFF5EBD9)
-              .withOpacity(0.4),
+              : const Color(0xFFF5EBD9).withOpacity(0.4),
 
-          borderRadius:
-          BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(14),
 
-          border: Border.all(
-            color: const Color(
-                0xFFA77A5C),
-            width: 2,
-          ),
+          border: Border.all(color: const Color(0xFFA77A5C), width: 2),
         ),
 
         child: Row(
-          mainAxisSize:
-          MainAxisSize.min,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 16),
             const SizedBox(width: 4),
             Text(
               category,
-              style:
-              const TextStyle(
-                fontSize: 12,
-                fontWeight:
-                FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
             ),
           ],
         ),
@@ -891,22 +750,13 @@ class _PetHomePageState extends State<PetHomePage> {
         decoration: BoxDecoration(
           color: Colors.red.shade200,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: const Color(0xFFA77A5C),
-            width: 2,
-          ),
+          border: Border.all(color: const Color(0xFFA77A5C), width: 2),
         ),
 
         child: const Center(
-          child: Icon(
-            Icons.block,
-            color: Colors.white,
-            size: 32,
-          ),
+          child: Icon(Icons.block, color: Colors.white, size: 32),
         ),
       ),
     );
   }
-
-
 }

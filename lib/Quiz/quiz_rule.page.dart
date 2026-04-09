@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:fyp_wx/Quiz/quiz_play_page.dart';
-import 'package:fyp_wx/Quiz/view_quiz_page.dart';
+import 'package:fyp_zy/Quiz/quiz_play_page.dart';
+import 'package:fyp_zy/Quiz/view_quiz_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class QuizRulePage extends StatelessWidget {

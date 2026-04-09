@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:fyp_wx/Quiz/quiz_history_page.dart';
-import 'package:fyp_wx/Quiz/quiz_rule.page.dart';
+import 'package:fyp_zy/Quiz/quiz_history_page.dart';
+import 'package:fyp_zy/Quiz/quiz_rule.page.dart';
 import '../screens/settings_screen.dart';
 
 

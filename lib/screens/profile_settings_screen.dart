@@ -480,15 +480,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     }
   }
 
-  Future<void> handleFaceIdClick(
-      BuildContext context,
-      String userId,
-      ) async {
-
+  Future<void> handleFaceIdClick(BuildContext context, String userId) async {
     final supabase = Supabase.instance.client;
 
     try {
-
       /// ==============================
       /// 1️⃣ Check if Face ID exists
       /// ==============================
@@ -503,8 +498,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       /// ==============================
       /// 2️⃣ Ask for password
       /// ==============================
-      bool isVerified =
-      await showPasswordDialog(context, userId);
+      bool isVerified = await showPasswordDialog(context, userId);
 
       if (!isVerified) return;
 
@@ -520,181 +514,175 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           ),
         ),
       );
-
     } catch (e) {
-
       debugPrint("FaceID Click Error: $e");
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Something went wrong"),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Something went wrong")));
     }
   }
 
   Future<bool> showPasswordDialog(
-      BuildContext parentContext,
-      String userId,
-      ) async {
-
+    BuildContext parentContext,
+    String userId,
+  ) async {
     int attempts = 0;
     final controller = TextEditingController();
     final supabase = Supabase.instance.client;
 
     return await showDialog<bool>(
-      context: parentContext,
-      barrierDismissible: false,
-      builder: (dialogContext) {
+          context: parentContext,
+          barrierDismissible: false,
+          builder: (dialogContext) {
+            int attempts = 0; // stays inside dialog
 
-        int attempts = 0; // stays inside dialog
-
-        return StatefulBuilder(
-          builder: (context, setState) {
-
-            return AlertDialog(
-              backgroundColor: const Color(0xFFFFF9E6),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-
-              title: const Text(
-                "Enter Password",
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-
-              content: TextField(
-                controller: controller,
-                obscureText: true,
-                decoration: InputDecoration(
-                  hintText: "Password",
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide.none,
+            return StatefulBuilder(
+              builder: (context, setState) {
+                return AlertDialog(
+                  backgroundColor: const Color(0xFFFFF9E6),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                ),
-              ),
 
-              actions: [
+                  title: const Text(
+                    "Enter Password",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
 
-                /// CANCEL
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext, false);
-                  },
-                  child: const Text("Cancel"),
-                ),
+                  content: TextField(
+                    controller: controller,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      hintText: "Password",
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
 
-                /// CONFIRM
-                ElevatedButton(
-                  onPressed: () async {
-
-                    String password = controller.text;
-
-                    final res = await supabase
-                        .from('User')
-                        .select()
-                        .eq('userId', userId)
-                        .eq('password', password)
-                        .limit(1)
-                        .maybeSingle();
-
-                    if (res != null) {
-
-                      Navigator.pop(dialogContext, true);
-
-                    } else {
-
-                      attempts++;
-
-                      if (attempts >= 3) {
-
+                  actions: [
+                    /// CANCEL
+                    TextButton(
+                      onPressed: () {
                         Navigator.pop(dialogContext, false);
+                      },
+                      child: const Text("Cancel"),
+                    ),
 
-                        /// 🔥 SAFE WAY (NO CRASH)
-                        if (parentContext.mounted) {
-                          showDialog(
-                            context: parentContext,
-                            builder: (_) => Dialog(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Container(
-                                padding: const EdgeInsets.all(20),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFF9E6),
-                                  borderRadius: BorderRadius.circular(20),
+                    /// CONFIRM
+                    ElevatedButton(
+                      onPressed: () async {
+                        String password = controller.text;
+
+                        final res = await supabase
+                            .from('User')
+                            .select()
+                            .eq('userId', userId)
+                            .eq('password', password)
+                            .limit(1)
+                            .maybeSingle();
+
+                        if (res != null) {
+                          Navigator.pop(dialogContext, true);
+                        } else {
+                          attempts++;
+
+                          if (attempts >= 3) {
+                            Navigator.pop(dialogContext, false);
+
+                            /// 🔥 SAFE WAY (NO CRASH)
+                            if (parentContext.mounted) {
+                              showDialog(
+                                context: parentContext,
+                                builder: (_) => Dialog(
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(20),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFF9E6),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.error,
+                                          color: Colors.red,
+                                        ),
+
+                                        const SizedBox(height: 10),
+
+                                        const Text(
+                                          "Too many attempts",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+
+                                        const SizedBox(height: 10),
+
+                                        const Text(
+                                          "Please change your password.",
+                                          textAlign: TextAlign.center,
+                                        ),
+
+                                        const SizedBox(height: 20),
+
+                                        ElevatedButton(
+                                          onPressed: () {
+                                            Navigator.pop(parentContext);
+                                          },
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: const Color(
+                                              0xFFC8E6C9,
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            "OK",
+                                            style: TextStyle(
+                                              color: Colors.black,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-
-                                    const Icon(Icons.error, color: Colors.red),
-
-                                    const SizedBox(height: 10),
-
-                                    const Text(
-                                      "Too many attempts",
-                                      style: TextStyle(fontWeight: FontWeight.bold),
-                                    ),
-
-                                    const SizedBox(height: 10),
-
-                                    const Text(
-                                      "Please change your password.",
-                                      textAlign: TextAlign.center,
-                                    ),
-
-                                    const SizedBox(height: 20),
-
-                                    ElevatedButton(
-                                      onPressed: () {
-                                        Navigator.pop(parentContext);
-                                      },
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFFC8E6C9),
-                                      ),
-                                      child: const Text(
-                                        "OK",
-                                        style: TextStyle(color: Colors.black),
-                                      ),
-                                    ),
-                                  ],
+                              );
+                            }
+                          } else {
+                            ScaffoldMessenger.of(parentContext).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  "Wrong password (${attempts}/3)",
+                                  style: const TextStyle(color: Colors.white),
                                 ),
                               ),
-                            ),
-                          );
+                            );
+                          }
                         }
-
-                      } else {
-
-                        ScaffoldMessenger.of(parentContext).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              "Wrong password (${attempts}/3)",
-                              style: const TextStyle(color: Colors.white),
-                            ),
-                          ),
-                        );
-                      }
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFC8E6C9),
-                  ),
-                  child: const Text(
-                    "Confirm",
-                    style: TextStyle(color: Colors.black),
-                  ),
-                ),
-              ],
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFC8E6C9),
+                      ),
+                      child: const Text(
+                        "Confirm",
+                        style: TextStyle(color: Colors.black),
+                      ),
+                    ),
+                  ],
+                );
+              },
             );
           },
-        );
-      },
-    ) ?? false;
+        ) ??
+        false;
   }
 
   void showErrorDialog(BuildContext context) {
@@ -714,21 +702,13 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-
-                const Icon(
-                  Icons.error_outline,
-                  color: Colors.red,
-                  size: 60,
-                ),
+                const Icon(Icons.error_outline, color: Colors.red, size: 60),
 
                 const SizedBox(height: 12),
 
                 const Text(
                   "Too many attempts",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
 
                 const SizedBox(height: 8),
@@ -1329,164 +1309,68 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  // Face ID
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: GestureDetector(
-                      onTap: () async {
-                        print("Tapped");
-                        await handleFaceIdClick(context, widget.userId);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFC8E6C9),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: const [
-                            Text(
-                              'Face ID',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black,
-                              ),
-                            ),
-                            Icon(
-                              Icons.chevron_right,
-                              color: Colors.black,
-                              size: 24,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // Change Password
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFC8E6C9),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Change Password',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black,
-                            ),
-                          ),
-                          const Icon(
-                            Icons.chevron_right,
-                            color: Colors.black,
-                            size: 24,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  // Save Button
-                  Center(
-                    child: GestureDetector(
-                      onTap: _isSaving ? null : _saveUserData,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 40,
-                          vertical: 12,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFD966),
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        child: _isSaving
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text(
-                                'Save',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black,
-                                ),
-                              ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
                     const SizedBox(height: 12),
                     // Face ID
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0x99C8E6C9),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Face ID',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black,
+                      child: GestureDetector(
+                        onTap: () async {
+                          print("Tapped");
+                          await handleFaceIdClick(context, widget.userId);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFC8E6C9),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: const [
+                              Text(
+                                'Face ID',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black,
+                                ),
                               ),
-                            ),
-                            const Icon(
-                              Icons.chevron_right,
-                              color: Colors.black,
-                              size: 24,
-                            ),
-                          ],
+                              Icon(
+                                Icons.chevron_right,
+                                color: Colors.black,
+                                size: 24,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                     const SizedBox(height: 12),
                     // Change Password
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => ChangePasswordPage(
-                              userId: widget.userId,
-                              oldPassword: _oldPassword,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ChangePasswordPage(
+                                userId: widget.userId,
+                                oldPassword: _oldPassword,
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                          );
+                        },
                         child: Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: const Color(0x99C8E6C9),
+                            color: const Color(0xFFC8E6C9),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
+                            children: const [
+                              Text(
                                 'Change Password',
                                 style: TextStyle(
                                   fontSize: 14,
@@ -1494,7 +1378,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                                   color: Colors.black,
                                 ),
                               ),
-                              const Icon(
+                              Icon(
                                 Icons.chevron_right,
                                 color: Colors.black,
                                 size: 24,

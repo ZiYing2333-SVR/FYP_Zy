@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:fyp_wx/FinancialTip/tip_list_page.dart';
-import 'package:fyp_wx/FinancialTip/view_tips_page.dart';
+import 'package:fyp_zy/FinancialTip/tip_list_page.dart';
+import 'package:fyp_zy/FinancialTip/view_tips_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class FinancialTipLibraryPage extends StatefulWidget {

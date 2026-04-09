@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:fyp_wx/Challenge/view_achievement.dart';
+import 'package:fyp_zy/Challenge/view_achievement.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:percent_indicator/percent_indicator.dart';

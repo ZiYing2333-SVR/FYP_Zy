@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:fyp_wx/Challenge/preset_challenge_page.dart';
-import 'package:fyp_wx/Challenge/view_joined_challenge.dart';
+import 'package:fyp_zy/Challenge/preset_challenge_page.dart';
+import 'package:fyp_zy/Challenge/view_joined_challenge.dart';
 import '../screens/settings_screen.dart';
 import 'custom_challenge_list.dart';
 

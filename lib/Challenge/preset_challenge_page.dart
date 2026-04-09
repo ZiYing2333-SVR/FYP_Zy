@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:fyp_wx/Challenge/presetChallenge_detail.dart';
+import 'package:fyp_zy/Challenge/presetChallenge_detail.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'View_Challenge.dart';
 import 'presetChallenge_detail.dart';

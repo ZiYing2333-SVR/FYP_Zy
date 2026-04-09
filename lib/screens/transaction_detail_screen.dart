@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../Challenge/challenge_tracking_service.dart';
-import 'refund_screen.dart';
 import 'home_screen.dart';
 
 class TransactionDetailScreen extends StatefulWidget {
@@ -625,8 +624,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   }
 
   void _refundTransaction() {
-    if (_transaction == null) return;
-  void _navigateToRefund() {
     if (_transaction == null || widget.userId == null) return;
 
     final amount = double.tryParse(_transaction!['amount'].toString()) ?? 0;
@@ -647,7 +644,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Info icon
               Container(
                 width: 60,
                 height: 60,
@@ -662,7 +658,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-              // Title
               const Text(
                 'Refund Transaction?',
                 textAlign: TextAlign.center,
@@ -673,7 +668,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              // Description
               Text(
                 'Are you sure you want to refund RM${amount.toStringAsFixed(2)} from this transaction?',
                 textAlign: TextAlign.center,
@@ -684,10 +678,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              // Buttons Row
               Row(
                 children: [
-                  // Cancel Button
                   Expanded(
                     child: ElevatedButton(
                       onPressed: () => Navigator.pop(context, false),
@@ -712,7 +704,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  // Refund Button
                   Expanded(
                     child: ElevatedButton(
                       onPressed: () => Navigator.pop(context, true),
@@ -750,7 +741,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               double.tryParse(_transaction!['amount'].toString()) ?? 0;
           final type = _transaction!['type']?.toString().toLowerCase();
 
-          // 1. Get current account balance
+          // Get current account balance
           final accountResponse = await supabase
               .from('Account')
               .select('balance')
@@ -760,45 +751,27 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           final currentBalance =
               double.tryParse(accountResponse['balance'].toString()) ?? 0;
 
-          // 2. Calculate new balance (return amount to account)
+          // Calculate new balance
           double newBalance;
           if (type == 'income') {
-            // If it was income, subtract it (return it)
             newBalance = currentBalance - amount;
           } else {
-            // If it was expense, add it back (return it)
             newBalance = currentBalance + amount;
           }
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => RefundScreen(
-          transactionId: widget.transactionId,
-          amount: amount,
-          accountId: _transaction!['accountId'],
-          accountName: accountName,
-          userId: widget.userId!,
-        ),
-      ),
-    ).then((result) {
-      if (result == true) {
-        // Refresh transaction details and close
-        Navigator.pop(context, true);
-          // 3. Update account balance
+          // Update account balance
           await supabase
               .from('Account')
               .update({'balance': newBalance})
               .eq('accountId', _transaction!['accountId']);
 
-          // 4. Mark transaction as refunded
+          // Mark transaction as refunded
           await supabase
               .from('Transaction')
               .update({'refund': true})
               .eq('transactionId', widget.transactionId);
 
           if (mounted) {
-            // Show success dialog
             showDialog(
               context: context,
               barrierDismissible: false,
@@ -821,7 +794,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Success icon
                         Container(
                           width: 60,
                           height: 60,
@@ -836,7 +808,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                           ),
                         ),
                         const SizedBox(height: 20),
-                        // Success title
                         const Text(
                           'Transaction Refunded!',
                           textAlign: TextAlign.center,
@@ -847,7 +818,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        // Success message
                         Text(
                           'RM${amount.toStringAsFixed(2)} has been refunded to the account.',
                           textAlign: TextAlign.center,
@@ -858,17 +828,13 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                           ),
                         ),
                         const SizedBox(height: 24),
-                        // Done button
                         SizedBox(
                           width: double.infinity,
                           height: 48,
                           child: ElevatedButton(
                             onPressed: () {
                               Navigator.pop(context); // Close dialog
-                              Navigator.pop(
-                                context,
-                                true,
-                              ); // Return to previous page
+                              Navigator.pop(context, true); // Return
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFFA7E399),

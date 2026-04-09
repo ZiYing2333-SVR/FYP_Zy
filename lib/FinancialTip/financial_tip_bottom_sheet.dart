@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:fyp_wx/FinancialTip/view_tips_page.dart';
+import 'package:fyp_zy/FinancialTip/view_tips_page.dart';
 
 class FinancialTipBottomSheet extends StatelessWidget {
   final String userId;

@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:fyp_wx/Quiz/quiz_result_page.dart';
+import 'package:fyp_zy/Quiz/quiz_result_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../Missions/mission_service.dart';

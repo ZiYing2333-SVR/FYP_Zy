@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:fyp_wx/FinancialTip/tip_detail_page.dart';
+import 'package:fyp_zy/FinancialTip/tip_detail_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class TipListPage extends StatefulWidget {
