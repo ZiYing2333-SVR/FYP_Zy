@@ -147,38 +147,127 @@ class _ConfirmBulkTransactionsScreenState
     });
   }
 
+  void _showErrorDialog(String title, String message) {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Error icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.orange.withOpacity(0.2),
+                  ),
+                  child: const Icon(
+                    Icons.warning,
+                    color: Colors.orange,
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Error title
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Error message
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF666666),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      'OK',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _saveBulkTransactions() async {
     // Validate all transactions
     for (final t in _editableTransactions) {
       if (t['note'].toString().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('All notes must be filled')),
+        _showErrorDialog(
+          'Empty Note',
+          'All transaction notes must be filled before saving.',
         );
         return;
       }
 
       if (t['amount'] <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('All amounts must be greater than 0')),
+        _showErrorDialog(
+          'Invalid Amount',
+          'All transaction amounts must be greater than 0.',
         );
         return;
       }
 
       if (widget.selectedType != 'transfer' &&
           (t['categoryId'] == null || t['categoryId'].toString().isEmpty)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('All transactions must have a category'),
-          ),
+        _showErrorDialog(
+          'No Category Selected',
+          'All transactions must have a category selected before saving.',
         );
         return;
       }
 
       if (t['accountId'] == null || t['accountId'].toString().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('All transactions must have an account selected'),
-          ),
+        _showErrorDialog(
+          'No Account Selected',
+          'All transactions must have an account selected before saving.',
         );
         return;
       }
@@ -290,9 +379,10 @@ class _ConfirmBulkTransactionsScreenState
       }
     } catch (e) {
       print('Error saving bulk transactions: $e');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error saving transactions: $e')));
+      _showErrorDialog(
+        'Save Failed',
+        'Failed to save transactions. Please try again.\n\nError: $e',
+      );
     } finally {
       setState(() => _isSaving = false);
     }
@@ -695,6 +785,27 @@ class _ConfirmBulkTransactionsScreenState
                         initialDate: current['date'] as DateTime,
                         firstDate: DateTime(2000),
                         lastDate: DateTime.now(),
+                        builder: (context, child) {
+                          return Theme(
+                            data: ThemeData.light().copyWith(
+                              primaryColor: const Color(0xFFA7E399),
+                              scaffoldBackgroundColor: const Color(0xFFFEFFD3),
+                              dialogBackgroundColor: const Color(0xFFFEFFD3),
+                              colorScheme: const ColorScheme.light(
+                                primary: Color(0xFFA7E399),
+                                onPrimary: Colors.black,
+                                surface: Color(0xFFFEFFD3),
+                                onSurface: Colors.black87,
+                              ),
+                              textButtonTheme: TextButtonThemeData(
+                                style: TextButton.styleFrom(
+                                  foregroundColor: const Color(0xFFA7E399),
+                                ),
+                              ),
+                            ),
+                            child: child ?? Container(),
+                          );
+                        },
                       );
                       if (picked != null) {
                         _updateCurrentRecord({'date': picked});
@@ -1005,55 +1116,346 @@ class _ConfirmBulkTransactionsScreenState
     );
   }
 
+  void _showAccountBottomSheet(Map<String, dynamic> current) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.4,
+        maxChildSize: 0.8,
+        expand: false,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFFFF9E6),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Select Account',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.close, size: 20),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              // Account Cards Grid
+              Expanded(
+                child: widget.accounts.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.account_balance_wallet,
+                              size: 48,
+                              color: Colors.grey.shade400,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'No accounts available',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : GridView.builder(
+                        controller: scrollController,
+                        padding: const EdgeInsets.all(16),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              childAspectRatio: 2.0,
+                              crossAxisSpacing: 12,
+                              mainAxisSpacing: 12,
+                            ),
+                        itemCount: widget.accounts.length,
+                        itemBuilder: (context, index) {
+                          final account = widget.accounts[index];
+                          final accountId = account['accountId'] as String;
+                          final isSelected = accountId == current['accountId'];
+                          final balance = account['balance'] as num?;
+                          final hideBalance =
+                              account['hideBalanceStatus'] as bool? ?? false;
+                          final currencySymbol =
+                              (account['Currency'] as Map?)?['symbol']
+                                  as String? ??
+                              'RM';
+
+                          return GestureDetector(
+                            onTap: () {
+                              _updateCurrentRecord({'accountId': accountId});
+                              Navigator.pop(context);
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? const Color(0xFFA7E399)
+                                    : const Color(0xFFFFF9E6),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? const Color(0xFFF39C12)
+                                      : const Color(0xFFFFE5B4),
+                                  width: isSelected ? 2 : 1,
+                                ),
+                              ),
+                              padding: const EdgeInsets.all(10),
+                              child: Row(
+                                children: [
+                                  // Account Icon
+                                  Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFF9E6),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child:
+                                        account['iconImage'] != null &&
+                                            account['iconImage']
+                                                .toString()
+                                                .isNotEmpty
+                                        ? ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            child: Image.network(
+                                              AIService.getAccountIconUrl(
+                                                account['iconImage'] as String,
+                                              ),
+                                              fit: BoxFit.contain,
+                                              errorBuilder:
+                                                  (context, error, stackTrace) {
+                                                    return Icon(
+                                                      Icons
+                                                          .account_balance_wallet,
+                                                      color: Colors.grey[600],
+                                                      size: 20,
+                                                    );
+                                                  },
+                                            ),
+                                          )
+                                        : Icon(
+                                            Icons.account_balance_wallet,
+                                            color: Colors.grey[600],
+                                            size: 20,
+                                          ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // Account Details
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        // Account Name
+                                        Text(
+                                          account['accountName'] ?? 'Unknown',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.black87,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        // Account Balance
+                                        Text(
+                                          hideBalance
+                                              ? '*****'
+                                              : '$currencySymbol${balance?.toStringAsFixed(2) ?? '0.00'}',
+                                          style: TextStyle(
+                                            fontSize: 9,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  // Check mark for selected
+                                  if (isSelected) ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      width: 20,
+                                      height: 20,
+                                      decoration: BoxDecoration(
+                                        color: Colors.green,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.check,
+                                        color: Colors.white,
+                                        size: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildAccountSelector(Map<String, dynamic> current) {
     final selectedAccountId = current['accountId'] as String?;
     final selectedAccount = widget.accounts.firstWhereOrNull(
       (acc) => acc['accountId'] == selectedAccountId,
     );
+    final currencySymbol =
+        (selectedAccount?['Currency'] as Map?)?['symbol'] as String? ?? 'RM';
 
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: DropdownButton<String?>(
-        isExpanded: true,
-        value: selectedAccountId,
-        hint: const Padding(
-          padding: EdgeInsets.only(left: 12),
-          child: Text('Select Account'),
+    return GestureDetector(
+      onTap: () => _showAccountBottomSheet(current),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.withOpacity(0.3)),
         ),
-        underline: const SizedBox.shrink(),
-        items: widget.accounts.map((acc) {
-          final accId = acc['accountId'] as String?;
-          final accName = acc['accountName'] as String? ?? 'Unknown';
-          final iconImage = acc['iconImage'] as String? ?? '';
-
-          return DropdownMenuItem<String?>(
-            value: accId,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                children: [
-                  _buildAccountIcon(iconImage),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      accName,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                  ),
-                ],
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            // Account Icon
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFA7E399),
+                borderRadius: BorderRadius.circular(8),
               ),
+              child: selectedAccountId != null && selectedAccountId.isNotEmpty
+                  ? (() {
+                      final iconImage =
+                          selectedAccount?['iconImage'] as String?;
+                      return iconImage != null && iconImage.isNotEmpty
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.network(
+                                AIService.getAccountIconUrl(iconImage),
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Icon(
+                                    Icons.account_balance_wallet,
+                                    color: Colors.grey[600],
+                                    size: 20,
+                                  );
+                                },
+                              ),
+                            )
+                          : Icon(
+                              Icons.account_balance_wallet,
+                              color: Colors.grey[600],
+                              size: 20,
+                            );
+                    }())
+                  : Icon(
+                      Icons.account_balance_wallet,
+                      color: Colors.grey[600],
+                      size: 20,
+                    ),
             ),
-          );
-        }).toList(),
-        onChanged: (accountId) {
-          if (accountId != null) {
-            _updateCurrentRecord({'accountId': accountId});
-          }
-        },
+            const SizedBox(width: 12),
+            // Account Details
+            Expanded(
+              child: selectedAccountId != null && selectedAccountId.isNotEmpty
+                  ? (() {
+                      final hideBalance =
+                          selectedAccount?['hideBalanceStatus'] as bool? ??
+                          false;
+                      final balance = selectedAccount?['balance'] as num?;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            selectedAccount?['accountName'] ?? 'Unknown',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            hideBalance
+                                ? '*****'
+                                : '$currencySymbol${balance?.toStringAsFixed(2) ?? '0.00'}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      );
+                    }())
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text(
+                          'Select an account',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                          ),
+                        ),
+                        Text(
+                          'Choose account for transaction',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+            // Dropdown arrow
+            Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey[600]),
+          ],
+        ),
       ),
     );
   }
@@ -1166,6 +1568,14 @@ class _ConfirmBulkTransactionsScreenState
   }
 
   void _showAllCategoriesDialog(Map<String, dynamic> current) {
+    // Separate categories by type
+    final expenseCategories = widget.categories
+        .where((cat) => (cat['type'] as String?) == 'expense')
+        .toList();
+    final incomeCategories = widget.categories
+        .where((cat) => (cat['type'] as String?) == 'income')
+        .toList();
+
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -1184,7 +1594,7 @@ class _ConfirmBulkTransactionsScreenState
                 ),
               ),
               child: const Text(
-                'Select Category',
+                'All Categories',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -1193,27 +1603,283 @@ class _ConfirmBulkTransactionsScreenState
               ),
             ),
             Expanded(
-              child: ListView.builder(
-                itemCount: widget.categories.length,
-                itemBuilder: (_, index) {
-                  final category = widget.categories[index];
-                  final catName = category['name'] as String;
-                  final isSelected = catName == current['categoryName'];
+              child: ListView(
+                children: [
+                  // Expense Categories Section
+                  if (expenseCategories.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.shopping_cart,
+                            color: Colors.orange,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Expense Categories',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ...expenseCategories.map((category) {
+                      final catName = category['name'] as String;
+                      final categoryId = category['categoryId'] as String;
+                      final iconPath = category['icon'] as String?;
+                      final isSelected = catName == current['categoryName'];
+                      final categoryIconUrl =
+                          iconPath != null && iconPath.isNotEmpty
+                          ? AIService.getCategoryIconUrl(iconPath)
+                          : null;
 
-                  return ListTile(
-                    title: Text(catName),
-                    trailing: isSelected
-                        ? const Icon(Icons.check, color: Color(0xFFA7E399))
-                        : null,
-                    onTap: () {
-                      _updateCurrentRecord({
-                        'categoryId': category['categoryId'],
-                        'categoryName': catName,
-                      });
-                      Navigator.pop(context);
-                    },
-                  );
-                },
+                      return GestureDetector(
+                        onTap: () {
+                          _updateCurrentRecord({
+                            'categoryId': categoryId,
+                            'categoryName': catName,
+                          });
+                          Navigator.pop(context);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? const Color(0xFFA7E399).withOpacity(0.3)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isSelected
+                                  ? const Color(0xFFA7E399)
+                                  : Colors.grey.withOpacity(0.2),
+                              width: isSelected ? 2 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              // Category icon
+                              if (categoryIconUrl != null &&
+                                  categoryIconUrl.isNotEmpty)
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Image.network(
+                                    categoryIconUrl,
+                                    width: 40,
+                                    height: 40,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        width: 40,
+                                        height: 40,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                          color: const Color(0xFFA7E399),
+                                        ),
+                                        child: const Icon(
+                                          Icons.category,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                )
+                              else
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(6),
+                                    color: const Color(0xFFA7E399),
+                                  ),
+                                  child: const Icon(
+                                    Icons.category,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                ),
+                              const SizedBox(width: 12),
+                              // Category name
+                              Expanded(
+                                child: Text(
+                                  catName,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ),
+                              // Checkmark for selected
+                              if (isSelected)
+                                Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFA7E399),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.check,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                    const SizedBox(height: 8),
+                  ],
+                  // Income Categories Section
+                  if (incomeCategories.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.trending_up,
+                            color: const Color(0xFFA7E399),
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Income Categories',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ...incomeCategories.map((category) {
+                      final catName = category['name'] as String;
+                      final categoryId = category['categoryId'] as String;
+                      final iconPath = category['icon'] as String?;
+                      final isSelected = catName == current['categoryName'];
+                      final categoryIconUrl =
+                          iconPath != null && iconPath.isNotEmpty
+                          ? AIService.getCategoryIconUrl(iconPath)
+                          : null;
+
+                      return GestureDetector(
+                        onTap: () {
+                          _updateCurrentRecord({
+                            'categoryId': categoryId,
+                            'categoryName': catName,
+                          });
+                          Navigator.pop(context);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? const Color(0xFFA7E399).withOpacity(0.3)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isSelected
+                                  ? const Color(0xFFA7E399)
+                                  : Colors.grey.withOpacity(0.2),
+                              width: isSelected ? 2 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              // Category icon
+                              if (categoryIconUrl != null &&
+                                  categoryIconUrl.isNotEmpty)
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Image.network(
+                                    categoryIconUrl,
+                                    width: 40,
+                                    height: 40,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        width: 40,
+                                        height: 40,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                          color: const Color(0xFFA7E399),
+                                        ),
+                                        child: const Icon(
+                                          Icons.category,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                )
+                              else
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(6),
+                                    color: const Color(0xFFA7E399),
+                                  ),
+                                  child: const Icon(
+                                    Icons.category,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                ),
+                              const SizedBox(width: 12),
+                              // Category name
+                              Expanded(
+                                child: Text(
+                                  catName,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ),
+                              // Checkmark for selected
+                              if (isSelected)
+                                Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFA7E399),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.check,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                    const SizedBox(height: 8),
+                  ],
+                ],
               ),
             ),
           ],

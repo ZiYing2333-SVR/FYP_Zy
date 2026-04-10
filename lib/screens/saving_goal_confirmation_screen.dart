@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/bank_icon_helper.dart';
 import 'add_account_page1.dart';
 import 'home_screen.dart';
+import 'savings_page.dart';
 
 class SavingGoalConfirmationScreen extends StatefulWidget {
   final String userId;
@@ -111,20 +112,105 @@ class _SavingGoalConfirmationScreenState
     }
   }
 
+  void _showErrorDialog(String title, String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Error icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0xFFF39C12),
+                  ),
+                  child: const Icon(
+                    Icons.warning,
+                    color: Colors.white,
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Error title
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFF39C12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Error message
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF666666),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // OK button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFA7E399),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'OK',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _createSavingGoal() async {
     // Validate goal name
     if (_goalNameController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Please enter a goal name')));
+      _showErrorDialog('Goal Name Required', 'Please enter a goal name');
       return;
     }
 
     if (_selectedSourceAccountId == null || _selectedDestAccountId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select both source and destination accounts'),
-        ),
+      _showErrorDialog(
+        'Accounts Required',
+        'Please select both source and destination accounts',
       );
       return;
     }
@@ -244,11 +330,11 @@ class _SavingGoalConfirmationScreenState
                       child: ElevatedButton(
                         onPressed: () {
                           Navigator.pop(context); // Close dialog
-                          // Navigate to home screen (main page)
+                          // Navigate to savings page
                           Navigator.of(context).pushAndRemoveUntil(
                             MaterialPageRoute(
                               builder: (context) =>
-                                  HomeScreen(userId: widget.userId),
+                                  SavingsPage(userId: widget.userId),
                             ),
                             (route) => false,
                           );
@@ -277,9 +363,10 @@ class _SavingGoalConfirmationScreenState
     } catch (e) {
       print('Error creating saving goal: $e');
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error creating goal: $e')));
+        _showErrorDialog(
+          'Creation Failed',
+          'Failed to create goal: ${e.toString()}',
+        );
       }
     } finally {
       setState(() {
@@ -291,9 +378,9 @@ class _SavingGoalConfirmationScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFFFFB),
+      backgroundColor: const Color(0xFFFEFFD3),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFFFFFFB),
+        backgroundColor: const Color(0xFFFEFFD3),
         elevation: 0,
         leading: GestureDetector(
           onTap: () => Navigator.pop(context),
