@@ -164,7 +164,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           .lte('date', endOfMonth.toIso8601String())
           .order('date', ascending: false);
 
-      // Fetch transfers for the same date range (without Account joins to avoid PostgreSQL aliasing issues)
+      // Fetch accounts belonging to the selected ledger
+      final ledgerAccountsResponse = await supabase
+          .from('Account')
+          .select('accountId')
+          .eq('ledgerId', _selectedLedgerId ?? '');
+
+      // Build set of ledger account IDs for filtering transfers
+      final ledgerAccountIds = <String>{
+        for (var account in ledgerAccountsResponse)
+          account['accountId'] as String,
+      };
+
+      // Fetch transfers for the same date range
       final transferResponse = await supabase
           .from('Transfer')
           .select('*')
@@ -202,18 +214,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         }
       }
 
-      // Process transfers - show all but don't count refunded ones in totals
+      // Process transfers - show only those within the selected ledger
       for (var transfer in transferResponse) {
-        final enrichedTransfer = Map<String, dynamic>.from(transfer);
-        enrichedTransfer['recordType'] = 'transfer';
+        // Only include transfers where both accounts belong to the selected ledger
+        final fromAccountId = transfer['fromAccountId'] as String?;
+        final toAccountId = transfer['toAccountId'] as String?;
 
-        // Add account data for from and to accounts
-        enrichedTransfer['Account!fromAccountId'] =
-            accountsMap[transfer['fromAccountId']] ?? {};
-        enrichedTransfer['Account!toAccountId'] =
-            accountsMap[transfer['toAccountId']] ?? {};
+        if (fromAccountId != null &&
+            toAccountId != null &&
+            ledgerAccountIds.contains(fromAccountId) &&
+            ledgerAccountIds.contains(toAccountId)) {
+          final enrichedTransfer = Map<String, dynamic>.from(transfer);
+          enrichedTransfer['recordType'] = 'transfer';
 
-        allRecords.add(enrichedTransfer);
+          // Add account data for from and to accounts
+          enrichedTransfer['Account!fromAccountId'] =
+              accountsMap[transfer['fromAccountId']] ?? {};
+          enrichedTransfer['Account!toAccountId'] =
+              accountsMap[transfer['toAccountId']] ?? {};
+
+          allRecords.add(enrichedTransfer);
+        }
       }
 
       // Sort all records by date
