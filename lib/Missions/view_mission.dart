@@ -322,11 +322,30 @@ class _MissionPageState extends State<MissionPage> {
       if (achievementId == 'A0002' &&
           existingIds.contains('A0003')) return;
 
-      /// 🏆 INSERT (NO ID NEEDED)
+      /// 2️⃣ Generate ID
+      final last = await supabase
+          .from('UserAchievement')
+          .select('userAchievementId')
+          .order('userAchievementId', ascending: false)
+          .limit(1);
+
+      String newId;
+
+      if (last.isEmpty) {
+        newId = "UA00001";
+      } else {
+        String lastId = last.first['userAchievementId'];
+        int num = int.parse(lastId.substring(2));
+        num++;
+        newId = "UA${num.toString().padLeft(5, '0')}";
+      }
+
+      /// 3️⃣ Insert
       await supabase.from('UserAchievement').insert({
+        'userAchievementId': newId,
+        'awardedAt': DateTime.now().toIso8601String(),
         'userId': widget.userId,
         'achievementId': achievementId,
-        'awardedAt': DateTime.now().toIso8601String(),
       });
 
       /// 🎉 POPUP
