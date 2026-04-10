@@ -471,6 +471,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     if (confirm == true && _transaction != null) {
       try {
         final supabase = Supabase.instance.client;
+        final type = _transaction!['type']?.toString().toLowerCase();
 
         if (!isRefunded) {
           // For non-refunded transactions, reverse the account balance
@@ -485,7 +486,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               double.tryParse(accountResponse['balance'].toString()) ?? 0;
           final amount =
               double.tryParse(_transaction!['amount'].toString()) ?? 0;
-          final type = _transaction!['type']?.toString().toLowerCase();
 
           // 2. Calculate new balance (return amount to account)
           double newBalance;
@@ -513,6 +513,12 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         /// ✅ Recalculate preset challenge progress
         if (widget.userId != null) {
           await ChallengeTrackingService().updateUserChallenges(widget.userId!);
+        }
+
+        // ✅ For NON-REFUNDED EXPENSE transactions only: Recalculate budgets
+        // (Refunded transactions don't affect budgets since they're already excluded)
+        if (!isRefunded && type == 'expense' && widget.userId != null) {
+          await _recalculateBudgetsAfterRefund();
         }
 
         if (mounted) {
@@ -585,13 +591,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                         child: ElevatedButton(
                           onPressed: () {
                             Navigator.pop(context); // Close dialog
-                            Navigator.pushReplacement(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    HomeScreen(userId: widget.userId ?? ''),
-                              ),
-                            );
+                            // Return true only for non-refunded transactions (to trigger budget recalculation)
+                            // Return false for refunded transactions (no budget impact)
+                            Navigator.pop(context, !isRefunded);
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFA7E399),
@@ -841,14 +843,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                           child: ElevatedButton(
                             onPressed: () {
                               Navigator.pop(context); // Close dialog
-                              // Navigate to home page after refund
-                              Navigator.pushReplacement(
+                              Navigator.pop(
                                 context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      HomeScreen(userId: widget.userId ?? ''),
-                                ),
-                              );
+                                true,
+                              ); // Return to previous page with refresh signal
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFFA7E399),
@@ -1057,16 +1055,44 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         '[TransactionDetailScreen] Transaction refs - Category: $categoryId, Ledger: $ledgerId, Account: $accountId',
       );
 
-      // Query budgets that are linked to this transaction's category, ledger, or account
-      final budgets = await supabase
+      // Get ALL budgets for this user first
+      final allBudgets = await supabase
           .from('Budget')
           .select()
-          .eq('userId', widget.userId!)
-          .or(
-            'categoryId.eq.$categoryId,ledgerId.eq.$ledgerId,accountId.eq.$accountId',
-          );
+          .eq('userId', widget.userId!);
 
-      if (budgets.isEmpty) {
+      if (allBudgets.isEmpty) {
+        print('[TransactionDetailScreen] No budgets found for this user');
+        return;
+      }
+
+      // Filter to ONLY include budgets that are actually related to this transaction
+      final relatedBudgets = <Map<String, dynamic>>[];
+      for (var budget in allBudgets) {
+        final budgetType = budget['type'] ?? '';
+        bool isRelated = false;
+
+        // Check if budget is related based on its type
+        if (budgetType == 'category') {
+          // Category budget: only include if transaction has matching categoryId
+          isRelated = budget['categoryId'] == categoryId && categoryId != null;
+        } else if (budgetType == 'ledger') {
+          // Ledger budget: only include if transaction has matching ledgerId
+          isRelated = budget['ledgerId'] == ledgerId && ledgerId != null;
+        } else if (budgetType == 'account') {
+          // Account budget: only include if transaction has matching accountId
+          isRelated = budget['accountId'] == accountId && accountId != null;
+        }
+
+        if (isRelated) {
+          relatedBudgets.add(budget);
+          print(
+            '[TransactionDetailScreen] Budget ${budget['budgetId']} ($budgetType) is related to this transaction',
+          );
+        }
+      }
+
+      if (relatedBudgets.isEmpty) {
         print(
           '[TransactionDetailScreen] No budgets found for this transaction',
         );
@@ -1074,14 +1100,14 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       }
 
       print(
-        '[TransactionDetailScreen] Found ${budgets.length} relevant budgets',
+        '[TransactionDetailScreen] Found ${relatedBudgets.length} relevant budgets',
       );
 
       final alertService = BudgetAlertService();
       bool hasCautionAlert = false;
       bool hasExceedAlert = false;
 
-      for (var budget in budgets) {
+      for (var budget in relatedBudgets) {
         final budgetId = budget['budgetId'];
         final budgetType = budget['type'] ?? '';
         final budgetAmount = (budget['amount'] ?? 0).toDouble();

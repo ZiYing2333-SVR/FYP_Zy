@@ -470,6 +470,20 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           : DateTime.now(),
       firstDate: DateTime(1900),
       lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFFA7E399),
+              onPrimary: Colors.black,
+              secondary: Color(0xFFFFE5B4),
+              surface: Color(0xFFFFF9E6),
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
 
     if (picked != null) {

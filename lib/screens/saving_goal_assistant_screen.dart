@@ -70,6 +70,20 @@ class _SavingGoalAssistantScreenState extends State<SavingGoalAssistantScreen> {
       initialDate: isStartDate ? _selectedStartDate! : _selectedEndDate!,
       firstDate: DateTime.now(),
       lastDate: DateTime(2100),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFFA7E399),
+              onPrimary: Colors.black,
+              secondary: Color(0xFFFFE5B4),
+              surface: Color(0xFFFFF9E6),
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
 
     if (pickedDate != null) {

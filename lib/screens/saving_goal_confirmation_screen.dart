@@ -164,7 +164,7 @@ class _SavingGoalConfirmationScreenState
       await Supabase.instance.client.from('SavingGoal').insert({
         'goalId': goalId,
         'name': userEnteredGoalName,
-        'type': 'intelligent',
+        'type': 'cycle',
         'targetAmount': widget.plan['targetAmount'],
         'currentAmount': 0,
         'startDate': widget.plan['startDate'],

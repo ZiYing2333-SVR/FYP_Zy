@@ -43,25 +43,7 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
     _fetchCurrencies();
     _fetchAccountGroups();
     _fetchAccounts();
-    _initializeAlerts();
-  }
-
-  Future<void> _initializeAlerts() async {
-    await _checkBudgetAlerts();
-    await _checkBudgetCaution();
-
-    if (mounted && !_alertsShownThisSession) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _alertsShownThisSession = true;
-          if (_hasBudgetCaution) {
-            _showCautionAlertDialog();
-          } else if (_hasBudgetAlert) {
-            _showAlertDialog();
-          }
-        }
-      });
-    }
+    // Budget alerts disabled on this page
   }
 
   @override
@@ -119,8 +101,8 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
     double targetAmount = 0;
     if (goal != null) {
       targetAmount = (goal['targetAmount'] ?? 0).toDouble();
-      final currentAmount = (goal['currentAmount'] ?? 0).toDouble();
-      progress = _calculateGoalProgress(currentAmount, targetAmount);
+      // Use the actual account balance, not the goal's tracked currentAmount
+      progress = _calculateGoalProgress(balance, targetAmount);
     }
 
     return GestureDetector(

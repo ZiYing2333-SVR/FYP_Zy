@@ -59,21 +59,68 @@ class _AddTransactionState extends State<AddTransaction> {
     super.dispose();
   }
 
-  /// Update budget alert flags based on current usage
+  /// Update budget alert flags ONLY for budgets related to this transaction
+  /// This prevents showing alerts for unrelated budget categories
   Future<void> _updateBudgetAlertFlags() async {
     try {
-      // Get all budgets for this user
-      final budgets = await Supabase.instance.client
+      final categoryId = _selectedCategory?['categoryId'];
+      final accountId = _selectedAccountId;
+      final ledgerId = widget.ledgerId;
+
+      print(
+        '[AddTransaction] Updating budgets for: categoryId=$categoryId, accountId=$accountId, ledgerId=$ledgerId',
+      );
+
+      // Get ALL budgets for this user first
+      final allBudgets = await Supabase.instance.client
           .from('Budget')
           .select()
           .eq('userId', widget.userId);
 
-      if (budgets.isEmpty) return;
+      if (allBudgets.isEmpty) {
+        print('[AddTransaction] No budgets found for this user');
+        return;
+      }
+
+      // Filter to ONLY include budgets that are actually related to this transaction
+      final relatedBudgets = <Map<String, dynamic>>[];
+      for (var budget in allBudgets) {
+        final budgetType = budget['type'] ?? '';
+        bool isRelated = false;
+
+        // Check if budget is related based on its type
+        if (budgetType == 'category') {
+          // Category budget: only include if expense has matching categoryId
+          isRelated = budget['categoryId'] == categoryId && categoryId != null;
+        } else if (budgetType == 'ledger') {
+          // Ledger budget: only include if expense has matching ledgerId
+          isRelated = budget['ledgerId'] == ledgerId && ledgerId != null;
+        } else if (budgetType == 'account') {
+          // Account budget: only include if expense has matching accountId
+          isRelated = budget['accountId'] == accountId && accountId != null;
+        }
+
+        if (isRelated) {
+          relatedBudgets.add(budget);
+          print(
+            '[AddTransaction] Budget ${budget['budgetId']} ($budgetType) is related to this expense',
+          );
+        }
+      }
+
+      if (relatedBudgets.isEmpty) {
+        print(
+          '[AddTransaction] No related budgets found for this expense - no alert',
+        );
+        return;
+      }
+
+      print('[AddTransaction] Found ${relatedBudgets.length} related budgets');
 
       final alertService = BudgetAlertService();
 
-      // Check each budget and update flags
-      for (var budget in budgets) {
+      // Check each related budget and update flags
+      for (var budget in relatedBudgets) {
         final budgetId = budget['budgetId'];
         final budgetType = budget['type'] ?? '';
         final budgetAmount = (budget['amount'] ?? 0).toDouble();
@@ -102,39 +149,33 @@ class _AddTransactionState extends State<AddTransaction> {
             startDate = DateTime(now.year, now.month, 1);
         }
 
-        // Fetch transactions for this budget
+        // Fetch transactions for this specific budget based on its type
         List<dynamic> transactions = [];
 
         if (budgetType == 'account') {
-          final accountId = budget['accountId'];
-          if (accountId != null) {
-            transactions = await Supabase.instance.client
-                .from('Transaction')
-                .select()
-                .eq('accountId', accountId)
-                .eq('type', 'expense')
-                .gte('date', startDate.toIso8601String());
-          }
+          final budgetAccountId = budget['accountId'];
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('accountId', budgetAccountId)
+              .eq('type', 'expense')
+              .gte('date', startDate.toIso8601String());
         } else if (budgetType == 'category') {
-          final categoryId = budget['categoryId'];
-          if (categoryId != null) {
-            transactions = await Supabase.instance.client
-                .from('Transaction')
-                .select()
-                .eq('categoryId', categoryId)
-                .eq('type', 'expense')
-                .gte('date', startDate.toIso8601String());
-          }
+          final budgetCategoryId = budget['categoryId'];
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('categoryId', budgetCategoryId)
+              .eq('type', 'expense')
+              .gte('date', startDate.toIso8601String());
         } else if (budgetType == 'ledger') {
-          final ledgerId = budget['ledgerId'];
-          if (ledgerId != null) {
-            transactions = await Supabase.instance.client
-                .from('Transaction')
-                .select()
-                .eq('ledgerId', ledgerId)
-                .eq('type', 'expense')
-                .gte('date', startDate.toIso8601String());
-          }
+          final budgetLedgerId = budget['ledgerId'];
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('ledgerId', budgetLedgerId)
+              .eq('type', 'expense')
+              .gte('date', startDate.toIso8601String());
         }
 
         // Calculate total spent
@@ -153,11 +194,15 @@ class _AddTransactionState extends State<AddTransaction> {
         totalSpent = totalSpent < 0 ? 0 : totalSpent;
         final usagePercentage = (totalSpent / budgetAmount) * 100;
 
+        print(
+          '[AddTransaction] Related Budget $budgetId ($budgetType): $totalSpent / $budgetAmount = ${usagePercentage.toStringAsFixed(1)}%',
+        );
+
         // Update alert flags using the service
         await alertService.updateAlertFlags(budgetId, usagePercentage);
       }
 
-      print('Budget alert flags updated after transaction');
+      print('[AddTransaction] Budget alert flags updated for related budgets');
     } catch (e) {
       print('Error updating budget alert flags: $e');
     }

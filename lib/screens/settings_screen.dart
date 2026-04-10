@@ -11,6 +11,7 @@ import '../pet/pet_home_page.dart';
 import '../pet/pet_main.dart';
 import '../services/budget_alert_service.dart';
 import '../services/alert_status_service.dart';
+import '../services/missing_transfer_alert_service.dart';
 import '../widgets/shared_bottom_nav_bar.dart';
 import 'home_screen.dart';
 import 'welcome_screen.dart';
@@ -636,109 +637,135 @@ class _SettingsScreenState extends State<SettingsScreen>
                         // Profile Section
                         Stack(
                           children: [
-                            Container(
-                              margin: const EdgeInsets.fromLTRB(20, 24, 20, 16),
-                              padding: const EdgeInsets.all(28),
-                              width: double.infinity,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    const Color(0xFFFFF0F5),
-                                    const Color(0xFFFFE5F0),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(25),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: const Color(
-                                      0xFF52C77A,
-                                    ).withOpacity(0.15),
-                                    blurRadius: 15,
-                                    offset: const Offset(0, 5),
+                            GestureDetector(
+                              onTap: () async {
+                                final result = await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => ProfileSettingsScreen(
+                                      userId: widget.userId,
+                                    ),
                                   ),
-                                ],
-                                border: Border.all(
-                                  color: const Color(0xFFFFE5B4),
-                                  width: 1.5,
+                                );
+
+                                // If returned with true, refresh the profile data
+                                if (result == true) {
+                                  await _fetchUserProfile();
+                                }
+                              },
+                              child: Container(
+                                margin: const EdgeInsets.fromLTRB(
+                                  20,
+                                  24,
+                                  20,
+                                  16,
                                 ),
-                              ),
-                              child: Column(
-                                children: [
-                                  // Avatar with border
-                                  Container(
-                                    width: 110,
-                                    height: 110,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF52C77A),
-                                      shape: BoxShape.circle,
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: const Color(
-                                            0xFF52C77A,
-                                          ).withOpacity(0.3),
-                                          blurRadius: 12,
-                                          offset: const Offset(0, 4),
+                                padding: const EdgeInsets.all(28),
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      const Color(0xFFFFF0F5),
+                                      const Color(0xFFFFE5F0),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(25),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(
+                                        0xFF52C77A,
+                                      ).withOpacity(0.15),
+                                      blurRadius: 15,
+                                      offset: const Offset(0, 5),
+                                    ),
+                                  ],
+                                  border: Border.all(
+                                    color: const Color(0xFFFFE5B4),
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    // Avatar with border
+                                    Container(
+                                      width: 110,
+                                      height: 110,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF52C77A),
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: const Color(
+                                              0xFF52C77A,
+                                            ).withOpacity(0.3),
+                                            blurRadius: 12,
+                                            offset: const Offset(0, 4),
+                                          ),
+                                        ],
+                                        border: Border.all(
+                                          color: Colors.white,
+                                          width: 3,
                                         ),
-                                      ],
-                                      border: Border.all(
-                                        color: Colors.white,
-                                        width: 3,
+                                      ),
+                                      child: _isLoadingProfile
+                                          ? const Center(
+                                              child: CircularProgressIndicator(
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : _profileImageUrl != null &&
+                                                _profileImageUrl!.isNotEmpty
+                                          ? ClipOval(
+                                              child: Image.network(
+                                                _profileImageUrl!,
+                                                fit: BoxFit.cover,
+                                                errorBuilder:
+                                                    (
+                                                      context,
+                                                      error,
+                                                      stackTrace,
+                                                    ) {
+                                                      return Center(
+                                                        child: Icon(
+                                                          Icons.person,
+                                                          size: 65,
+                                                          color: Colors.white,
+                                                        ),
+                                                      );
+                                                    },
+                                              ),
+                                            )
+                                          : Center(
+                                              child: Icon(
+                                                Icons.person,
+                                                size: 65,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      _userNickname,
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF333333),
+                                        letterSpacing: 0.3,
                                       ),
                                     ),
-                                    child: _isLoadingProfile
-                                        ? const Center(
-                                            child: CircularProgressIndicator(
-                                              color: Colors.white,
-                                            ),
-                                          )
-                                        : _profileImageUrl != null &&
-                                              _profileImageUrl!.isNotEmpty
-                                        ? ClipOval(
-                                            child: Image.network(
-                                              _profileImageUrl!,
-                                              fit: BoxFit.cover,
-                                              errorBuilder:
-                                                  (context, error, stackTrace) {
-                                                    return Center(
-                                                      child: Icon(
-                                                        Icons.person,
-                                                        size: 65,
-                                                        color: Colors.white,
-                                                      ),
-                                                    );
-                                                  },
-                                            ),
-                                          )
-                                        : Center(
-                                            child: Icon(
-                                              Icons.person,
-                                              size: 65,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    _userNickname,
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF333333),
-                                      letterSpacing: 0.3,
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Profile Settings',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.black.withOpacity(0.5),
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Profile Settings',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.black.withOpacity(0.5),
-                                    ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ],
@@ -1065,6 +1092,14 @@ class _SettingsScreenState extends State<SettingsScreen>
                                                 height: 48,
                                                 child: OutlinedButton(
                                                   onPressed: () {
+                                                    // Clear dismissed alerts before logout so they reappear on re-login
+                                                    MissingTransferAlertService.clearDismissedAlerts(
+                                                      widget.userId,
+                                                    );
+                                                    print(
+                                                      '[SettingsScreen] Logging out - cleared dismissed alerts for user: ${widget.userId}',
+                                                    );
+
                                                     Navigator.pop(context);
                                                     Navigator.pushAndRemoveUntil(
                                                       context,

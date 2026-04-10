@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/budget_alert_service.dart';
 import '../services/alert_status_service.dart';
+import '../services/auto_deduction_service.dart';
+import '../services/missing_transfer_alert_service.dart';
 import '../widgets/shared_bottom_nav_bar.dart';
 import '../pet/pet_home_page.dart';
 import '../pet/pet_main.dart';
@@ -51,13 +53,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _isLoadingLedgers = true;
   bool _alertsShownThisSession =
       false; // Track if alerts already shown this session
+  bool _missingTransferAlertShown =
+      false; // Track if missing transfer alert shown this session
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _currentUserId = widget.userId;
+
+    // Reset missing transfer alert flag when returning to home screen
+    // This allows the check to run again if new missing transfers are found
+    _missingTransferAlertShown = false;
+
     _fetchLedgers();
+    // Check and create auto-deductions when home screen loads
+    _checkAutoDeductions();
     // _initializeAlerts(); // DISABLED: Prevent automatic budget alert popups
   }
 
@@ -92,6 +103,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       print(
         '[HomeScreen] App resumed, refreshing badge status and transactions...',
       );
+      // Check auto-deductions when app resumes
+      _checkAutoDeductions();
       _checkBudgetAlertFlags();
       _fetchTransactions();
     }
@@ -189,8 +202,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         }
       }
 
-      // Process transfers - add to income/expense based on which accounts are involved
-      // For now, we're not adding transfers to income/expense totals since they're internal movements
+      // Process transfers - show all but don't count refunded ones in totals
       for (var transfer in transferResponse) {
         final enrichedTransfer = Map<String, dynamic>.from(transfer);
         enrichedTransfer['recordType'] = 'transfer';
@@ -562,6 +574,366 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Check and create auto-deduction transfers for active cycle-based savings goals
+  Future<void> _checkAutoDeductions() async {
+    if (_currentUserId == null) return;
+
+    try {
+      // First, check for regular auto-deductions
+      final result = await AutoDeductionService.checkAndCreateAutoDeductions(
+        _currentUserId!,
+      );
+
+      if (result['success'] == true && result['transfersCreated'] != null) {
+        final transfersCreated = result['transfersCreated'] as int;
+        if (transfersCreated > 0) {
+          print('[HomeScreen] Auto-deductions created: $transfersCreated');
+          // Refresh transactions to show newly created transfers
+          await _fetchTransactions();
+
+          // Show success dialog
+          if (mounted) {
+            _showAutoDeductionSuccessDialog(transfersCreated);
+          }
+        }
+      }
+
+      // Then, check for missing transfers (if not already shown this session)
+      if (!_missingTransferAlertShown && mounted) {
+        _checkForMissingTransfersAlert();
+      }
+    } catch (e) {
+      print('[HomeScreen] Error checking auto-deductions: $e');
+    }
+  }
+
+  void _showAutoDeductionSuccessDialog(int count) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Success icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFA7E399),
+                  ),
+                  child: const Icon(Icons.check, color: Colors.white, size: 32),
+                ),
+                const SizedBox(height: 20),
+                // Success title
+                const Text(
+                  '✅ Auto-Deductions Successful!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFF39C12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Success message
+                Text(
+                  'Successfully created $count auto-deduction transfer${count > 1 ? 's' : ''}.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF666666),
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Done button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFA7E399),
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    child: const Text('Done'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _checkForMissingTransfersAlert() async {
+    if (_currentUserId == null) return;
+
+    try {
+      print('[HomeScreen] Checking for missing transfers...');
+
+      // Check all goals for missing transfers
+      final missingList =
+          await MissingTransferAlertService.checkAllMissingTransfers(
+            _currentUserId!,
+          );
+
+      if (missingList.isNotEmpty && mounted && !_missingTransferAlertShown) {
+        _missingTransferAlertShown = true;
+
+        // Show alert for the first missing goal
+        // If there are multiple, user will see them after handling previous ones
+        final missingInfo = missingList.first;
+        _showMissingTransferAlertDialog(missingInfo);
+      }
+    } catch (e) {
+      print('[HomeScreen] Error checking missing transfers: $e');
+    }
+  }
+
+  void _showMissingTransferAlertDialog(Map<String, dynamic> missingInfo) {
+    if (!mounted) return;
+
+    final message = MissingTransferAlertService.generateAlertMessage(
+      missingInfo,
+    );
+    final goalId = missingInfo['goalId'] as String;
+    final goalName = missingInfo['goalName'] ?? 'Unnamed Goal';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Force user to make a choice
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text(
+            '💰 Missing Transfers Detected',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: SingleChildScrollView(
+            child: Text(
+              message,
+              style: const TextStyle(fontSize: 14, height: 1.6),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                // User chose "Not Now" - dismiss alert for this session
+                MissingTransferAlertService.dismissAlertForSession(
+                  _currentUserId!,
+                  goalId,
+                );
+                Navigator.of(context).pop();
+                print('[HomeScreen] User dismissed missing transfer alert');
+              },
+              child: const Text(
+                'Not Now',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.of(context).pop();
+
+                // Save navigator AND scaffoldMessenger BEFORE any async operations
+                final navigator = Navigator.of(context);
+                final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+                // Show loading indicator
+                if (mounted) {
+                  print(
+                    '[HomeScreen] Showing loading dialog for missing transfers...',
+                  );
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (BuildContext dialogContext) {
+                      return const AlertDialog(
+                        content: Row(
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(width: 16),
+                            Text('Creating missing transfers...'),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                }
+
+                try {
+                  // Process missing transfers
+                  print('[HomeScreen] Processing missing transfers...');
+                  final created =
+                      await MissingTransferAlertService.processMissingTransfers(
+                        missingInfo,
+                      );
+
+                  print(
+                    '[HomeScreen] Created $created missing transfers, waiting 3 seconds...',
+                  );
+
+                  // Wait 3 seconds for database to settle
+                  await Future.delayed(const Duration(seconds: 3));
+
+                  // Refresh transactions from database
+                  print(
+                    '[HomeScreen] Refreshing transactions from database...',
+                  );
+                  if (mounted) {
+                    await _fetchTransactions();
+                  }
+
+                  print(
+                    '[HomeScreen] Waiting 3 more seconds before checking status...',
+                  );
+
+                  // Wait another 3 seconds before checking
+                  await Future.delayed(const Duration(seconds: 3));
+
+                  // Check if missing transfers still exist
+                  print(
+                    '[HomeScreen] Checking if missing transfers still exist...',
+                  );
+                  if (!mounted) {
+                    print('[HomeScreen] Widget unmounted, returning early');
+                    return;
+                  }
+                  if (_currentUserId == null) {
+                    print('[HomeScreen] UserId is null, returning early');
+                    return;
+                  }
+
+                  final missingList =
+                      await MissingTransferAlertService.checkAllMissingTransfers(
+                        _currentUserId!,
+                      );
+
+                  print(
+                    '[HomeScreen] Missing transfers check result: ${missingList.length} remaining',
+                  );
+
+                  if (!mounted) {
+                    print(
+                      '[HomeScreen] Widget unmounted before closing dialog',
+                    );
+                    return;
+                  }
+
+                  // Close loading dialog using saved navigator state
+                  print('[HomeScreen] Attempting to close loading dialog...');
+                  try {
+                    navigator.pop();
+                    print('[HomeScreen] Loading dialog closed successfully');
+                  } catch (e) {
+                    print('[HomeScreen] Error closing loading dialog: $e');
+                  }
+
+                  await Future.delayed(const Duration(milliseconds: 200));
+
+                  if (missingList.isEmpty) {
+                    // ✅ No more missing transfers - show success
+                    print(
+                      '[HomeScreen] All missing transfers resolved! Showing success message...',
+                    );
+
+                    _missingTransferAlertShown = false;
+
+                    // Show success using SnackBar with saved ScaffoldMessenger
+                    try {
+                      scaffoldMessenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            '✅ Successfully created and verified $created transfer(s) for $goalName',
+                          ),
+                          backgroundColor: Colors.green,
+                          duration: const Duration(seconds: 4),
+                        ),
+                      );
+                      print('[HomeScreen] Success SnackBar shown');
+                    } catch (e) {
+                      print('[HomeScreen] Error showing SnackBar: $e');
+                    }
+
+                    // Refresh transactions
+                    print(
+                      '[HomeScreen] Refreshing transactions after success...',
+                    );
+                    if (mounted) {
+                      _fetchTransactions();
+                    }
+                  } else {
+                    // ❌ Missing transfers still exist - retry
+                    print(
+                      '[HomeScreen] Missing transfers still exist (${missingList.length}), retrying...',
+                    );
+
+                    if (mounted) {
+                      _showMissingTransferAlertDialog(missingList.first);
+                    }
+                  }
+                } catch (e) {
+                  print(
+                    '[HomeScreen] Exception in missing transfer creation: $e',
+                  );
+                  // Close loading dialog using saved navigator state
+                  try {
+                    navigator.pop();
+                    print('[HomeScreen] Loading dialog closed (error path)');
+                  } catch (e2) {
+                    print('[HomeScreen] Error closing dialog: $e2');
+                  }
+
+                  // Show error using saved ScaffoldMessenger
+                  try {
+                    scaffoldMessenger.showSnackBar(
+                      SnackBar(
+                        content: Text('❌ Error: $e'),
+                        backgroundColor: Colors.red,
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  } catch (e2) {
+                    print('[HomeScreen] Error showing error SnackBar: $e2');
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              child: const Text(
+                'Yes, Auto-Deduct All',
+                style: TextStyle(color: Colors.white, fontSize: 14),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _checkBudgetAlertFlags() async {
     try {
       // Check if any budget has isAlert = true (yellow/orange badge)
@@ -844,6 +1216,185 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Update budget flags only for budgets related to a specific transaction
+  /// This prevents showing alerts for unrelated budget categories
+  Future<void> _updateBudgetFlagsForTransaction(
+    Map<String, dynamic> transaction,
+  ) async {
+    try {
+      print('[HomeScreen] === Starting targeted budget flag updates ===');
+
+      final categoryId = transaction['categoryId'];
+      final ledgerId = transaction['ledgerId'];
+      final accountId = transaction['accountId'];
+
+      print(
+        '[HomeScreen] Transaction refs - Category: $categoryId, Ledger: $ledgerId, Account: $accountId',
+      );
+
+      // Get ALL budgets for this user first
+      final allBudgets = await Supabase.instance.client
+          .from('Budget')
+          .select()
+          .eq('userId', _currentUserId ?? widget.userId);
+
+      if (allBudgets.isEmpty) {
+        print('[HomeScreen] No budgets related to this transaction');
+        // Clear flags if no related budgets exist
+        setState(() {
+          _hasBudgetCaution = false;
+          _hasBudgetAlert = false;
+        });
+        AlertStatusService().updateCautionAlertStatus(false);
+        AlertStatusService().updateHighRiskAlertStatus(false);
+        return;
+      }
+
+      // Filter to ONLY include budgets that are actually related to this transaction
+      final relatedBudgets = <Map<String, dynamic>>[];
+      for (var budget in allBudgets) {
+        final budgetType = budget['type'] ?? '';
+        bool isRelated = false;
+
+        // Check if budget is related based on its type
+        if (budgetType == 'category') {
+          // Category budget: only include if transaction has matching categoryId
+          isRelated = budget['categoryId'] == categoryId && categoryId != null;
+        } else if (budgetType == 'ledger') {
+          // Ledger budget: only include if transaction has matching ledgerId
+          isRelated = budget['ledgerId'] == ledgerId && ledgerId != null;
+        } else if (budgetType == 'account') {
+          // Account budget: only include if transaction has matching accountId
+          isRelated = budget['accountId'] == accountId && accountId != null;
+        }
+
+        if (isRelated) {
+          relatedBudgets.add(budget);
+          print(
+            '[HomeScreen] Budget ${budget['budgetId']} ($budgetType) is related to this transaction',
+          );
+        }
+      }
+
+      if (relatedBudgets.isEmpty) {
+        print('[HomeScreen] No related budgets found');
+        // Clear flags if no related budgets exist
+        setState(() {
+          _hasBudgetCaution = false;
+          _hasBudgetAlert = false;
+        });
+        AlertStatusService().updateCautionAlertStatus(false);
+        AlertStatusService().updateHighRiskAlertStatus(false);
+        return;
+      }
+
+      print('[HomeScreen] Found ${relatedBudgets.length} related budgets');
+
+      final alertService = BudgetAlertService();
+      bool hasCautionAlert = false;
+      bool hasExceedAlert = false;
+
+      for (var budget in relatedBudgets) {
+        final budgetId = budget['budgetId'];
+        final budgetType = budget['type'] ?? '';
+        final budgetAmount = (budget['amount'] ?? 0).toDouble();
+        final cycleType = (budget['cycleType'] ?? 'month').toLowerCase();
+
+        if (budgetAmount <= 0) continue;
+
+        // Calculate date range
+        final now = DateTime.now();
+        final DateTime startDate;
+
+        switch (cycleType) {
+          case 'day':
+            startDate = DateTime(now.year, now.month, now.day);
+            break;
+          case 'week':
+            startDate = now.subtract(Duration(days: now.weekday - 1));
+            break;
+          case 'month':
+            startDate = DateTime(now.year, now.month, 1);
+            break;
+          case 'year':
+            startDate = DateTime(now.year, 1, 1);
+            break;
+          default:
+            startDate = DateTime(now.year, now.month, 1);
+        }
+
+        // Fetch transactions for this specific budget based on its type
+        List<dynamic> transactions = [];
+
+        if (budgetType == 'account') {
+          final budgetAccountId = budget['accountId'];
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('accountId', budgetAccountId)
+              .eq('type', 'expense')
+              .gte('date', startDate.toIso8601String());
+        } else if (budgetType == 'category') {
+          final budgetCategoryId = budget['categoryId'];
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('categoryId', budgetCategoryId)
+              .eq('type', 'expense')
+              .gte('date', startDate.toIso8601String());
+        } else if (budgetType == 'ledger') {
+          final budgetLedgerId = budget['ledgerId'];
+          transactions = await Supabase.instance.client
+              .from('Transaction')
+              .select()
+              .eq('ledgerId', budgetLedgerId)
+              .eq('type', 'expense')
+              .gte('date', startDate.toIso8601String());
+        }
+
+        // Calculate spending (excluding refunded)
+        double totalSpent = 0;
+        for (var txn in transactions) {
+          if (txn['refund'] != true) {
+            totalSpent += ((txn['amount'] ?? 0) as num).toDouble();
+          }
+        }
+
+        final double usagePercentage = (totalSpent / budgetAmount) * 100;
+
+        print(
+          '[HomeScreen] Related Budget $budgetId ($budgetType): $totalSpent / $budgetAmount = ${usagePercentage.toStringAsFixed(1)}%',
+        );
+
+        // Update alert flags
+        await alertService.updateAlertFlags(budgetId, usagePercentage);
+
+        if (usagePercentage >= 100) {
+          hasExceedAlert = true;
+        } else if (usagePercentage >= 70) {
+          hasCautionAlert = true;
+        }
+      }
+
+      print(
+        '[HomeScreen] Targeted budget check: hasCaution=$hasCautionAlert, hasExceed=$hasExceedAlert',
+      );
+
+      // Update state and notify
+      setState(() {
+        _hasBudgetCaution = hasCautionAlert;
+        _hasBudgetAlert = hasExceedAlert;
+      });
+
+      AlertStatusService().updateCautionAlertStatus(hasCautionAlert);
+      AlertStatusService().updateHighRiskAlertStatus(hasExceedAlert);
+
+      print('[HomeScreen] === Targeted budget flag updates complete ===');
+    } catch (e) {
+      print('[HomeScreen] Error in targeted budget updates: $e');
+    }
+  }
+
   String _getDayOfWeek(DateTime date) {
     final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return days[date.weekday - 1];
@@ -1036,7 +1587,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: const Color(0xFFFFF9E6),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
           ),
@@ -1156,11 +1707,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       decoration: BoxDecoration(
                         color: isSelected
                             ? const Color(0xFFA7E399)
-                            : const Color(0xFFF5F5F5),
+                            : const Color(0xFFFFF9E6),
                         borderRadius: BorderRadius.circular(6),
                         border: isSelected
-                            ? Border.all(color: Colors.green, width: 2)
-                            : Border.all(color: Colors.grey[300]!, width: 1),
+                            ? Border.all(
+                                color: const Color(0xFFA7E399),
+                                width: 2,
+                              )
+                            : Border.all(
+                                color: const Color(0xFFFFE5B4),
+                                width: 1,
+                              ),
                       ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -1216,7 +1773,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey[400]!, width: 1),
+                  border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(
@@ -1236,7 +1793,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                         decoration: BoxDecoration(
                           color: isSelected
-                              ? const Color(0xFFE198B0)
+                              ? const Color(0xFFA7E399)
                               : Colors.transparent,
                           borderRadius: BorderRadius.circular(20),
                         ),
@@ -1245,7 +1802,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: isSelected ? Colors.white : Colors.grey[400],
+                            color: isSelected ? Colors.black : Colors.grey[600],
                           ),
                         ),
                       ),
@@ -1415,7 +1972,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       );
                       if (result == true) {
                         await _calculateDailyBalances();
-                        await _updateBudgetFlagsAfterTransaction();
                       }
                     } else {
                       final transactionId =
@@ -1431,7 +1987,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       );
                       if (result == true) {
                         await _calculateDailyBalances();
-                        await _updateBudgetFlagsAfterTransaction();
+                        // Only update budget flags for expense transactions related to budgets
+                        if (type == 'expense') {
+                          await _updateBudgetFlagsForTransaction(transaction);
+                        }
                       }
                     }
                   },
@@ -1755,7 +2314,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           );
                           if (result == true) {
                             await _fetchTransactions();
-                            await _updateBudgetFlagsAfterTransaction();
                           }
                         } else {
                           final transactionId =
@@ -1775,7 +2333,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           // Refresh transactions if a transaction was deleted or refunded
                           if (result == true) {
                             await _fetchTransactions();
-                            await _updateBudgetFlagsAfterTransaction();
+                            // Only update budget flags for expense transactions related to budgets
+                            if (type == 'expense') {
+                              await _updateBudgetFlagsForTransaction(
+                                transaction,
+                              );
+                            }
                           }
                         }
                       },
@@ -2485,9 +3048,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             // View Mode Toggle Button in AppBar
             Container(
               decoration: BoxDecoration(
-                color: Colors.grey[200],
+                color: const Color(0xFFFEFFD3),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.grey[400]!, width: 1),
+                border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
               ),
               child: Row(
                 children: [
@@ -2508,7 +3071,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ),
                       decoration: BoxDecoration(
                         color: !_isCalendarView
-                            ? Colors.white
+                            ? const Color(0xFFA7E399)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(20),
                       ),
@@ -2542,7 +3105,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ),
                       decoration: BoxDecoration(
                         color: _isCalendarView
-                            ? Colors.white
+                            ? const Color(0xFFA7E399)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(20),
                       ),
@@ -3051,8 +3614,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               // Refresh both list view and calendar view
               await _fetchTransactions();
               await _calculateDailyBalances();
-              // Update budget flags and check for caution/exceed alerts
-              await _updateBudgetFlagsAfterTransaction();
+              // Budget alerts already handled in AddTransaction screen
+              // No need to re-check here
             }
           },
           child: const Icon(Icons.add, color: Colors.black, size: 30),
