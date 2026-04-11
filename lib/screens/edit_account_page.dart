@@ -180,6 +180,12 @@ class _EditAccountPageState extends State<EditAccountPage> {
         _customIconBytes != null;
   }
 
+  bool _isRestrictedAccountType() {
+    final accountType = widget.account['accountType'] ?? '';
+    final restrictedTypes = ['Debit Card', 'Credit Card', 'E-Wallet'];
+    return restrictedTypes.contains(accountType);
+  }
+
   Future<void> _pickIcon() async {
     try {
       final XFile? pickedFile = await _imagePicker.pickImage(
@@ -249,11 +255,96 @@ class _EditAccountPageState extends State<EditAccountPage> {
     }
   }
 
+  void _showEmptyNameError() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFCDD2), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Error icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.red[100],
+                  ),
+                  child: Icon(
+                    Icons.error_outline,
+                    color: Colors.red[700],
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Error title
+                const Text(
+                  'Missing Field',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFF39C12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Error message
+                const Text(
+                  'Please enter an account name before saving.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF666666),
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // OK button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFA7E399),
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    child: const Text('OK'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _saveChanges() async {
     if (_nameController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter account name')),
-      );
+      _showEmptyNameError();
       return;
     }
 
@@ -378,6 +469,7 @@ class _EditAccountPageState extends State<EditAccountPage> {
                           widget.source == 'manager'
                               ? 'Back to Account Manager'
                               : 'Back to Account Details',
+                          textAlign: TextAlign.center,
                         ),
                       ),
                     ),
@@ -679,7 +771,7 @@ class _EditAccountPageState extends State<EditAccountPage> {
                     Navigator.pop(context); // Close dialog
                     // Navigate back based on source
                     if (widget.source == 'detail') {
-                      // From detail: navigate back to account page
+                      // From detail: navigate back to account page with refresh flag
                       Navigator.pushAndRemoveUntil(
                         context,
                         MaterialPageRoute(
@@ -689,8 +781,8 @@ class _EditAccountPageState extends State<EditAccountPage> {
                         (route) => false,
                       );
                     } else {
-                      // From manager: just pop back to manager
-                      Navigator.pop(context);
+                      // From manager: pop back to manager with refresh flag
+                      Navigator.pop(context, true); // true = refresh
                     }
                   },
                   style: ElevatedButton.styleFrom(
@@ -705,8 +797,11 @@ class _EditAccountPageState extends State<EditAccountPage> {
                     ),
                   ),
                   child: widget.source == 'detail'
-                      ? const Text('Back to Account Page')
-                      : const Text('OK'),
+                      ? const Text(
+                          'Back to Account Page',
+                          textAlign: TextAlign.center,
+                        )
+                      : const Text('OK', textAlign: TextAlign.center),
                 ),
               ),
             ],
@@ -876,33 +971,42 @@ class _EditAccountPageState extends State<EditAccountPage> {
                               ),
                             ),
                             GestureDetector(
-                              onTap: _pickIcon,
-                              child: _customIconBytes != null
-                                  ? Container(
-                                      width: 50,
-                                      height: 50,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(8),
+                              onTap: _isRestrictedAccountType()
+                                  ? null
+                                  : _pickIcon,
+                              child: Opacity(
+                                opacity: _isRestrictedAccountType() ? 0.5 : 1.0,
+                                child: _customIconBytes != null
+                                    ? Container(
+                                        width: 50,
+                                        height: 50,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: Image.memory(
+                                          _customIconBytes!,
+                                          fit: BoxFit.contain,
+                                        ),
+                                      )
+                                    : _uploadedIconPath != null &&
+                                          _uploadedIconPath!.isNotEmpty
+                                    ? _buildIconImage(_uploadedIconPath!)
+                                    : Container(
+                                        width: 50,
+                                        height: 50,
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey[300],
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.account_balance_wallet,
+                                        ),
                                       ),
-                                      child: Image.memory(
-                                        _customIconBytes!,
-                                        fit: BoxFit.contain,
-                                      ),
-                                    )
-                                  : _uploadedIconPath != null &&
-                                        _uploadedIconPath!.isNotEmpty
-                                  ? _buildIconImage(_uploadedIconPath!)
-                                  : Container(
-                                      width: 50,
-                                      height: 50,
-                                      decoration: BoxDecoration(
-                                        color: Colors.grey[300],
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Icon(
-                                        Icons.account_balance_wallet,
-                                      ),
-                                    ),
+                              ),
                             ),
                           ],
                         ),

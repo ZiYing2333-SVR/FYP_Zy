@@ -75,7 +75,11 @@ class _AutoExpenseCategorizationState extends State<AutoExpenseCategorization>
           .eq('userId', widget.userId);
 
       setState(() {
-        _accounts = List<Map<String, dynamic>>.from(response);
+        // Filter out Savings type accounts
+        _accounts = (response as List)
+            .map((acc) => Map<String, dynamic>.from(acc as Map))
+            .where((acc) => (acc['accountType'] as String?) != 'Savings')
+            .toList();
       });
     } catch (e) {
       print('Error fetching accounts: $e');

@@ -111,7 +111,9 @@ class AIService {
       // DEBUG: Check if token is loaded
       final token = huggingFaceApiKey;
       print('\n📡 === HUGGING FACE API REQUEST ===');
-      print('🔑 Token status: ${token.isEmpty ? "❌ NO TOKEN FOUND" : "✓ Token loaded (${token.length} chars)"}');
+      print(
+        '🔑 Token status: ${token.isEmpty ? "❌ NO TOKEN FOUND" : "✓ Token loaded (${token.length} chars)"}',
+      );
       print('📝 Note to analyze: "$note"');
       print('🏷️  Categories: ${candidateLabels.length} items');
       print('🔗 API endpoint: $huggingFaceApiUrl');
@@ -120,7 +122,8 @@ class AIService {
       // Retry logic: try up to 3 times with exponential backoff
       const maxRetries = 3;
       int retryCount = 0;
-      late dynamic result; // Can be List or Map depending on endpoint response format
+      late dynamic
+      result; // Can be List or Map depending on endpoint response format
       late http.Response response;
 
       while (retryCount < maxRetries) {
@@ -156,7 +159,9 @@ class AIService {
             retryCount++;
             if (retryCount < maxRetries) {
               final delaySeconds = (1 << retryCount); // 2, 4 seconds
-              print('⚠️ Server error (${response.statusCode}) - retrying in ${delaySeconds}s (attempt ${retryCount + 1}/$maxRetries)');
+              print(
+                '⚠️ Server error (${response.statusCode}) - retrying in ${delaySeconds}s (attempt ${retryCount + 1}/$maxRetries)',
+              );
               await Future.delayed(Duration(seconds: delaySeconds));
               continue;
             }
@@ -165,9 +170,13 @@ class AIService {
           break;
         } on Exception catch (e) {
           retryCount++;
-          if (retryCount < maxRetries && (e.toString().contains('timeout') || e.toString().contains('Failed to fetch'))) {
+          if (retryCount < maxRetries &&
+              (e.toString().contains('timeout') ||
+                  e.toString().contains('Failed to fetch'))) {
             final delaySeconds = (1 << retryCount);
-            print('⚠️ Network error: $e - retrying in ${delaySeconds}s (attempt ${retryCount + 1}/$maxRetries)');
+            print(
+              '⚠️ Network error: $e - retrying in ${delaySeconds}s (attempt ${retryCount + 1}/$maxRetries)',
+            );
             await Future.delayed(Duration(seconds: delaySeconds));
             continue;
           }
@@ -194,30 +203,29 @@ class AIService {
         // NOT the standard API format: {labels: [...], scores: [...]}
         // Convert router format to standard format
         if (result is List<dynamic> && result.isNotEmpty) {
-          print('🔄 Converting router array format to standard Hugging Face format...');
-          
+          print(
+            '🔄 Converting router array format to standard Hugging Face format...',
+          );
+
           // Extract labels and scores from array of objects
           final labels = <String>[];
           final scores = <double>[];
-          
+
           for (var item in result) {
             if (item is Map<String, dynamic>) {
               final label = item['label'] as String?;
               final score = item['score'] as num?;
-              
+
               if (label != null && score != null) {
                 labels.add(label);
                 scores.add(score.toDouble());
               }
             }
           }
-          
+
           // Reconstruct as standard format
           if (labels.isNotEmpty && scores.isNotEmpty) {
-            result = <String, dynamic>{
-              'labels': labels,
-              'scores': scores,
-            };
+            result = <String, dynamic>{'labels': labels, 'scores': scores};
             print('✓ Converted ${labels.length} items to standard format');
           } else {
             print('❌ Could not extract labels/scores from response');
@@ -228,7 +236,9 @@ class AIService {
 
         // Ensure result is a Map before accessing fields
         if (result is! Map<String, dynamic>) {
-          print('❌ Final result is ${result.runtimeType}, expected Map<String, dynamic>');
+          print(
+            '❌ Final result is ${result.runtimeType}, expected Map<String, dynamic>',
+          );
           print('⚠️ USING FALLBACK: Keyword-based categorization...\n');
           return _getMockAIResponse(note, categories);
         }
@@ -238,95 +248,97 @@ class AIService {
           final labels = result['labels'] as List<dynamic>?;
           final scores = result['scores'] as List<dynamic>?;
 
-        if (scores != null && labels != null && scores.isNotEmpty) {
-          // Get top result
-          final topScore = (scores[0] as num).toDouble();
-          final topLabel = labels[0] as String;
+          if (scores != null && labels != null && scores.isNotEmpty) {
+            // Get top result
+            final topScore = (scores[0] as num).toDouble();
+            final topLabel = labels[0] as String;
 
-          print(
-            'Top match: "$topLabel" with score: ${(topScore * 100).toStringAsFixed(1)}%',
-          );
+            print(
+              'Top match: "$topLabel" with score: ${(topScore * 100).toStringAsFixed(1)}%',
+            );
 
-          // Build all category scores for confirmation page
-          final categoryScores = <Map<String, dynamic>>[];
-          if (labels.isNotEmpty && scores.isNotEmpty) {
-            for (var i = 0; i < labels.length; i++) {
-              categoryScores.add({
-                'category': labels[i] as String,
-                'confidence': (scores[i] as num).toDouble(),
-              });
-            }
-          }
-
-          // Determine transaction type based on content
-          final transactionType = _determineTransactionType(note);
-
-          // Extract amount from note
-          final amount = extractAmountFromNote(note);
-
-          // CHECK: Does API-suggested category exist in database?
-          final suggestedCategoryExists = categories.any(
-            (cat) =>
-                (cat['name'] as String?)?.toLowerCase() ==
-                topLabel.toLowerCase(),
-          );
-
-          String finalCategory = topLabel;
-          List<Map<String, dynamic>> finalCategoryScores = categoryScores;
-          bool categoryAdjusted = false;
-
-          // If suggested category doesn't exist, find similar ones
-          if (!suggestedCategoryExists) {
-            print('⚠️ API suggested "$topLabel" but NOT in database');
-            print('🔍 Finding TOP 3 similar categories for user to select...');
-
-            // Find top 3 similar categories
-            final similarities = _findSimilarCategories(topLabel, categories);
-
-            if (similarities.isNotEmpty) {
-              // Use the most similar as the default suggestion
-              finalCategory = similarities[0]['name'] as String;
-              categoryAdjusted = true;
-
-              print(
-                '✓ Top similar categories: ${similarities.map((s) => "${s['name']} (${((s['similarity'] as double) * 100).toStringAsFixed(0)}%)").join(", ")}',
-              );
-
-              // Show top 3 similar categories for user selection
-              // User will pick from these options in confirmation screen
-              finalCategoryScores = <Map<String, dynamic>>[];
-              for (var similar in similarities.take(3)) {
-                finalCategoryScores.add({
-                  'category': similar['name'] as String,
-                  'confidence': similar['similarity'] as double,
+            // Build all category scores for confirmation page
+            final categoryScores = <Map<String, dynamic>>[];
+            if (labels.isNotEmpty && scores.isNotEmpty) {
+              for (var i = 0; i < labels.length; i++) {
+                categoryScores.add({
+                  'category': labels[i] as String,
+                  'confidence': (scores[i] as num).toDouble(),
                 });
               }
             }
+
+            // Determine transaction type based on content
+            final transactionType = _determineTransactionType(note);
+
+            // Extract amount from note
+            final amount = extractAmountFromNote(note);
+
+            // CHECK: Does API-suggested category exist in database?
+            final suggestedCategoryExists = categories.any(
+              (cat) =>
+                  (cat['name'] as String?)?.toLowerCase() ==
+                  topLabel.toLowerCase(),
+            );
+
+            String finalCategory = topLabel;
+            List<Map<String, dynamic>> finalCategoryScores = categoryScores;
+            bool categoryAdjusted = false;
+
+            // If suggested category doesn't exist, find similar ones
+            if (!suggestedCategoryExists) {
+              print('⚠️ API suggested "$topLabel" but NOT in database');
+              print(
+                '🔍 Finding TOP 3 similar categories for user to select...',
+              );
+
+              // Find top 3 similar categories
+              final similarities = _findSimilarCategories(topLabel, categories);
+
+              if (similarities.isNotEmpty) {
+                // Use the most similar as the default suggestion
+                finalCategory = similarities[0]['name'] as String;
+                categoryAdjusted = true;
+
+                print(
+                  '✓ Top similar categories: ${similarities.map((s) => "${s['name']} (${((s['similarity'] as double) * 100).toStringAsFixed(0)}%)").join(", ")}',
+                );
+
+                // Show top 3 similar categories for user selection
+                // User will pick from these options in confirmation screen
+                finalCategoryScores = <Map<String, dynamic>>[];
+                for (var similar in similarities.take(3)) {
+                  finalCategoryScores.add({
+                    'category': similar['name'] as String,
+                    'confidence': similar['similarity'] as double,
+                  });
+                }
+              }
+            }
+
+            final result = {
+              'success': true,
+              'suggestedCategory': finalCategory,
+              'confidence': categoryAdjusted
+                  ? (finalCategoryScores.isNotEmpty
+                        ? finalCategoryScores[0]['confidence'] as double
+                        : topScore)
+                  : topScore,
+              'transactionType': transactionType,
+              'allCategoryScores':
+                  finalCategoryScores, // Show top 3 for user selection
+              'reasoning': categoryAdjusted
+                  ? 'API-suggested "$topLabel" not in database. Showing TOP 3 similar categories - please select one.'
+                  : 'Analyzed using Hugging Face natural language processing (facebook/bart-large-mnli)',
+            };
+
+            // Add extracted amount if found
+            if (amount != null) {
+              result['extractedAmount'] = amount;
+            }
+
+            return result;
           }
-
-          final result = {
-            'success': true,
-            'suggestedCategory': finalCategory,
-            'confidence': categoryAdjusted
-                ? (finalCategoryScores.isNotEmpty
-                    ? finalCategoryScores[0]['confidence'] as double
-                    : topScore)
-                : topScore,
-            'transactionType': transactionType,
-            'allCategoryScores':
-                finalCategoryScores, // Show top 3 for user selection
-            'reasoning': categoryAdjusted
-                ? 'API-suggested "$topLabel" not in database. Showing TOP 3 similar categories - please select one.'
-                : 'Analyzed using Hugging Face natural language processing (facebook/bart-large-mnli)',
-          };
-
-          // Add extracted amount if found
-          if (amount != null) {
-            result['extractedAmount'] = amount;
-          }
-
-          return result;
-        }
         } catch (e) {
           print('❌ Error extracting scores/labels from response: $e');
           print('Response object: $result');
@@ -889,11 +901,14 @@ class AIService {
 
     // DEBUG: Show what was categorized
     print('');
-    print('✓ AI SUGGESTED CATEGORY: "$suggestedCategory" (${(confidence * 100).toStringAsFixed(1)}%)');
+    print(
+      '✓ AI SUGGESTED CATEGORY: "$suggestedCategory" (${(confidence * 100).toStringAsFixed(1)}%)',
+    );
     if (topAlternatives.isNotEmpty) {
       print('✓ ALTERNATIVE SUGGESTIONS (for user to choose from):');
       for (var i = 0; i < topAlternatives.length && i < 3; i++) {
-        final conf = ((topAlternatives[i]['confidence'] as double) * 100).toStringAsFixed(1);
+        final conf = ((topAlternatives[i]['confidence'] as double) * 100)
+            .toStringAsFixed(1);
         print('  ${i + 1}. ${topAlternatives[i]['category']} ($conf%)');
       }
     } else {
@@ -1187,7 +1202,9 @@ class AIService {
           .select('''
             accountId,
             accountName,
+            accountType,
             balance,
+            hideBalanceStatus,
             iconImage,
             chartColor,
             ledgerId,

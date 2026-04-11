@@ -437,6 +437,9 @@ class _SavingsPageState extends State<SavingsPage> with WidgetsBindingObserver {
           .delete()
           .eq('goalId', goalId);
 
+      if (mounted) {
+        _showDeleteSuccessDialog();
+      }
       _fetchSavingGoals();
     } catch (e) {
       print('Error deleting saving goal: $e');
@@ -446,6 +449,85 @@ class _SavingsPageState extends State<SavingsPage> with WidgetsBindingObserver {
         ).showSnackBar(SnackBar(content: Text('Error deleting goal: $e')));
       }
     }
+  }
+
+  void _showDeleteSuccessDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Success icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFA7E399),
+                  ),
+                  child: const Icon(Icons.check, color: Colors.white, size: 32),
+                ),
+                const SizedBox(height: 20),
+                // Success title
+                const Text(
+                  'Saving Goal Deleted Successfully!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFF39C12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Success message
+                const Text(
+                  'Your saving goal has been deleted successfully.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: Color(0xFF666666)),
+                ),
+                const SizedBox(height: 24),
+                // Done button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context); // Close dialog
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFA7E399),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    child: const Text('Done'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _updateGoalStatus(
@@ -907,63 +989,178 @@ class _SavingsPageState extends State<SavingsPage> with WidgetsBindingObserver {
                                             onTap: () {
                                               showDialog(
                                                 context: context,
-                                                builder: (context) => AlertDialog(
-                                                  backgroundColor: Colors.white,
+                                                barrierDismissible: false,
+                                                builder: (context) => Dialog(
                                                   shape: RoundedRectangleBorder(
                                                     borderRadius:
                                                         BorderRadius.circular(
                                                           20,
                                                         ),
                                                   ),
-                                                  contentPadding:
-                                                      const EdgeInsets.all(24),
-                                                  title: const Text(
-                                                    'Delete Goal',
-                                                    style: TextStyle(
-                                                      fontSize: 20,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color: Color(0xFFF39C12),
-                                                    ),
+                                                  backgroundColor: const Color(
+                                                    0xFFFFF9E6,
                                                   ),
-                                                  content: const Text(
-                                                    'Are you sure you want to delete this goal?',
-                                                    style: TextStyle(
-                                                      color: Color(0xFF666666),
-                                                    ),
-                                                  ),
-                                                  actions: [
-                                                    TextButton(
-                                                      onPressed: () =>
-                                                          Navigator.pop(
-                                                            context,
-                                                          ),
-                                                      child: const Text(
-                                                        'Cancel',
-                                                        style: TextStyle(
-                                                          color: Color(
-                                                            0xFFF39C12,
-                                                          ),
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.all(
+                                                          24,
                                                         ),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(
+                                                        0xFFFFF9E6,
+                                                      ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            20,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: const Color(
+                                                          0xFFFFE5B4,
+                                                        ),
+                                                        width: 2,
                                                       ),
                                                     ),
-                                                    TextButton(
-                                                      onPressed: () {
-                                                        _deleteSavingGoal(
-                                                          goalId,
-                                                        );
-                                                        Navigator.pop(context);
-                                                      },
-                                                      child: const Text(
-                                                        'Delete',
-                                                        style: TextStyle(
-                                                          color: Color(
-                                                            0xFF666666,
+                                                    child: Column(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        // Warning icon
+                                                        Container(
+                                                          width: 60,
+                                                          height: 60,
+                                                          decoration:
+                                                              BoxDecoration(
+                                                                shape: BoxShape
+                                                                    .circle,
+                                                                color: Colors
+                                                                    .red[100],
+                                                              ),
+                                                          child: Icon(
+                                                            Icons
+                                                                .warning_amber_rounded,
+                                                            color:
+                                                                Colors.red[700],
+                                                            size: 32,
                                                           ),
                                                         ),
-                                                      ),
+                                                        const SizedBox(
+                                                          height: 20,
+                                                        ),
+                                                        // Delete title
+                                                        const Text(
+                                                          'Delete Goal',
+                                                          style: TextStyle(
+                                                            fontSize: 20,
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                            color: Color(
+                                                              0xFFF39C12,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          height: 12,
+                                                        ),
+                                                        // Delete message
+                                                        const Text(
+                                                          'Are you sure you want to delete this goal? This action cannot be undone.',
+                                                          textAlign:
+                                                              TextAlign.center,
+                                                          style: TextStyle(
+                                                            fontSize: 14,
+                                                            color: Color(
+                                                              0xFF666666,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          height: 24,
+                                                        ),
+                                                        // Action buttons
+                                                        Row(
+                                                          children: [
+                                                            // Cancel button
+                                                            Expanded(
+                                                              child: ElevatedButton(
+                                                                onPressed: () {
+                                                                  Navigator.pop(
+                                                                    context,
+                                                                  );
+                                                                },
+                                                                style: ElevatedButton.styleFrom(
+                                                                  backgroundColor:
+                                                                      Colors
+                                                                          .grey[300],
+                                                                  foregroundColor:
+                                                                      Colors
+                                                                          .black87,
+                                                                  shape: RoundedRectangleBorder(
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                          10,
+                                                                        ),
+                                                                  ),
+                                                                  textStyle: const TextStyle(
+                                                                    fontSize:
+                                                                        16,
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .w600,
+                                                                  ),
+                                                                ),
+                                                                child:
+                                                                    const Text(
+                                                                      'Cancel',
+                                                                    ),
+                                                              ),
+                                                            ),
+                                                            const SizedBox(
+                                                              width: 12,
+                                                            ),
+                                                            // Delete button
+                                                            Expanded(
+                                                              child: ElevatedButton(
+                                                                onPressed: () {
+                                                                  _deleteSavingGoal(
+                                                                    goalId,
+                                                                  );
+                                                                  Navigator.pop(
+                                                                    context,
+                                                                  );
+                                                                },
+                                                                style: ElevatedButton.styleFrom(
+                                                                  backgroundColor:
+                                                                      const Color(
+                                                                        0xFFFF6B6B,
+                                                                      ),
+                                                                  foregroundColor:
+                                                                      Colors
+                                                                          .white,
+                                                                  shape: RoundedRectangleBorder(
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                          10,
+                                                                        ),
+                                                                  ),
+                                                                  textStyle: const TextStyle(
+                                                                    fontSize:
+                                                                        16,
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .w600,
+                                                                  ),
+                                                                ),
+                                                                child:
+                                                                    const Text(
+                                                                      'Delete',
+                                                                    ),
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ],
                                                     ),
-                                                  ],
+                                                  ),
                                                 ),
                                               );
                                             },

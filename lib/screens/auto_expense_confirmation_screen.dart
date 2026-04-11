@@ -143,17 +143,22 @@ class _AutoExpenseConfirmationState extends State<AutoExpenseConfirmation> {
   Future<void> _fetchAccounts() async {
     try {
       final accounts = await AIService.getAccounts(widget.userId);
+
       setState(() {
         _accounts = accounts;
         _isLoadingAccounts = false;
 
-        // Auto-select first account if available
-        if (accounts.isNotEmpty) {
-          _selectedAccountId = accounts[0]['accountId'] as String;
+        // Auto-select first non-Savings account if available
+        final nonSavingsAccounts = accounts
+            .where((acc) => (acc['accountType'] as String?) != 'Savings')
+            .toList();
+
+        if (nonSavingsAccounts.isNotEmpty) {
+          _selectedAccountId = nonSavingsAccounts[0]['accountId'] as String;
 
           // Set currency symbol from the default account
           final currencySymbol =
-              (accounts[0]['Currency'] as Map?)?['symbol'] as String?;
+              (nonSavingsAccounts[0]['Currency'] as Map?)?['symbol'] as String?;
           if (currencySymbol != null && currencySymbol.isNotEmpty) {
             _currencySymbol = currencySymbol;
           }
@@ -255,6 +260,23 @@ class _AutoExpenseConfirmationState extends State<AutoExpenseConfirmation> {
   }
 
   void _showAccountBottomSheet() {
+    // Filter out Savings type accounts - display only
+    print('📋 DEBUG: All _accounts (${_accounts.length}):');
+    for (var acc in _accounts) {
+      print('  - ${acc['accountName']} | accountType="${acc['accountType']}"');
+    }
+
+    final displayAccounts = _accounts
+        .where((acc) => (acc['accountType'] as String?) != 'Savings')
+        .toList();
+
+    print(
+      '📋 DEBUG: After filtering, displayAccounts (${displayAccounts.length}):',
+    );
+    for (var acc in displayAccounts) {
+      print('  - ${acc['accountName']} | accountType="${acc['accountType']}"');
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -305,7 +327,7 @@ class _AutoExpenseConfirmationState extends State<AutoExpenseConfirmation> {
               const Divider(height: 1),
               // Account Cards Grid
               Expanded(
-                child: _accounts.isEmpty
+                child: displayAccounts.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -336,9 +358,9 @@ class _AutoExpenseConfirmationState extends State<AutoExpenseConfirmation> {
                               crossAxisSpacing: 12,
                               mainAxisSpacing: 12,
                             ),
-                        itemCount: _accounts.length,
+                        itemCount: displayAccounts.length,
                         itemBuilder: (context, index) {
-                          final account = _accounts[index];
+                          final account = displayAccounts[index];
                           final accountId = account['accountId'] as String;
                           final isSelected = accountId == _selectedAccountId;
                           final balance = account['balance'] as num?;

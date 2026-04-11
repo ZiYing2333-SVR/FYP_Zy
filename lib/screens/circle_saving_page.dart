@@ -147,7 +147,57 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
     if (pickedDate != null) {
       setState(() {
         controller.text = DateFormat('yyyy-MM-dd').format(pickedDate);
+        // Recalculate amount per cycle when date changes
       });
+    }
+  }
+
+  double _calculateAmountPerCycle() {
+    // Get the target amount
+    final targetAmount = double.tryParse(_amountController.text) ?? 0;
+
+    if (targetAmount <= 0 ||
+        _startDateController.text.isEmpty ||
+        _endDateController.text.isEmpty) {
+      return 0;
+    }
+
+    try {
+      // Parse dates
+      final startDate = DateTime.parse(_startDateController.text);
+      final endDate = DateTime.parse(_endDateController.text);
+
+      // Calculate number of days
+      final daysDifference =
+          endDate.difference(startDate).inDays + 1; // +1 to include end date
+
+      if (daysDifference <= 0) {
+        return 0;
+      }
+
+      // Calculate based on cycle frequency
+      double amountPerCycle = 0;
+      switch (_selectedCycleFrequency) {
+        case 'Daily':
+          // Amount per day
+          amountPerCycle = targetAmount / daysDifference;
+          break;
+        case 'Weekly':
+          // Amount per week
+          final weeks = daysDifference / 7;
+          amountPerCycle = targetAmount / weeks;
+          break;
+        case 'Monthly':
+          // Amount per month
+          final months = daysDifference / 30;
+          amountPerCycle = targetAmount / months;
+          break;
+      }
+
+      return amountPerCycle;
+    } catch (e) {
+      print('Error calculating amount per cycle: $e');
+      return 0;
     }
   }
 
@@ -361,64 +411,64 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
                           final isAccountUsed = usedAccountIds.contains(
                             accountId,
                           );
+                          // Disable selection only for destination accounts that are already used
+                          final isDisabled =
+                              isAccountUsed && !isSelected && !isSourceAccount;
 
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 12),
                             child: GestureDetector(
-                              onTap: () => onSelect(accountId),
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? Colors.green.shade50
-                                      : (isAccountUsed
-                                            ? Colors.blue.shade50
-                                            : Colors.white),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
+                              onTap: isDisabled
+                                  ? null
+                                  : () => onSelect(accountId),
+                              child: Opacity(
+                                opacity: isDisabled ? 0.5 : 1.0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
                                     color: isSelected
-                                        ? Colors.green.shade400
-                                        : (isAccountUsed
-                                              ? Colors.blue.shade300
-                                              : Colors.grey.shade300),
-                                    width: isSelected ? 2 : 1,
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    ..._buildSelectedAccountDisplay(
-                                      sortedAccounts,
-                                      accountId,
+                                        ? const Color(0xFFFFF9E6)
+                                        : (isDisabled
+                                              ? Colors.grey.shade100
+                                              : Colors.white),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: isSelected
+                                          ? const Color(0xFFFFE5B4)
+                                          : (isDisabled
+                                                ? Colors.grey.shade400
+                                                : Colors.grey.shade300),
+                                      width: isSelected ? 2 : 1,
                                     ),
-                                    if (isSelected)
-                                      Container(
-                                        width: 24,
-                                        height: 24,
-                                        decoration: BoxDecoration(
-                                          color: Colors.green,
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                          Icons.check,
-                                          color: Colors.white,
-                                          size: 14,
-                                        ),
-                                      )
-                                    else if (isAccountUsed && !isSourceAccount)
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          left: 12,
-                                        ),
-                                        child: Tooltip(
-                                          message: 'Already in use',
-                                          child: Icon(
-                                            Icons.info_outline,
-                                            color: Colors.blue.shade400,
-                                            size: 16,
-                                          ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Row(
+                                          children: [
+                                            ..._buildSelectedAccountDisplay(
+                                              sortedAccounts,
+                                              accountId,
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                  ],
+                                      if (isSelected)
+                                        Container(
+                                          width: 24,
+                                          height: 24,
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFA7E399),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(
+                                            Icons.check,
+                                            color: Colors.white,
+                                            size: 14,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -433,15 +483,180 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
     );
   }
 
+  void _showMissingFieldDialog(String fieldName) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFCDD2), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Error icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.red[100],
+                  ),
+                  child: Icon(
+                    Icons.error_outline,
+                    color: Colors.red[700],
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Error title
+                const Text(
+                  'Missing Field',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFF39C12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Error message
+                Text(
+                  fieldName == 'accounts'
+                      ? 'Please select both source and destination accounts to continue.'
+                      : 'Please create a ledger first before generating suggestions.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF666666),
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // OK button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFA7E399),
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    child: const Text('OK'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showSuccessDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Success icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFA7E399),
+                  ),
+                  child: const Icon(Icons.check, color: Colors.white, size: 32),
+                ),
+                const SizedBox(height: 20),
+                // Success title
+                const Text(
+                  'Saving Goal Created Successfully!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFF39C12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Success message
+                const Text(
+                  'Your saving goal has been created successfully.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: Color(0xFF666666)),
+                ),
+                const SizedBox(height: 24),
+                // Done button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context); // Close dialog
+                      Navigator.pop(context, true); // Go back to savings page
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFA7E399),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    child: const Text('Done'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _createSavingGoal() async {
     if (!_formKey.currentState!.validate()) return;
 
     if (_selectedSourceAccount == null || _selectedDestAccount == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select both source and destination accounts'),
-        ),
-      );
+      _showMissingFieldDialog('accounts');
       return;
     }
 
@@ -505,13 +720,11 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
         'destAccountId': _selectedDestAccount,
         'linkedAccountId': _selectedDestAccount,
         'userId': widget.userId,
+        'amountPerCycle': _calculateAmountPerCycle(),
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Saving goal created successfully')),
-        );
-        Navigator.pop(context, true);
+        _showSuccessDialog();
       }
     } catch (e) {
       print('Error creating saving goal: $e');
@@ -526,9 +739,9 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFFFFB),
+      backgroundColor: const Color(0xFFFFF9E6),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFFFFFFB),
+        backgroundColor: const Color(0xFFFFF9E6),
         elevation: 0,
         leading: GestureDetector(
           onTap: () => Navigator.pop(context),
@@ -553,20 +766,52 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
             children: [
               const SizedBox(height: 16),
               // Name Field
+              Text(
+                'Saving Goal Name',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+              const SizedBox(height: 8),
               TextFormField(
                 controller: _nameController,
                 decoration: InputDecoration(
-                  hintText: 'Name',
+                  hintText: 'Enter goal name',
                   filled: true,
-                  fillColor: Colors.green.shade200,
+                  fillColor: const Color(0xFFFFF9E6),
+                  prefixIcon: const Icon(
+                    Icons.savings,
+                    color: Color(0xFFA7E399),
+                    size: 20,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    borderSide: const BorderSide(
+                      color: Color(0xFFFFE5B4),
+                      width: 2,
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: Color(0xFFFFE5B4),
+                      width: 2,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: Color(0xFFA7E399),
+                      width: 2,
+                    ),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 16,
                   ),
+                  hintStyle: TextStyle(color: Colors.grey.shade400),
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
@@ -575,7 +820,7 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
                   return null;
                 },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 24),
               // Source Account Selection
               GestureDetector(
                 onTap: _isLoadingAccounts ? null : _showSourceAccountsModal,
@@ -716,23 +961,55 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
                     ),
                   ),
                 ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 24),
               // Start Date Field
+              Text(
+                'Start Date',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+              const SizedBox(height: 8),
               TextFormField(
                 controller: _startDateController,
                 readOnly: true,
                 decoration: InputDecoration(
-                  hintText: 'Start Date',
+                  hintText: 'Select start date',
                   filled: true,
-                  fillColor: Colors.green.shade200,
+                  fillColor: const Color(0xFFFFF9E6),
+                  prefixIcon: const Icon(
+                    Icons.calendar_today,
+                    color: Color(0xFFA7E399),
+                    size: 20,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    borderSide: const BorderSide(
+                      color: Color(0xFFFFE5B4),
+                      width: 2,
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: Color(0xFFFFE5B4),
+                      width: 2,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: Color(0xFFA7E399),
+                      width: 2,
+                    ),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 16,
                   ),
+                  hintStyle: TextStyle(color: Colors.grey.shade400),
                 ),
                 onTap: () => _selectDate(_startDateController, true),
                 validator: (value) {
@@ -744,21 +1021,53 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
               ),
               const SizedBox(height: 16),
               // End Date Field
+              Text(
+                'End Date',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+              const SizedBox(height: 8),
               TextFormField(
                 controller: _endDateController,
                 readOnly: true,
                 decoration: InputDecoration(
-                  hintText: 'End Date',
+                  hintText: 'Select end date',
                   filled: true,
-                  fillColor: Colors.green.shade200,
+                  fillColor: const Color(0xFFFFF9E6),
+                  prefixIcon: const Icon(
+                    Icons.calendar_today,
+                    color: Color(0xFFA7E399),
+                    size: 20,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    borderSide: const BorderSide(
+                      color: Color(0xFFFFE5B4),
+                      width: 2,
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: Color(0xFFFFE5B4),
+                      width: 2,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: Color(0xFFA7E399),
+                      width: 2,
+                    ),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 16,
                   ),
+                  hintStyle: TextStyle(color: Colors.grey.shade400),
                 ),
                 onTap: () => _selectDate(_endDateController, false),
                 validator: (value) {
@@ -770,22 +1079,59 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
               ),
               const SizedBox(height: 16),
               // Amount Field
+              Text(
+                'Target Amount',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+              const SizedBox(height: 8),
               TextFormField(
                 controller: _amountController,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
-                  hintText: 'Amount',
+                  hintText: 'Enter amount',
                   filled: true,
-                  fillColor: Colors.green.shade200,
+                  fillColor: const Color(0xFFFFF9E6),
+                  prefixIcon: const Icon(
+                    Icons.attach_money,
+                    color: Color(0xFFA7E399),
+                    size: 20,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    borderSide: const BorderSide(
+                      color: Color(0xFFFFE5B4),
+                      width: 2,
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: Color(0xFFFFE5B4),
+                      width: 2,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: Color(0xFFA7E399),
+                      width: 2,
+                    ),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 16,
                   ),
+                  hintStyle: TextStyle(color: Colors.grey.shade400),
                 ),
+                onChanged: (value) {
+                  setState(() {
+                    // Trigger recalculation when amount changes
+                  });
+                },
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter an amount';
@@ -796,14 +1142,49 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
                   return null;
                 },
               ),
+              const SizedBox(height: 16),
+              // Amount Per Cycle Display Field
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 16,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Amount per ${_selectedCycleFrequency.toLowerCase()}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _formatCurrency(_calculateAmountPerCycle()),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFF39C12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 24),
               // Cycle Frequency Section (Only for Circle Saving)
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
+                  color: const Color(0xFFFFF9E6),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue.shade200),
+                  border: Border.all(color: const Color(0xFFFFE5B4)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -823,7 +1204,7 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
                       decoration: InputDecoration(
                         hintText: 'Cycle Frequency',
                         filled: true,
-                        fillColor: Colors.green.shade200,
+                        fillColor: const Color(0xFFFFF9E6),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
@@ -864,7 +1245,7 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
                               _enableAutoDeduction = value;
                             });
                           },
-                          activeColor: Colors.green,
+                          activeColor: const Color(0xFFA7E399),
                         ),
                       ],
                     ),
@@ -877,13 +1258,7 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
                 onTap: () async {
                   // Validate ledger exists
                   if (_ledgerId == null || _ledgerId!.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Please create a ledger first before generating suggestions',
-                        ),
-                      ),
-                    );
+                    _showMissingFieldDialog('ledger');
                     return;
                   }
                   final result = await Navigator.push(

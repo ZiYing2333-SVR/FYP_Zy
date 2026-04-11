@@ -14,14 +14,12 @@ class EditBudgetPage extends StatefulWidget {
 class _EditBudgetPageState extends State<EditBudgetPage> {
   late TextEditingController _amountController;
   late String _selectedCycleType;
-  late bool _rolloverStatus;
   bool _isSaving = false;
   bool _isDeleting = false;
 
   // Original values for change detection
   late String _originalAmount;
   late String _originalCycleType;
-  late bool _originalRolloverStatus;
 
   String _budgetItemName = '';
   String _budgetItemIcon = '';
@@ -40,8 +38,6 @@ class _EditBudgetPageState extends State<EditBudgetPage> {
       widget.budget['cycleType'] ?? 'month',
     );
     _originalCycleType = _selectedCycleType;
-    _rolloverStatus = widget.budget['rolloverStatus'] ?? false;
-    _originalRolloverStatus = _rolloverStatus;
     _fetchBudgetItemDetails();
   }
 
@@ -117,8 +113,7 @@ class _EditBudgetPageState extends State<EditBudgetPage> {
 
   bool _hasChanges() {
     return _amountController.text != _originalAmount ||
-        _selectedCycleType != _originalCycleType ||
-        _rolloverStatus != _originalRolloverStatus;
+        _selectedCycleType != _originalCycleType;
   }
 
   void _showDiscardConfirmation() {
@@ -210,11 +205,96 @@ class _EditBudgetPageState extends State<EditBudgetPage> {
     );
   }
 
+  void _showMissingFieldDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFCDD2), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Error icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.red[100],
+                  ),
+                  child: Icon(
+                    Icons.error_outline,
+                    color: Colors.red[700],
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Error title
+                const Text(
+                  'Missing Field',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFF39C12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Error message
+                const Text(
+                  'Please enter a budget amount to continue.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF666666),
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // OK button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFA7E399),
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    child: const Text('OK'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _saveBudget() async {
     if (_amountController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter budget amount')),
-      );
+      _showMissingFieldDialog();
       return;
     }
 
@@ -228,7 +308,6 @@ class _EditBudgetPageState extends State<EditBudgetPage> {
           .update({
             'amount': double.parse(_amountController.text),
             'cycleType': _selectedCycleType.toLowerCase(),
-            'rolloverStatus': _rolloverStatus,
           })
           .eq('budgetId', widget.budget['budgetId']);
 
@@ -793,58 +872,6 @@ class _EditBudgetPageState extends State<EditBudgetPage> {
                         });
                       }
                     },
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // Rollover Status Toggle
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF9E6),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: const Color(0xFFFFE5B4),
-                      width: 2,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Rollover Status',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black87,
-                              ),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              'Carry over remaining budget to next cycle',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF999999),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Switch(
-                        value: _rolloverStatus,
-                        onChanged: (bool value) {
-                          setState(() {
-                            _rolloverStatus = value;
-                          });
-                        },
-                        activeColor: const Color(0xFFA7E399),
-                        inactiveThumbColor: Colors.grey.shade400,
-                      ),
-                    ],
                   ),
                 ),
                 const SizedBox(height: 32),

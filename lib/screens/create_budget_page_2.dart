@@ -22,7 +22,6 @@ class CreateBudgetPage2 extends StatefulWidget {
 class _CreateBudgetPage2State extends State<CreateBudgetPage2> {
   final TextEditingController _budgetAmountController = TextEditingController();
   String _selectedCycleType = 'Month';
-  bool _rolloverStatus = false;
   bool _isSaving = false;
 
   final List<String> _cycleTypes = ['Day', 'Week', 'Month', 'Year'];
@@ -77,12 +76,97 @@ class _CreateBudgetPage2State extends State<CreateBudgetPage2> {
     }
   }
 
+  void _showMissingFieldDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFCDD2), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Error icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.red[100],
+                  ),
+                  child: Icon(
+                    Icons.error_outline,
+                    color: Colors.red[700],
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Error title
+                const Text(
+                  'Missing Field',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFF39C12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Error message
+                const Text(
+                  'Please enter a budget amount to continue.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF666666),
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // OK button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFA7E399),
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    child: const Text('OK'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _saveBudget() async {
     // Validate input
     if (_budgetAmountController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter budget amount')),
-      );
+      _showMissingFieldDialog();
       return;
     }
 
@@ -97,7 +181,6 @@ class _CreateBudgetPage2State extends State<CreateBudgetPage2> {
         'type': budgetType,
         'amount': double.parse(_budgetAmountController.text),
         'cycleType': _selectedCycleType.toLowerCase(),
-        'rolloverStatus': _rolloverStatus,
         'reuseStatus': false,
         'ledgerId': widget.ledgerId,
         'categoryId': widget.categoryId,
@@ -305,34 +388,6 @@ class _CreateBudgetPage2State extends State<CreateBudgetPage2> {
               ),
             ),
             const SizedBox(height: 24),
-
-            // Rollover Toggle
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Rollover',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  Switch(
-                    value: _rolloverStatus,
-                    onChanged: (bool value) {
-                      setState(() {
-                        _rolloverStatus = value;
-                      });
-                    },
-                    activeColor: Colors.green,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 48),
 
             // Save Button
             GestureDetector(

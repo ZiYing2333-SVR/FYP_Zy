@@ -1714,7 +1714,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 physics: const NeverScrollableScrollPhysics(),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 7,
-                  childAspectRatio: 1.1,
+                  childAspectRatio: 1.2,
                   mainAxisSpacing: 4,
                   crossAxisSpacing: 4,
                 ),
@@ -1778,6 +1778,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
                             day.toString(),
@@ -1786,12 +1787,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               fontWeight: FontWeight.w600,
                               color: isSelected ? Colors.white : Colors.black,
                             ),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 2),
-                          // Display value with proper formatting
-                          if (displayValue != 0)
-                            SizedBox(
-                              height: 16,
+                          if (displayValue != 0) ...[
+                            const SizedBox(height: 2),
+                            // Display value with proper formatting
+                            Flexible(
                               child: Text(
                                 displayValue >= 0
                                     ? '${displayValue.toStringAsFixed(0)}'
@@ -1812,10 +1813,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                       ? const Color(0xFFE74C3C)
                                       : const Color(0xFF52C77A),
                                 ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
                               ),
-                            )
-                          else
-                            const SizedBox(height: 16),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -3651,33 +3653,35 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ],
       ),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: FloatingActionButton(
-          heroTag: 'add_transaction_fab',
-          backgroundColor: const Color(0xFF90EE90),
-          onPressed: () async {
-            final result = await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => AddTransaction(
-                  userId: _currentUserId!,
-                  ledgerId: _selectedLedgerId,
-                ),
+      floatingActionButton: _ledgers.isEmpty
+          ? null
+          : Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: FloatingActionButton(
+                heroTag: 'add_transaction_fab',
+                backgroundColor: const Color(0xFF90EE90),
+                onPressed: () async {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AddTransaction(
+                        userId: _currentUserId!,
+                        ledgerId: _selectedLedgerId,
+                      ),
+                    ),
+                  );
+                  // Refresh transactions if a new one was added
+                  if (result == true) {
+                    // Refresh both list view and calendar view
+                    await _fetchTransactions();
+                    await _calculateDailyBalances();
+                    // Budget alerts already handled in AddTransaction screen
+                    // No need to re-check here
+                  }
+                },
+                child: const Icon(Icons.add, color: Colors.black, size: 30),
               ),
-            );
-            // Refresh transactions if a new one was added
-            if (result == true) {
-              // Refresh both list view and calendar view
-              await _fetchTransactions();
-              await _calculateDailyBalances();
-              // Budget alerts already handled in AddTransaction screen
-              // No need to re-check here
-            }
-          },
-          child: const Icon(Icons.add, color: Colors.black, size: 30),
-        ),
-      ),
+            ),
     );
   }
 }

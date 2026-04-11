@@ -269,6 +269,19 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   Future<void> _saveUserData() async {
     setState(() => _isSaving = true);
     try {
+      // Validate email if it's not empty
+      final emailValue = _emailController.text.trim();
+      if (emailValue.isNotEmpty && !emailValue.contains('@')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enter a valid email address'),
+            backgroundColor: Color(0xFFE74C3C),
+          ),
+        );
+        setState(() => _isSaving = false);
+        return;
+      }
+
       String? newImageUrl = _profileImageUrl;
 
       // Step 1: Upload image to Supabase if a new image was selected
@@ -304,9 +317,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           : _birthdayController.text;
 
       final updateData = {
-        'nickname': _nicknameController.text,
-        'phoneNumber': _phoneController.text,
-        'email': _emailController.text,
+        'nickname': _nicknameController.text.trim(),
+        'phoneNumber': _phoneController.text.trim(),
+        'email': emailValue.isEmpty ? null : emailValue,
         'birthday': birthday,
         'updatedAt': DateTime.now().toString(),
       };
@@ -431,32 +444,52 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   }
 
   void _showImageSourceDialog() {
-    showDialog(
+    showModalBottomSheet(
       context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      backgroundColor: const Color(0xFFFFF9E6),
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Select Image Source'),
-          content: const Text('Choose where to get your profile picture from'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _pickImage(ImageSource.camera);
-              },
-              child: const Text('Take a Photo'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _pickImage(ImageSource.gallery);
-              },
-              child: const Text('Choose from Gallery'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-          ],
+        return Container(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(bottom: 20),
+                child: Text(
+                  'Select Image Source',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera_alt, color: Color(0xFFA7E399)),
+                title: const Text('Take a Photo'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.image, color: Color(0xFFA7E399)),
+                title: const Text('Choose from Gallery'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.gallery);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.close, color: Colors.grey),
+                title: const Text('Cancel'),
+                onTap: () => Navigator.pop(context),
+              ),
+            ],
+          ),
         );
       },
     );

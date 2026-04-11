@@ -142,9 +142,11 @@ class _CurrencySettingsPageState extends State<CurrencySettingsPage> {
                           child: const Text(
                             'Cancel',
                             style: TextStyle(
-                              fontSize: 16,
+                              fontSize: 13,
                               fontWeight: FontWeight.w600,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),
@@ -169,9 +171,11 @@ class _CurrencySettingsPageState extends State<CurrencySettingsPage> {
                           child: const Text(
                             'Confirm',
                             style: TextStyle(
-                              fontSize: 16,
+                              fontSize: 13,
                               fontWeight: FontWeight.w600,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),

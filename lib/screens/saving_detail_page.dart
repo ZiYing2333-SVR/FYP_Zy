@@ -649,27 +649,13 @@ class _SavingDetailPageState extends State<SavingDetailPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Transfer',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ),
-                          if (transferDate != null)
-                            Text(
-                              _formatDate(_formatDateOnly(transferDate)),
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFFBCBCBC),
-                              ),
-                            ),
-                        ],
+                      Text(
+                        'Transfer',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black,
+                        ),
                       ),
                       if (note.isNotEmpty)
                         Padding(
@@ -698,11 +684,11 @@ class _SavingDetailPageState extends State<SavingDetailPage> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          '-RM${amount.toStringAsFixed(2)}',
+                          'RM${amount.toStringAsFixed(2)}',
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFFE74C3C),
+                            color: Colors.black,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -711,26 +697,41 @@ class _SavingDetailPageState extends State<SavingDetailPage> {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    // Refund Badge
-                    if (isRefunded)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFE5B4),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'REFUNDED',
-                          style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFFE74C3C),
+                    // Date and Refund Badge
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (transferDate != null)
+                          Text(
+                            _formatDate(_formatDateOnly(transferDate)),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFFBCBCBC),
+                            ),
                           ),
-                        ),
-                      ),
+                        const SizedBox(width: 8),
+                        if (isRefunded)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFE5B4),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'REFUNDED',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFFE74C3C),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               ],

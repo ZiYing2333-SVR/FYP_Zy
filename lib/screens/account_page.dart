@@ -1616,7 +1616,7 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
                                                           .first['currencyId']
                                                     : null,
                                               )
-                                            : '••••••••',
+                                            : '******',
                                         style: TextStyle(
                                           fontSize: 40,
                                           fontWeight: FontWeight.w900,

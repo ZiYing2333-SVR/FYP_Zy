@@ -640,25 +640,31 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Overspend Analysis',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Overspend Analysis',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Will you exceed your MONTHLY budget this month?',
-                    style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-                  ),
-                ],
+                    const SizedBox(height: 2),
+                    Text(
+                      'Will you exceed your MONTHLY budget this month?',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -721,18 +727,37 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Warning: You will likely overspend by RM${analysis.overspendAmount.toStringAsFixed(2)} this month',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.red.shade700,
-                    fontWeight: FontWeight.w500,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Warning: You will likely overspend by RM${analysis.overspendAmount.toStringAsFixed(2)} this month',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.red.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  'Consider reducing spending to stay within your RM${analysis.budgetAmount.toStringAsFixed(2)} budget',
-                  style: TextStyle(fontSize: 11, color: Colors.red.shade600),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Consider reducing spending to stay within your RM${analysis.budgetAmount.toStringAsFixed(2)} budget',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.red.shade600,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             )
@@ -740,18 +765,37 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '✓ You are on track to stay within budget this month! 🎉',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.green.shade700,
-                    fontWeight: FontWeight.w500,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '✓ You are on track to stay within budget this month! 🎉',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.green.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  '0% overspend = No overspending is predicted for THIS MONTH',
-                  style: TextStyle(fontSize: 11, color: Colors.green.shade600),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '0% overspend = No overspending is predicted for THIS MONTH',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.green.shade600,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

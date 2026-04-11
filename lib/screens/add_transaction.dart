@@ -1053,7 +1053,7 @@ class _AddTransactionState extends State<AddTransaction> {
                             crossAxisCount: 4,
                             crossAxisSpacing: 12,
                             mainAxisSpacing: 20,
-                            childAspectRatio: 0.75,
+                            childAspectRatio: 0.85,
                           ),
                       itemCount: _selectedType == 'expense'
                           ? expenseCategories.length
@@ -1115,17 +1115,19 @@ class _AddTransactionState extends State<AddTransaction> {
                                         size: 30,
                                       ),
                               ),
-                              const SizedBox(height: 8),
-                              SizedBox(
-                                width: 70,
-                                child: Text(
-                                  category['name'] ?? 'Unknown',
-                                  textAlign: TextAlign.center,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w500,
+                              const SizedBox(height: 6),
+                              Flexible(
+                                child: SizedBox(
+                                  width: 70,
+                                  child: Text(
+                                    category['name'] ?? 'Unknown',
+                                    textAlign: TextAlign.center,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1157,90 +1159,94 @@ class _AddTransactionState extends State<AddTransaction> {
             ),
           ),
           // Amount Display and Compact Keyboard Section
-          Container(
-            color: const Color(0xFFFFF9E6),
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Amount Display
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 8,
-                    horizontal: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF90EE90),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    _amountText,
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
+          Flexible(
+            child: SingleChildScrollView(
+              child: Container(
+                color: const Color(0xFFFFF9E6),
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Amount Display
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 8,
+                        horizontal: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF90EE90),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        _amountText,
+                        style: const TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
                     ),
-                    textAlign: TextAlign.center,
-                  ),
+                    const SizedBox(height: 6),
+                    // Compact Numeric Keyboard
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF90EE90),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        children: [
+                          // Row 1: 7, 8, 9, C
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _buildCompactKeyboardButton('7'),
+                              _buildCompactKeyboardButton('8'),
+                              _buildCompactKeyboardButton('9'),
+                              _buildCompactKeyboardButton('C'),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          // Row 2: 4, 5, 6, *
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _buildCompactKeyboardButton('4'),
+                              _buildCompactKeyboardButton('5'),
+                              _buildCompactKeyboardButton('6'),
+                              _buildCompactKeyboardButton('*'),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          // Row 3: 1, 2, 3, +
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _buildCompactKeyboardButton('1'),
+                              _buildCompactKeyboardButton('2'),
+                              _buildCompactKeyboardButton('3'),
+                              _buildCompactKeyboardButton('+'),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          // Row 4: 0, ., <, ✓
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _buildCompactKeyboardButton('0', flex: 2),
+                              _buildCompactKeyboardButton('.'),
+                              _buildCompactKeyboardButton('<'),
+                              _buildCompactKeyboardButton('✓'),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 6),
-                // Compact Numeric Keyboard
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF90EE90),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    children: [
-                      // Row 1: 7, 8, 9, C
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _buildCompactKeyboardButton('7'),
-                          _buildCompactKeyboardButton('8'),
-                          _buildCompactKeyboardButton('9'),
-                          _buildCompactKeyboardButton('C'),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      // Row 2: 4, 5, 6, *
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _buildCompactKeyboardButton('4'),
-                          _buildCompactKeyboardButton('5'),
-                          _buildCompactKeyboardButton('6'),
-                          _buildCompactKeyboardButton('*'),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      // Row 3: 1, 2, 3, +
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _buildCompactKeyboardButton('1'),
-                          _buildCompactKeyboardButton('2'),
-                          _buildCompactKeyboardButton('3'),
-                          _buildCompactKeyboardButton('+'),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      // Row 4: 0, ., <, ✓
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _buildCompactKeyboardButton('0', flex: 2),
-                          _buildCompactKeyboardButton('.'),
-                          _buildCompactKeyboardButton('<'),
-                          _buildCompactKeyboardButton('✓'),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ],
@@ -1347,167 +1353,169 @@ class _AddTransactionState extends State<AddTransaction> {
   }
 
   Widget _buildTransferAccountSelection() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // From Account Field
-          const Text(
-            'From Account',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-              color: Colors.black,
-            ),
-          ),
-          const SizedBox(height: 12),
-          GestureDetector(
-            onTap: () => _showAccountPickerModal(
-              'Select From Account',
-              'from',
-              _selectedFromAccountId,
-              (accountId) {
-                setState(() {
-                  _selectedFromAccountId = accountId;
-                });
-                Navigator.pop(context);
-              },
-            ),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _selectedFromAccountId != null
-                      ? Colors.green.shade300
-                      : Colors.grey.shade300,
-                  width: _selectedFromAccountId != null ? 2 : 1,
-                ),
-                boxShadow: _selectedFromAccountId != null
-                    ? [
-                        BoxShadow(
-                          color: Colors.green.withOpacity(0.1),
-                          blurRadius: 8,
-                        ),
-                      ]
-                    : [],
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // From Account Field
+            const Text(
+              'From Account',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                color: Colors.black,
               ),
-              child: Row(
-                children: [
-                  if (_selectedFromAccountId != null) ...[
-                    ..._buildAccountDisplayItem(
-                      _accounts.firstWhere(
-                        (acc) => acc['accountId'] == _selectedFromAccountId,
-                        orElse: () => {},
-                      ),
-                    ),
-                  ] else
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Tap to select',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  const Spacer(),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    size: 16,
-                    color: Colors.grey.shade400,
+            ),
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: () => _showAccountPickerModal(
+                'Select From Account',
+                'from',
+                _selectedFromAccountId,
+                (accountId) {
+                  setState(() {
+                    _selectedFromAccountId = accountId;
+                  });
+                  Navigator.pop(context);
+                },
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _selectedFromAccountId != null
+                        ? Colors.green.shade300
+                        : Colors.grey.shade300,
+                    width: _selectedFromAccountId != null ? 2 : 1,
                   ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          // To Account Field
-          const Text(
-            'To Account',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-              color: Colors.black,
-            ),
-          ),
-          const SizedBox(height: 12),
-          GestureDetector(
-            onTap: () => _showAccountPickerModal(
-              'Select To Account',
-              'to',
-              _selectedToAccountId,
-              (accountId) {
-                setState(() {
-                  _selectedToAccountId = accountId;
-                });
-                Navigator.pop(context);
-              },
-            ),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _selectedToAccountId != null
-                      ? Colors.green.shade300
-                      : Colors.grey.shade300,
-                  width: _selectedToAccountId != null ? 2 : 1,
-                ),
-                boxShadow: _selectedToAccountId != null
-                    ? [
-                        BoxShadow(
-                          color: Colors.green.withOpacity(0.1),
-                          blurRadius: 8,
-                        ),
-                      ]
-                    : [],
-              ),
-              child: Row(
-                children: [
-                  if (_selectedToAccountId != null) ...[
-                    ..._buildAccountDisplayItem(
-                      _accounts.firstWhere(
-                        (acc) => acc['accountId'] == _selectedToAccountId,
-                        orElse: () => {},
-                      ),
-                    ),
-                  ] else
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Tap to select',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey.shade600,
-                            ),
+                  boxShadow: _selectedFromAccountId != null
+                      ? [
+                          BoxShadow(
+                            color: Colors.green.withOpacity(0.1),
+                            blurRadius: 8,
                           ),
-                        ],
+                        ]
+                      : [],
+                ),
+                child: Row(
+                  children: [
+                    if (_selectedFromAccountId != null) ...[
+                      ..._buildAccountDisplayItem(
+                        _accounts.firstWhere(
+                          (acc) => acc['accountId'] == _selectedFromAccountId,
+                          orElse: () => {},
+                        ),
                       ),
+                    ] else
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Tap to select',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const Spacer(),
+                    Icon(
+                      Icons.arrow_forward_ios,
+                      size: 16,
+                      color: Colors.grey.shade400,
                     ),
-                  const Spacer(),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    size: 16,
-                    color: Colors.grey.shade400,
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 24),
+            // To Account Field
+            const Text(
+              'To Account',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                color: Colors.black,
+              ),
+            ),
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: () => _showAccountPickerModal(
+                'Select To Account',
+                'to',
+                _selectedToAccountId,
+                (accountId) {
+                  setState(() {
+                    _selectedToAccountId = accountId;
+                  });
+                  Navigator.pop(context);
+                },
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _selectedToAccountId != null
+                        ? Colors.green.shade300
+                        : Colors.grey.shade300,
+                    width: _selectedToAccountId != null ? 2 : 1,
+                  ),
+                  boxShadow: _selectedToAccountId != null
+                      ? [
+                          BoxShadow(
+                            color: Colors.green.withOpacity(0.1),
+                            blurRadius: 8,
+                          ),
+                        ]
+                      : [],
+                ),
+                child: Row(
+                  children: [
+                    if (_selectedToAccountId != null) ...[
+                      ..._buildAccountDisplayItem(
+                        _accounts.firstWhere(
+                          (acc) => acc['accountId'] == _selectedToAccountId,
+                          orElse: () => {},
+                        ),
+                      ),
+                    ] else
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Tap to select',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const Spacer(),
+                    Icon(
+                      Icons.arrow_forward_ios,
+                      size: 16,
+                      color: Colors.grey.shade400,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2000,55 +2008,68 @@ class _AddTransactionState extends State<AddTransaction> {
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
+        return Dialog(
           backgroundColor: const Color(0xFFFFF9E6),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          contentPadding: const EdgeInsets.all(24),
-          title: const Text(
-            'Add Note',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFFF39C12),
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Add Note',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFF39C12),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _noteController,
+                    decoration: const InputDecoration(
+                      hintText: 'e.g., Breakfast bread RM2.80',
+                      hintStyle: TextStyle(
+                        color: Color(0xFF999999),
+                        fontSize: 12,
+                      ),
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 4,
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(color: Color(0xFFF39C12)),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      TextButton(
+                        onPressed: () {
+                          // Text is already saved in _noteController via controller property
+                          print('✓ Note saved: "${_noteController.text}"');
+                          Navigator.pop(context);
+                        },
+                        child: const Text(
+                          'Save',
+                          style: TextStyle(color: Color(0xFFA7E399)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: _noteController,
-                decoration: const InputDecoration(
-                  hintText: 'e.g., Breakfast bread RM2.80',
-                  hintStyle: TextStyle(color: Color(0xFF999999), fontSize: 12),
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 4,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text(
-                'Cancel',
-                style: TextStyle(color: Color(0xFFF39C12)),
-              ),
-            ),
-            TextButton(
-              onPressed: () {
-                // Text is already saved in _noteController via controller property
-                print('✓ Note saved: "${_noteController.text}"');
-                Navigator.pop(context);
-              },
-              child: const Text(
-                'Save',
-                style: TextStyle(color: Color(0xFFA7E399)),
-              ),
-            ),
-          ],
         );
       },
     );

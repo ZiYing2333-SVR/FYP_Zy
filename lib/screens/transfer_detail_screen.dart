@@ -140,13 +140,19 @@ class _TransferDetailScreenState extends State<TransferDetailScreen> {
                         ),
                       ),
                       child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
+                        padding: EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 8,
+                        ),
                         child: Text(
                           'Cancel',
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ),
@@ -163,15 +169,22 @@ class _TransferDetailScreenState extends State<TransferDetailScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         elevation: 0,
+                        padding: EdgeInsets.zero,
                       ),
                       child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
+                        padding: EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 4,
+                        ),
                         child: Text(
                           'Confirm',
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: 11,
                             fontWeight: FontWeight.w600,
                           ),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ),
@@ -413,13 +426,19 @@ class _TransferDetailScreenState extends State<TransferDetailScreen> {
                         elevation: 0,
                       ),
                       child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
+                        padding: EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 8,
+                        ),
                         child: Text(
                           'Cancel',
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ),
@@ -438,13 +457,19 @@ class _TransferDetailScreenState extends State<TransferDetailScreen> {
                         elevation: 0,
                       ),
                       child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
+                        padding: EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 8,
+                        ),
                         child: Text(
                           'Delete',
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ),

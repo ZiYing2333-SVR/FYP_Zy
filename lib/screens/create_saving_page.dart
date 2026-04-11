@@ -15,14 +15,14 @@ class CreateSavingPage extends StatefulWidget {
 
 class _CreateSavingPageState extends State<CreateSavingPage> {
   String _selectedSavingType = 'Free Saving';
-  final List<String> _savingTypes = ['Free Saving', 'Circle Saving'];
+  final List<String> _savingTypes = ['Free Saving', 'Cycle Saving'];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFFFFB),
+      backgroundColor: const Color(0xFFFFF9E6),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFFFFFFB),
+        backgroundColor: const Color(0xFFFFF9E6),
         elevation: 0,
         leading: GestureDetector(
           onTap: () => Navigator.pop(context),

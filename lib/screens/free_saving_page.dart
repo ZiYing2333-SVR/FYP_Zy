@@ -319,14 +319,14 @@ class _FreeSavingPageState extends State<FreeSavingPage> {
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
                                     color: isSelected
-                                        ? Colors.green.shade50
+                                        ? const Color(0xFFFFF9E6)
                                         : (isAccountUsed && !isSelected
                                               ? Colors.grey.shade100
                                               : Colors.white),
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
                                       color: isSelected
-                                          ? Colors.green.shade400
+                                          ? const Color(0xFFFFE5B4)
                                           : (isAccountUsed && !isSelected
                                                 ? Colors.grey.shade400
                                                 : Colors.grey.shade300),
@@ -350,7 +350,7 @@ class _FreeSavingPageState extends State<FreeSavingPage> {
                                           width: 24,
                                           height: 24,
                                           decoration: BoxDecoration(
-                                            color: Colors.green,
+                                            color: const Color(0xFFA7E399),
                                             shape: BoxShape.circle,
                                           ),
                                           child: const Icon(
@@ -375,13 +375,180 @@ class _FreeSavingPageState extends State<FreeSavingPage> {
     );
   }
 
+  void _showMissingFieldDialog(String fieldName) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFCDD2), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Error icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.red[100],
+                  ),
+                  child: Icon(
+                    Icons.error_outline,
+                    color: Colors.red[700],
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Error title
+                const Text(
+                  'Missing Field',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFF39C12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Error message
+                Text(
+                  fieldName == 'account'
+                      ? 'Please select a destination account to continue.'
+                      : 'Please create a ledger first before generating suggestions.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF666666),
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // OK button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFA7E399),
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    child: const Text('OK'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showSuccessDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Success icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFA7E399),
+                  ),
+                  child: const Icon(Icons.check, color: Colors.white, size: 32),
+                ),
+                const SizedBox(height: 20),
+                // Success title
+                const Text(
+                  'Saving Goal Created Successfully!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFF39C12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Success message
+                const Text(
+                  'Your saving goal has been created successfully.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: Color(0xFF666666)),
+                ),
+                const SizedBox(height: 24),
+                // Done button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context); // Close dialog
+                      Navigator.pop(context, true); // Go back to savings page
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFA7E399),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    child: const Text('Done'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _createSavingGoal() async {
     if (!_formKey.currentState!.validate()) return;
 
     if (_selectedDestAccount == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a destination account')),
-      );
+      _showMissingFieldDialog('account');
       return;
     }
 
@@ -431,10 +598,7 @@ class _FreeSavingPageState extends State<FreeSavingPage> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Saving goal created successfully')),
-        );
-        Navigator.pop(context, true);
+        _showSuccessDialog();
       }
     } catch (e) {
       print('Error creating saving goal: $e');
@@ -449,9 +613,9 @@ class _FreeSavingPageState extends State<FreeSavingPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFFFFB),
+      backgroundColor: const Color(0xFFFFF9E6),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFFFFFFB),
+        backgroundColor: const Color(0xFFFFF9E6),
         elevation: 0,
         leading: GestureDetector(
           onTap: () => Navigator.pop(context),
@@ -476,20 +640,52 @@ class _FreeSavingPageState extends State<FreeSavingPage> {
             children: [
               const SizedBox(height: 16),
               // Name Field
+              Text(
+                'Saving Goal Name',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+              const SizedBox(height: 8),
               TextFormField(
                 controller: _nameController,
                 decoration: InputDecoration(
-                  hintText: 'Name',
+                  hintText: 'Enter goal name',
                   filled: true,
-                  fillColor: Colors.green.shade200,
+                  fillColor: const Color(0xFFFFF9E6),
+                  prefixIcon: const Icon(
+                    Icons.savings,
+                    color: Color(0xFFA7E399),
+                    size: 20,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    borderSide: const BorderSide(
+                      color: Color(0xFFFFE5B4),
+                      width: 2,
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: Color(0xFFFFE5B4),
+                      width: 2,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: Color(0xFFA7E399),
+                      width: 2,
+                    ),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 16,
                   ),
+                  hintStyle: TextStyle(color: Colors.grey.shade400),
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
@@ -498,7 +694,7 @@ class _FreeSavingPageState extends State<FreeSavingPage> {
                   return null;
                 },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 24),
               // Destination Account Selection
               Text(
                 'Destination Account (Save to)',
@@ -518,14 +714,14 @@ class _FreeSavingPageState extends State<FreeSavingPage> {
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: _selectedDestAccount != null
-                          ? Colors.green.shade300
+                          ? const Color(0xFFFFE5B4)
                           : Colors.grey.shade300,
                       width: _selectedDestAccount != null ? 2 : 1,
                     ),
                     boxShadow: _selectedDestAccount != null
                         ? [
                             BoxShadow(
-                              color: Colors.green.withOpacity(0.1),
+                              color: const Color(0xFFA7E399).withOpacity(0.1),
                               blurRadius: 8,
                             ),
                           ]
@@ -577,22 +773,59 @@ class _FreeSavingPageState extends State<FreeSavingPage> {
               ),
               const SizedBox(height: 16),
               // Amount Field
+              Text(
+                'Target Amount',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+              const SizedBox(height: 8),
               TextFormField(
                 controller: _amountController,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
-                  hintText: 'Amount',
+                  hintText: 'Enter amount',
                   filled: true,
-                  fillColor: Colors.green.shade200,
+                  fillColor: const Color(0xFFFFF9E6),
+                  prefixIcon: const Icon(
+                    Icons.attach_money,
+                    color: Color(0xFFA7E399),
+                    size: 20,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    borderSide: const BorderSide(
+                      color: Color(0xFFFFE5B4),
+                      width: 2,
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: Color(0xFFFFE5B4),
+                      width: 2,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: Color(0xFFA7E399),
+                      width: 2,
+                    ),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 16,
                   ),
+                  hintStyle: TextStyle(color: Colors.grey.shade400),
                 ),
+                onChanged: (value) {
+                  setState(() {
+                    // Trigger update when amount changes
+                  });
+                },
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter an amount';
@@ -608,13 +841,7 @@ class _FreeSavingPageState extends State<FreeSavingPage> {
               GestureDetector(
                 onTap: () async {
                   if (_ledgerId == null || _ledgerId!.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Please create a ledger first before generating suggestions',
-                        ),
-                      ),
-                    );
+                    _showMissingFieldDialog('ledger');
                     return;
                   }
                   final result = await Navigator.push(
@@ -636,7 +863,7 @@ class _FreeSavingPageState extends State<FreeSavingPage> {
                     vertical: 16,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.green.shade200,
+                    color: const Color(0xFFFFF9E6),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: Colors.green, width: 2),
                   ),

@@ -1118,6 +1118,11 @@ class _ConfirmBulkTransactionsScreenState
   }
 
   void _showAccountBottomSheet(Map<String, dynamic> current) {
+    // Filter out Savings type accounts
+    final displayAccounts = widget.accounts
+        .where((acc) => (acc['accountType'] as String?) != 'Savings')
+        .toList();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1168,7 +1173,7 @@ class _ConfirmBulkTransactionsScreenState
               const Divider(height: 1),
               // Account Cards Grid
               Expanded(
-                child: widget.accounts.isEmpty
+                child: displayAccounts.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -1199,9 +1204,9 @@ class _ConfirmBulkTransactionsScreenState
                               crossAxisSpacing: 12,
                               mainAxisSpacing: 12,
                             ),
-                        itemCount: widget.accounts.length,
+                        itemCount: displayAccounts.length,
                         itemBuilder: (context, index) {
-                          final account = widget.accounts[index];
+                          final account = displayAccounts[index];
                           final accountId = account['accountId'] as String;
                           final isSelected = accountId == current['accountId'];
                           final balance = account['balance'] as num?;
