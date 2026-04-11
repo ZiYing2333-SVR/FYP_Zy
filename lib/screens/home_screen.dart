@@ -164,7 +164,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           .lte('date', endOfMonth.toIso8601String())
           .order('date', ascending: false);
 
-      // Fetch accounts belonging to the selected ledger
+      // Fetch transfers for the same date range
+      // Note: Include transfers with matching ledgerId OR null ledgerId (backward compatibility)
+      final transferResponse = await supabase
+          .from('Transfer')
+          .select('*')
+          .gte('date', startOfMonth.toIso8601String())
+          .lte('date', endOfMonth.toIso8601String())
+          .order('date', ascending: false);
+
+      // Fetch accounts belonging to the selected ledger (for backward compatibility check)
       final ledgerAccountsResponse = await supabase
           .from('Account')
           .select('accountId')
@@ -175,14 +184,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         for (var account in ledgerAccountsResponse)
           account['accountId'] as String,
       };
-
-      // Fetch transfers for the same date range
-      final transferResponse = await supabase
-          .from('Transfer')
-          .select('*')
-          .gte('date', startOfMonth.toIso8601String())
-          .lte('date', endOfMonth.toIso8601String())
-          .order('date', ascending: false);
 
       // Fetch all accounts for enriching transfer data
       final accountsResponse = await supabase
@@ -214,26 +215,61 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         }
       }
 
-      // Process transfers - show only those within the selected ledger
+      // Process transfers - show only those belonging to current user
+      print(
+        '[HomeScreen] Processing ${transferResponse.length} transfers, current user: $_currentUserId',
+      );
       for (var transfer in transferResponse) {
-        // Only include transfers where both accounts belong to the selected ledger
+        final transferId = transfer['transferId'] as String?;
+        final ledgerId = transfer['ledgerId'] as String?;
         final fromAccountId = transfer['fromAccountId'] as String?;
         final toAccountId = transfer['toAccountId'] as String?;
 
-        if (fromAccountId != null &&
-            toAccountId != null &&
-            ledgerAccountIds.contains(fromAccountId) &&
-            ledgerAccountIds.contains(toAccountId)) {
+        // Extract UID from Transfer ID (e.g., from "TRANSFERUID0001000007", extract "UID0001")
+        String? extractedUid;
+        if (transferId != null && transferId.startsWith('TRANSFER')) {
+          // Remove 'TRANSFER' prefix and extract UID portion
+          final remainingId = transferId.substring('TRANSFER'.length);
+          // Extract UID (format: UIDxxxx with exactly 4 digits, non-greedy)
+          final uidMatch = RegExp(r'(UID\d{1,4})').firstMatch(remainingId);
+          if (uidMatch != null) {
+            extractedUid = uidMatch.group(1);
+          }
+          print(
+            '[HomeScreen] Transfer ID: $transferId, extracted UID: $extractedUid, current user: $_currentUserId',
+          );
+        }
+
+        // Check if transfer belongs to current user AND current ledger
+        // For new transfers: ledgerId match
+        // For old transfers: check if both accounts belong to selected ledger
+        bool belongsToLedger = ledgerId == _selectedLedgerId;
+        if (!belongsToLedger && ledgerId == null) {
+          // Backward compatibility: check if accounts belong to ledger
+          belongsToLedger =
+              fromAccountId != null &&
+              toAccountId != null &&
+              ledgerAccountIds.contains(fromAccountId) &&
+              ledgerAccountIds.contains(toAccountId);
+        }
+
+        // Only include transfers belonging to current user AND current ledger
+        if (extractedUid == _currentUserId && belongsToLedger) {
           final enrichedTransfer = Map<String, dynamic>.from(transfer);
           enrichedTransfer['recordType'] = 'transfer';
 
           // Add account data for from and to accounts
           enrichedTransfer['Account!fromAccountId'] =
-              accountsMap[transfer['fromAccountId']] ?? {};
+              accountsMap[fromAccountId] ?? {};
           enrichedTransfer['Account!toAccountId'] =
-              accountsMap[transfer['toAccountId']] ?? {};
+              accountsMap[toAccountId] ?? {};
 
           allRecords.add(enrichedTransfer);
+          print('[HomeScreen] ✅ Transfer added: $transferId');
+        } else {
+          print(
+            '[HomeScreen] ❌ Transfer skipped - UID match: ${extractedUid == _currentUserId}, Ledger match: $belongsToLedger',
+          );
         }
       }
 

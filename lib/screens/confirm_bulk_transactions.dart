@@ -456,6 +456,7 @@ class _ConfirmBulkTransactionsScreenState
         'date': t['date'].toIso8601String(),
         'note': t['note'] as String,
         'noteImage': null,
+        'ledgerId': widget.ledgerId,
       });
 
       // Update account balances

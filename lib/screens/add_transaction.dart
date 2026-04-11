@@ -634,6 +634,7 @@ class _AddTransactionState extends State<AddTransaction> {
           'date': _selectedDate.toIso8601String(),
           'note': _noteController.text,
           'noteImage': imageUrl,
+          'ledgerId': widget.ledgerId,
         });
 
         // Update both account balances

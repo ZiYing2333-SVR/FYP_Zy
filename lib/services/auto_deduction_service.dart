@@ -667,16 +667,18 @@ class AutoDeductionService {
         return false;
       }
 
-      // Verify source account has sufficient balance
+      // Verify source account has sufficient balance and get ledgerId
       print('$_tag [TRANSFER] Checking source account balance...');
       final sourceAccount = await supabase
           .from('Account')
-          .select('balance')
+          .select('balance, ledgerId')
           .eq('accountId', sourceAccountId)
           .single();
 
       final sourceBalance = (sourceAccount['balance'] as num?)?.toDouble() ?? 0;
+      final ledgerId = sourceAccount['ledgerId'] as String?;
       print('$_tag [TRANSFER]   Source balance: $sourceBalance');
+      print('$_tag [TRANSFER]   Ledger ID: $ledgerId');
 
       if (sourceBalance < deductionAmount) {
         print(
@@ -735,6 +737,7 @@ class AutoDeductionService {
         'note': 'Auto-deduction for savings goal: $goalName',
         'savingGoalId': goalId,
         'isAutoDeduction': true,
+        'ledgerId': ledgerId,
       };
 
       print('$_tag [TRANSFER] Inserting transfer record: $transferId');
