@@ -226,8 +226,12 @@ class _MissionPageState extends State<MissionPage> {
 
       if (!mounted) return;
 
+      int displayStreak = streak > 0
+          ? ((streak - 1) % 7) + 1
+          : 0;
+
       setState(() {
-        currentStreak = streak;
+        currentStreak = displayStreak;
       });
 
       String? achievementId;
@@ -348,6 +352,7 @@ class _MissionPageState extends State<MissionPage> {
         'achievementId': achievementId,
       });
 
+      /// 🎉 POPUP
       /// 🎉 POPUP
       if (mounted && !achievementShown) {
         achievementShown = true;
