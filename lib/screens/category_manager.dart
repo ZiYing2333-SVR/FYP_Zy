@@ -333,7 +333,7 @@ class _CategoryManagerState extends State<CategoryManager>
               width: iconSize,
               height: iconSize,
               decoration: BoxDecoration(
-                color: const Color(0xFFB0E0E6),
+                color: const Color(0xFFFFF9E6),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: category['icon'] != null && category['icon'].isNotEmpty

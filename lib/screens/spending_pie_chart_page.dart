@@ -13,7 +13,6 @@ class SpendingPieChartPage extends StatefulWidget {
 }
 
 class _SpendingPieChartPageState extends State<SpendingPieChartPage> {
-  int _selectedIndex = 4;
   String _selectedFilter = 'month';
   late DateTime _selectedDate;
 
@@ -145,6 +144,11 @@ class _SpendingPieChartPageState extends State<SpendingPieChartPage> {
       double total = 0;
 
       for (var transaction in allTransactions) {
+        // Skip refunded transactions
+        if (transaction['refund'] == true) {
+          continue;
+        }
+
         String categoryName = transaction['Category']?['name'] ?? 'Others';
         double amount = (transaction['amount'] as num).toDouble();
 
@@ -370,36 +374,6 @@ class _SpendingPieChartPageState extends State<SpendingPieChartPage> {
                 ],
               ),
             ),
-      bottomNavigationBar: Stack(
-        children: [
-          BottomNavigationBar(
-            currentIndex: _selectedIndex,
-            backgroundColor: const Color(0xFFFEFFD3),
-            type: BottomNavigationBarType.fixed,
-            items: const [
-              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.account_balance_wallet),
-                label: 'Account',
-              ),
-              BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.savings),
-                label: 'Saving',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.settings),
-                label: 'Setting',
-              ),
-            ],
-            onTap: (index) {
-              setState(() {
-                _selectedIndex = index;
-              });
-            },
-          ),
-        ],
-      ),
     );
   }
 

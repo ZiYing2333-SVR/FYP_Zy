@@ -301,10 +301,11 @@ class _TransferDetailScreenState extends State<TransferDetailScreen> {
                       height: 48,
                       child: ElevatedButton(
                         onPressed: () {
-                          Navigator.of(context).popUntil(
-                            (route) =>
-                                route.settings.name == '/' || route.isFirst,
-                          );
+                          Navigator.pop(context); // Close dialog
+                          Navigator.pop(
+                            context,
+                            true,
+                          ); // Close transfer detail screen and return
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFA7E399),
@@ -580,10 +581,11 @@ class _TransferDetailScreenState extends State<TransferDetailScreen> {
                       height: 48,
                       child: ElevatedButton(
                         onPressed: () {
-                          Navigator.of(context).popUntil(
-                            (route) =>
-                                route.settings.name == '/' || route.isFirst,
-                          );
+                          Navigator.pop(context); // Close dialog
+                          Navigator.pop(
+                            context,
+                            true,
+                          ); // Close transfer detail screen and return
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFA7E399),

@@ -13,8 +13,6 @@ class ReportPage extends StatefulWidget {
 }
 
 class _ReportPageState extends State<ReportPage> {
-  int _selectedIndex = 4;
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -26,26 +24,21 @@ class _ReportPageState extends State<ReportPage> {
           icon: const Icon(Icons.close, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'Report',
-          style: TextStyle(
-            color: Colors.black,
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        centerTitle: true,
       ),
       body: SingleChildScrollView(
         child: Column(
           children: [
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
                 children: [
                   _buildReportItem(
-                    'Spending Pie Chart',
+                    title: 'Spending Pie Chart',
+                    description: 'View your spending distribution by category',
+                    icon: Icons.pie_chart,
+                    iconColor: const Color(0xFFE74C3C),
+                    backgroundColor: const Color(0xFFFFE5CC),
                     onTap: () {
                       Navigator.push(
                         context,
@@ -58,7 +51,11 @@ class _ReportPageState extends State<ReportPage> {
                   ),
                   const SizedBox(height: 16),
                   _buildReportItem(
-                    'Income Pie Chart',
+                    title: 'Income Pie Chart',
+                    description: 'Analyze your income sources and breakdown',
+                    icon: Icons.pie_chart,
+                    iconColor: const Color(0xFF52C77A),
+                    backgroundColor: const Color(0xFFE8F5E9),
                     onTap: () {
                       Navigator.push(
                         context,
@@ -71,7 +68,11 @@ class _ReportPageState extends State<ReportPage> {
                   ),
                   const SizedBox(height: 16),
                   _buildReportItem(
-                    'Expense Trends',
+                    title: 'Expense Trends',
+                    description: 'Track your spending patterns over time',
+                    icon: Icons.show_chart,
+                    iconColor: const Color(0xFF4CAF50),
+                    backgroundColor: const Color(0xFFC8E6C9),
                     onTap: () {
                       Navigator.push(
                         context,
@@ -82,67 +83,89 @@ class _ReportPageState extends State<ReportPage> {
                       );
                     },
                   ),
+                  const SizedBox(height: 24),
                 ],
               ),
             ),
           ],
         ),
       ),
-      bottomNavigationBar: Stack(
-        children: [
-          BottomNavigationBar(
-            currentIndex: _selectedIndex,
-            backgroundColor: const Color(0xFFFEFFD3),
-            type: BottomNavigationBarType.fixed,
-            items: const [
-              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.account_balance_wallet),
-                label: 'Account',
-              ),
-              BottomNavigationBarItem(icon: Icon(Icons.pets), label: 'Pet'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.savings),
-                label: 'Saving',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.settings),
-                label: 'Setting',
-              ),
-            ],
-            onTap: (index) {
-              setState(() {
-                _selectedIndex = index;
-              });
-              // Add navigation logic for bottom navigation
-            },
-          ),
-        ],
-      ),
     );
   }
 
-  Widget _buildReportItem(String title, {required VoidCallback onTap}) {
+  Widget _buildReportItem({
+    required String title,
+    required String description,
+    required IconData icon,
+    required Color iconColor,
+    required Color backgroundColor,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFFC8E6C9),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFFFE5B4), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
+            // Icon Container
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: backgroundColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(child: Icon(icon, color: iconColor, size: 32)),
+            ),
+            const SizedBox(width: 16),
+            // Text Content
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFFBCBCBC),
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: Colors.black54, size: 24),
+            // Chevron Icon
+            Container(
+              padding: const EdgeInsets.all(8),
+              child: const Icon(
+                Icons.chevron_right,
+                color: Color(0xFFBCBCBC),
+                size: 24,
+              ),
+            ),
           ],
         ),
       ),

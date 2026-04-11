@@ -202,6 +202,34 @@ class _SavingDetailPageState extends State<SavingDetailPage> {
     }
   }
 
+  /// Check if this is a cycle-based saving goal
+  /// Checks the 'type' field: if type == 'cycle', it's a cycle saving
+  /// cycleStatus indicates whether auto-deduction is active
+  bool _isCycleSaving() {
+    if (_savingGoal == null) return false;
+
+    final type = _savingGoal!['type'];
+
+    // Debug logging
+    print('[SavingDetailPage] Checking goal type:');
+    print('  type value: $type (type: ${type.runtimeType})');
+
+    // Check the type field - should be one of: 'free', 'cycle', null
+    final isCycle = switch (type) {
+      'cycle' => true,
+      'Cycle' => true,
+      'CYCLE' => true,
+      'free' => false,
+      'Free' => false,
+      'FREE' => false,
+      null => false, // Default to free if null
+      _ => false, // Default to free for unknown types
+    };
+
+    print('  → Is cycle saving: $isCycle');
+    return isCycle;
+  }
+
   bool _hasChanges() {
     return _goalNameController.text != _originalGoalName ||
         _newCycleStatus != _originalCycleStatus;
@@ -504,7 +532,7 @@ class _SavingDetailPageState extends State<SavingDetailPage> {
                       borderRadius: BorderRadius.circular(8),
                       child: Image.network(
                         account['iconImage'],
-                        fit: BoxFit.cover,
+                        fit: BoxFit.contain,
                         errorBuilder: (context, error, stackTrace) {
                           return Icon(
                             Icons.account_balance_wallet,
@@ -928,10 +956,10 @@ class _SavingDetailPageState extends State<SavingDetailPage> {
                   const SizedBox(height: 8),
                   Builder(
                     builder: (context) {
-                      final destBalance = _destAccount?['balance'] ?? 0;
+                      final currentAmount = _destAccount?['balance'] ?? 0;
                       final targetAmount = _savingGoal!['targetAmount'] ?? 1;
                       final progressPercentage =
-                          ((destBalance / targetAmount) * 100)
+                          ((currentAmount / targetAmount) * 100)
                               .clamp(0, 100)
                               .toStringAsFixed(1);
 
@@ -1142,10 +1170,10 @@ class _SavingDetailPageState extends State<SavingDetailPage> {
                   const SizedBox(height: 8),
                   Builder(
                     builder: (context) {
-                      final destBalance = _destAccount?['balance'] ?? 0;
+                      final currentAmount = _destAccount?['balance'] ?? 0;
                       final targetAmount = _savingGoal!['targetAmount'] ?? 1;
                       final progressPercentage =
-                          ((destBalance / targetAmount) * 100)
+                          ((currentAmount / targetAmount) * 100)
                               .clamp(0, 100)
                               .toStringAsFixed(1);
 
@@ -1175,82 +1203,132 @@ class _SavingDetailPageState extends State<SavingDetailPage> {
             const SizedBox(height: 12),
             _buildAccountCard('Source Account', _sourceAccount),
             _buildAccountCard('Destination Account', _destAccount),
-            const SizedBox(height: 24),
-            // Cycle Details Section
-            Text(
-              'Cycle Details',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: Colors.orange.shade700,
+            // Only show Cycle Details for cycle-based savings
+            if (_isCycleSaving()) ...[
+              const SizedBox(height: 24),
+              // Cycle Details Section
+              Text(
+                'Cycle Details',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.orange.shade700,
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            _buildDetailCard(
-              'Start Date',
-              _formatDate(_savingGoal!['startDate']),
-            ),
-            _buildDetailCard('End Date', _formatDate(_savingGoal!['endDate'])),
-            _buildDetailCard(
-              'Cycle Frequency',
-              _savingGoal!['cycleFrequency'] ?? 'N/A',
-            ),
-            _buildDetailCard(
-              'Auto Deduction Status',
-              _savingGoal!['cycleStatus'] == true ? 'Active' : 'Inactive',
-            ),
-            const SizedBox(height: 24),
-            // Transfer Records Section
-            Text(
-              'Transfer Records',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: Colors.orange.shade700,
+              const SizedBox(height: 12),
+              _buildDetailCard(
+                'Start Date',
+                _formatDate(_savingGoal!['startDate']),
               ),
-            ),
-            const SizedBox(height: 12),
-            if (_isLoadingTransfers)
-              const Center(child: CircularProgressIndicator())
-            else if (_transferRecords.isEmpty)
+              _buildDetailCard(
+                'End Date',
+                _formatDate(_savingGoal!['endDate']),
+              ),
+              _buildDetailCard(
+                'Cycle Frequency',
+                '${_savingGoal!['cycleFrequency'] ?? 'N/A'} (${_formatDate(_savingGoal!['startDate'])} - ${_formatDate(_savingGoal!['endDate'])})',
+              ),
+              const SizedBox(height: 12),
+              // Auto Deduction Status - Editable Toggle
               Card(
-                margin: EdgeInsets.zero,
+                margin: const EdgeInsets.symmetric(vertical: 8),
                 color: const Color(0xFFFFF9E6),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                   side: const BorderSide(color: Color(0xFFFFE5B4), width: 1),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Center(
-                    child: Text(
-                      'No transfer records',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey.shade600,
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Auto Deduction Status',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      _isEditMode
+                          ? Switch(
+                              value: _newCycleStatus,
+                              onChanged: (value) {
+                                setState(() {
+                                  _newCycleStatus = value;
+                                });
+                              },
+                              activeColor: Colors.green,
+                            )
+                          : Text(
+                              _newCycleStatus ? 'Active' : 'Inactive',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black87,
+                              ),
+                            ),
+                    ],
+                  ),
+                ),
+              ),
+            ] else
+              const SizedBox(height: 24),
+            // Transfer Records Section - Show for both free and cycle savings
+            if (!_isLoading) ...[
+              const SizedBox(height: 24),
+              Text(
+                'Transfer Records',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.orange.shade700,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (_isLoadingTransfers)
+                const Center(child: CircularProgressIndicator())
+              else if (_transferRecords.isEmpty)
+                Card(
+                  margin: EdgeInsets.zero,
+                  color: const Color(0xFFFFF9E6),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: const BorderSide(color: Color(0xFFFFE5B4), width: 1),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Center(
+                      child: Text(
+                        'No transfer records',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                        ),
                       ),
                     ),
                   ),
+                )
+              else
+                Card(
+                  margin: EdgeInsets.zero,
+                  color: const Color(0xFFFFF9E6),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: const BorderSide(color: Color(0xFFFFE5B4), width: 1),
+                  ),
+                  child: Column(
+                    children: _transferRecords
+                        .asMap()
+                        .entries
+                        .map(
+                          (entry) =>
+                              _buildTransferRecord(entry.value, entry.key),
+                        )
+                        .toList(),
+                  ),
                 ),
-              )
-            else
-              Card(
-                margin: EdgeInsets.zero,
-                color: const Color(0xFFFFF9E6),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: const BorderSide(color: Color(0xFFFFE5B4), width: 1),
-                ),
-                child: Column(
-                  children: _transferRecords
-                      .asMap()
-                      .entries
-                      .map(
-                        (entry) => _buildTransferRecord(entry.value, entry.key),
-                      )
-                      .toList(),
-                ),
-              ),
+            ],
             const SizedBox(height: 24),
           ],
         ),

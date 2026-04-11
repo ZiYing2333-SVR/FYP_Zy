@@ -70,6 +70,20 @@ class _SavingGoalAssistantScreenState extends State<SavingGoalAssistantScreen> {
       initialDate: isStartDate ? _selectedStartDate! : _selectedEndDate!,
       firstDate: DateTime.now(),
       lastDate: DateTime(2100),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFFA7E399),
+              onPrimary: Colors.black,
+              secondary: Color(0xFFFFE5B4),
+              surface: Color(0xFFFFF9E6),
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
 
     if (pickedDate != null) {
@@ -388,9 +402,9 @@ class _SavingGoalAssistantScreenState extends State<SavingGoalAssistantScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFFFFB),
+      backgroundColor: const Color(0xFFFFF9E6),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFFFFFFB),
+        backgroundColor: const Color(0xFFFFF9E6),
         elevation: 0,
         leading: GestureDetector(
           onTap: () => Navigator.pop(context),
@@ -429,10 +443,13 @@ class _SavingGoalAssistantScreenState extends State<SavingGoalAssistantScreen> {
                 decoration: InputDecoration(
                   hintText: 'Goal Name (e.g., Emergency Fund, Vacation)',
                   filled: true,
-                  fillColor: Colors.green.shade200,
+                  fillColor: const Color(0xFFFFF9E6),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    borderSide: const BorderSide(
+                      color: Color(0xFFFFE5B4),
+                      width: 2,
+                    ),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -456,10 +473,13 @@ class _SavingGoalAssistantScreenState extends State<SavingGoalAssistantScreen> {
                 decoration: InputDecoration(
                   hintText: 'Target Amount (RM)',
                   filled: true,
-                  fillColor: Colors.green.shade200,
+                  fillColor: const Color(0xFFFFF9E6),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    borderSide: const BorderSide(
+                      color: Color(0xFFFFE5B4),
+                      width: 2,
+                    ),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -488,10 +508,13 @@ class _SavingGoalAssistantScreenState extends State<SavingGoalAssistantScreen> {
                   decoration: InputDecoration(
                     hintText: 'Start Date',
                     filled: true,
-                    fillColor: Colors.green.shade200,
+                    fillColor: const Color(0xFFFFF9E6),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
+                      borderSide: const BorderSide(
+                        color: Color(0xFFFFE5B4),
+                        width: 2,
+                      ),
                     ),
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -511,10 +534,13 @@ class _SavingGoalAssistantScreenState extends State<SavingGoalAssistantScreen> {
                   decoration: InputDecoration(
                     hintText: 'End Date',
                     filled: true,
-                    fillColor: Colors.green.shade200,
+                    fillColor: const Color(0xFFFFF9E6),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
+                      borderSide: const BorderSide(
+                        color: Color(0xFFFFE5B4),
+                        width: 2,
+                      ),
                     ),
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -531,7 +557,7 @@ class _SavingGoalAssistantScreenState extends State<SavingGoalAssistantScreen> {
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _analyzeSavingGoal,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.amber,
+                    backgroundColor: const Color(0xFFA7E399),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -571,9 +597,9 @@ class _SavingGoalAssistantScreenState extends State<SavingGoalAssistantScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
+                  color: const Color(0xFFFFF9E6),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue.shade200),
+                  border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -582,7 +608,7 @@ class _SavingGoalAssistantScreenState extends State<SavingGoalAssistantScreen> {
                       'ℹ️ How this works',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: Colors.blue,
+                        color: Color(0xFFA7E399),
                       ),
                     ),
                     const SizedBox(height: 8),

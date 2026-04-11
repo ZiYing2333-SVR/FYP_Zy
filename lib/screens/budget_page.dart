@@ -32,6 +32,37 @@ class _BudgetPageState extends State<BudgetPage> {
   void initState() {
     super.initState();
     _initializeAndLoadBudgets();
+    _setupAlertListeners();
+  }
+
+  @override
+  void dispose() {
+    // Remove listeners when page is disposed
+    AlertStatusService().hasCautionAlertNotifier.removeListener(
+      _onAlertStatusChanged,
+    );
+    AlertStatusService().hasHighRiskAlertNotifier.removeListener(
+      _onAlertStatusChanged,
+    );
+    super.dispose();
+  }
+
+  /// Setup real-time listeners for alert status changes
+  void _setupAlertListeners() {
+    AlertStatusService().hasCautionAlertNotifier.addListener(
+      _onAlertStatusChanged,
+    );
+    AlertStatusService().hasHighRiskAlertNotifier.addListener(
+      _onAlertStatusChanged,
+    );
+  }
+
+  /// Refresh budgets when alert status changes (triggered by transaction delete/refund)
+  void _onAlertStatusChanged() {
+    print('[BudgetPage] Alert status changed, refreshing budgets...');
+    if (mounted) {
+      _initializeAndLoadBudgets();
+    }
   }
 
   /// Initialize budgets and alerts with single state update

@@ -535,7 +535,7 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
           child: const Icon(Icons.close, color: Colors.black),
         ),
         title: const Text(
-          'Circle Saving',
+          'Cycle Saving',
           style: TextStyle(
             color: Colors.black,
             fontSize: 20,

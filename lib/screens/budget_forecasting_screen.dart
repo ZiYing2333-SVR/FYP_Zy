@@ -345,23 +345,57 @@ class _BudgetForecastingScreenState extends State<BudgetForecastingScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: const Color(0xFFFFF9E6),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[300] ?? Colors.grey),
+            border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
           ),
           child: DropdownButton<String>(
             value: _selectedBudgetId,
             isExpanded: true,
             underline: const SizedBox.shrink(),
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
             items: _monthlyBudgets.map((budget) {
               final displayName = budget['displayName'] ?? 'Unknown Budget';
+              final isSelected = budget['budgetId'] == _selectedBudgetId;
               return DropdownMenuItem<String>(
                 value: budget['budgetId'],
-                child: Flexible(
-                  child: Text(
-                    displayName,
-                    softWrap: true,
-                    style: const TextStyle(fontSize: 14),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? const Color(0xFFA7E399).withOpacity(0.2)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.wallet,
+                        size: 18,
+                        color: isSelected
+                            ? const Color(0xFFA7E399)
+                            : Colors.grey[600],
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          displayName,
+                          softWrap: true,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: isSelected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                            color: isSelected
+                                ? const Color(0xFFA7E399)
+                                : Colors.black87,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               );
