@@ -1227,7 +1227,7 @@ class _SavingDetailPageState extends State<SavingDetailPage> {
               ),
               _buildDetailCard(
                 'Cycle Frequency',
-                '${_savingGoal!['cycleFrequency'] ?? 'N/A'} (${_formatDate(_savingGoal!['startDate'])} - ${_formatDate(_savingGoal!['endDate'])})',
+                '${_savingGoal!['cycleFrequency'] ?? 'N/A'}',
               ),
               const SizedBox(height: 12),
               // Auto Deduction Status - Editable Toggle
