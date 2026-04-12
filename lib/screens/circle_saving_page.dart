@@ -714,7 +714,7 @@ class _CircleSavingPageState extends State<CircleSavingPage> {
         'description': '',
         'status': 'active',
         'cycleStatus': _enableAutoDeduction,
-        'cycleFrequency': cycleFrequencyDate?.toString().split(' ')[0],
+        'cycleFrequency': _selectedCycleFrequency.toLowerCase(),
         'icon': null,
         'sourceAcountId': _selectedSourceAccount,
         'destAccountId': _selectedDestAccount,

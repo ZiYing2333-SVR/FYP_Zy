@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:collection/collection.dart';
 import 'dart:io';
 import '../services/budget_alert_service.dart';
+import '../services/alert_status_service.dart';
 
 import '../Challenge/challenge_tracking_service.dart';
 import '../Missions/mission_service.dart';
@@ -61,6 +62,7 @@ class _AddTransactionState extends State<AddTransaction> {
 
   /// Update budget alert flags ONLY for budgets related to this transaction
   /// This prevents showing alerts for unrelated budget categories
+  /// ALSO notify AlertStatusService to update bottom bar and settings page badges
   Future<void> _updateBudgetAlertFlags() async {
     try {
       final categoryId = _selectedCategory?['categoryId'];
@@ -118,6 +120,8 @@ class _AddTransactionState extends State<AddTransaction> {
       print('[AddTransaction] Found ${relatedBudgets.length} related budgets');
 
       final alertService = BudgetAlertService();
+      bool hasCautionAlert = false;
+      bool hasExceedAlert = false;
 
       // Check each related budget and update flags
       for (var budget in relatedBudgets) {
@@ -200,9 +204,25 @@ class _AddTransactionState extends State<AddTransaction> {
 
         // Update alert flags using the service
         await alertService.updateAlertFlags(budgetId, usagePercentage);
+
+        // Track if we have caution or exceed alerts
+        if (usagePercentage >= 100) {
+          hasExceedAlert = true;
+        } else if (usagePercentage >= 70) {
+          hasCautionAlert = true;
+        }
       }
 
       print('[AddTransaction] Budget alert flags updated for related budgets');
+      print(
+        '[AddTransaction] Alert status summary - Caution: $hasCautionAlert, Exceed: $hasExceedAlert',
+      );
+
+      // ✅ Broadcast real-time updates to all pages (bottom bar, settings page) via AlertStatusService
+      AlertStatusService().updateCautionAlertStatus(hasCautionAlert);
+      AlertStatusService().updateHighRiskAlertStatus(hasExceedAlert);
+
+      print('[AddTransaction] AlertStatusService notified of alert changes');
     } catch (e) {
       print('Error updating budget alert flags: $e');
     }

@@ -11,8 +11,9 @@ class MissingTransferAlertService {
 
   /// Check all goals for missing transfers and return list of goals with missing transfers
   static Future<List<Map<String, dynamic>>> checkAllMissingTransfers(
-    String userId,
-  ) async {
+    String userId, {
+    Set<String>? executedFreshDeductionGoals,
+  }) async {
     try {
       final supabase = Supabase.instance.client;
       print('$_tag Checking for missing transfers for user: $userId');
@@ -37,15 +38,21 @@ class MissingTransferAlertService {
           continue;
         }
 
+        // Check if this goal had a fresh auto-deduction executed
+        final hadFreshDeductionExecuted =
+            executedFreshDeductionGoals?.contains(goalId) ?? false;
+
         // Check for missing transfers
+        // If fresh deduction was executed, exclude today from calculation
         final missing = await AutoDeductionService.checkForMissingTransfers(
           goal,
+          excludeToday: hadFreshDeductionExecuted,
         );
 
         if (missing != null) {
           missingList.add(missing);
           print(
-            '$_tag Found missing transfers for goal: $goalId (Missing: ${missing['missingCount']})',
+            '$_tag Found missing transfers for goal: $goalId (Missing: ${missing['missingCount']}, excludeToday: $hadFreshDeductionExecuted)',
           );
         }
       }
@@ -85,8 +92,9 @@ class MissingTransferAlertService {
 
   /// Process and auto-deduct missing transfers
   static Future<int> processMissingTransfers(
-    Map<String, dynamic> missingInfo,
-  ) async {
+    Map<String, dynamic> missingInfo, {
+    String? selectedLedgerId,
+  }) async {
     try {
       print(
         '$_tag Processing missing transfers for goal: ${missingInfo['goalId']}',
@@ -94,6 +102,7 @@ class MissingTransferAlertService {
 
       final created = await AutoDeductionService.autoDeductMissingTransfers(
         missingInfo,
+        selectedLedgerId: selectedLedgerId,
       );
 
       if (created > 0) {
@@ -130,18 +139,90 @@ class MissingTransferAlertService {
       (missingInfo['targetAmount'] ?? 0).toString(),
     ).toStringAsFixed(2);
 
+    // Generate list of missing dates with amounts
+    DateTime now = DateTime.now();
+    final excludeToday = missingInfo['excludeToday'] as bool? ?? false;
+
+    List<String> missingDatesWithAmount = [];
+
+    if (frequency.toLowerCase() == 'daily') {
+      // For daily missing transfers, generate dates from oldest to newest
+      // If excludeToday=true: missing dates are from (now - missingCount) to (now - 1)
+      //   Example: now=Apr13, missingCount=3 → Apr10, Apr11, Apr12
+      // If excludeToday=false: missing dates are from (now - missingCount + 1) to now
+      //   Example: now=Apr13, missingCount=3 → Apr11, Apr12, Apr13
+      for (int i = 0; i < missingCount; i++) {
+        final daysBack = excludeToday
+            ? (missingCount - i)
+            : (missingCount - i - 1);
+        final date = now.subtract(Duration(days: daysBack));
+        missingDatesWithAmount.add(
+          '${_formatDate(date)}: $currencySymbol$amountPerTransfer',
+        );
+      }
+    } else if (frequency.toLowerCase() == 'weekly') {
+      // For weekly: similar logic adjusted for weekly frequency
+      for (int i = 0; i < missingCount; i++) {
+        final weeksBack = excludeToday
+            ? (missingCount - i)
+            : (missingCount - i - 1);
+        final date = now.subtract(Duration(days: weeksBack * 7));
+        missingDatesWithAmount.add(
+          '${_formatDate(date)}: $currencySymbol$amountPerTransfer',
+        );
+      }
+    } else if (frequency.toLowerCase() == 'monthly') {
+      // For monthly: adjust by months with same logic
+      for (int i = 0; i < missingCount; i++) {
+        final monthsBack = excludeToday
+            ? (missingCount - i)
+            : (missingCount - i - 1);
+        final date = DateTime(now.year, now.month - monthsBack, now.day);
+        missingDatesWithAmount.add(
+          '${_formatDate(date)}: $currencySymbol$amountPerTransfer',
+        );
+      }
+    }
+
+    // Build the details section with individual dates
+    String detailsSection = missingDatesWithAmount.join('\n• ');
+    if (detailsSection.isNotEmpty) {
+      detailsSection = '• $detailsSection';
+    }
+
     return '''Goal: $goalName
 Frequency: $frequency
 
 You missed $missingCount $frequency transfers!
 
-Details:
-• Amount per transfer: $currencySymbol$amountPerTransfer
+Missing Dates:
+$detailsSection
+
+Summary:
 • Total missing amount: $currencySymbol$totalMissing
 • Current goal progress: $currencySymbol$currentAmount / $currencySymbol$targetAmount
 
 Would you like to auto-deduct all missing transfers now?
 
 (If you click "Not Now", this alert will only appear again after you logout and login again.)''';
+  }
+
+  /// Format date as "MMM d, yyyy"
+  static String _formatDate(DateTime date) {
+    final months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 }

@@ -6,14 +6,17 @@ import 'package:intl/intl.dart';
 class AutoDeductionService {
   static const String _tag = '[AutoDeductionService]';
 
-  /// Check and create auto-deduction transfers when home page is accessed
-  /// This runs on every home page load to ensure transfers are created promptly
-  static Future<Map<String, dynamic>> checkAndCreateAutoDeductions(
+  /// Check for deductions due and return WITH confirmation needed info
+  /// NEW WORKFLOW: Check for fresh (first-time) deductions AND deleted transfers
+  /// Returns both goals requiring user confirmation and results
+  static Future<Map<String, dynamic>> checkAutoDeductionsWithPendingStatus(
     String userId,
   ) async {
     try {
       final supabase = Supabase.instance.client;
-      print('$_tag ========== AUTO-DEDUCTION CHECK START ==========');
+      print(
+        '$_tag ========== AUTO-DEDUCTION CHECK START (WITH PENDING) ==========',
+      );
       print('$_tag Current time: ${DateTime.now()}');
       print('$_tag Checking auto-deductions for user: $userId');
 
@@ -32,77 +35,119 @@ class AutoDeductionService {
 
       if (savingGoals.isEmpty) {
         print('$_tag ⚠️  No active cycle-based savings goals found');
-        print('$_tag DEBUG: Check if SavingGoal table exists and has data');
-        print('$_tag DEBUG: Try creating a test goal with:');
-        print('$_tag DEBUG:   - status: "active"');
-        print('$_tag DEBUG:   - cycleStatus: true');
-        print('$_tag DEBUG:   - cycleFrequency: "daily"');
         print('$_tag ========== AUTO-DEDUCTION CHECK END ==========');
         return {
           'success': true,
           'message': 'No active cycle-based savings goals',
-          'transfersCreated': 0,
+          'deductionsNeedingConfirmation': [],
+          'deletedTransfersFound': [],
+          'autoDeductionsMade': 0,
         };
       }
 
       print('$_tag Processing ${savingGoals.length} goal(s)...');
 
-      int transfersCreated = 0;
-      List<String> processedGoals = [];
+      List<Map<String, dynamic>> deductionsNeedingConfirmation = [];
+      List<Map<String, dynamic>> deletedTransfersFound = [];
+      int autoDeductionsMade = 0;
       List<String> errors = [];
 
       // Process each active cycle-based goal
       for (final goal in savingGoals) {
         try {
           final goalId = goal['goalId'] as String;
+          final goalName = goal['name'] as String? ?? 'Unnamed Goal';
           final cycleFrequency = goal['cycleFrequency'] as String?;
 
-          print('$_tag Processing goal: $goalId (frequency: $cycleFrequency)');
+          print(
+            '$_tag Processing goal: $goalId | Name: $goalName | Frequency: $cycleFrequency',
+          );
 
           if (cycleFrequency == null) {
             errors.add('Goal $goalId has no cycle frequency set');
             continue;
           }
 
-          // Check if deduction is needed based on frequency
+          // Step 1: Check if this is a FIRST-TIME deduction
+          final isFirstTimeDeduction = await _isFirstTimeDeduction(goalId);
+
+          if (isFirstTimeDeduction) {
+            print('$_tag 🆕 FIRST-TIME deduction detected for goal: $goalId');
+            // Calculate amount and add to pending confirmation
+            final deductionAmount = _calculateDeductionAmount(goal);
+            deductionsNeedingConfirmation.add({
+              'goalId': goalId,
+              'goalName': goalName,
+              'frequency': cycleFrequency,
+              'amount': deductionAmount,
+              'targetAmount': goal['targetAmount'],
+              'sourceAccountId': goal['sourceAcountId'],
+              'destAccountId': goal['destAccountId'],
+              'isFirstTime': true,
+              'amountString': deductionAmount.toStringAsFixed(2),
+            });
+            print(
+              '$_tag ➕ Added to pending confirmation: $goalName (${deductionAmount.toStringAsFixed(2)})',
+            );
+            continue; // Don't auto-create, wait for user confirmation
+          }
+
+          // Step 2: Check if deduction is needed based on frequency
           final isDeductionDue = await _isDeductionDue(goalId, cycleFrequency);
 
           if (!isDeductionDue) {
             print(
-              '$_tag Deduction not due for goal $goalId (frequency: $cycleFrequency)',
+              '$_tag ⏭️  Deduction not due for goal $goalId (frequency: $cycleFrequency)',
             );
             continue;
           }
 
-          // Calculate deduction amount
+          // Step 3: Check if a transfer was deleted today
+          final deletedTransferInfo = await _checkForDeletedTransferToday(goal);
+          if (deletedTransferInfo != null) {
+            print('$_tag 🗑️  DELETED transfer found for today! Goal: $goalId');
+            deletedTransfersFound.add(deletedTransferInfo);
+            continue; // Show notification instead of auto-creating
+          }
+
+          // Step 4: Regular cycle deduction - ALWAYS ask user (removed direct deduction logic)
+          print(
+            '$_tag 🔄 Regular cycle - asking user for deduction confirmation for goal $goalId',
+          );
           final deductionAmount = _calculateDeductionAmount(goal);
           print(
-            '$_tag Calculated deduction amount for $goalId: ${deductionAmount.toStringAsFixed(2)}',
+            '$_tag Calculated deduction amount: ${deductionAmount.toStringAsFixed(2)}',
           );
 
-          // Create transfer record
-          final transferCreated = await _createAutoDeductionTransfer(
-            goal,
-            deductionAmount,
+          // Add to confirmation queue instead of auto-deducting
+          deductionsNeedingConfirmation.add({
+            'goalId': goalId,
+            'goalName': goalName,
+            'frequency': cycleFrequency,
+            'amount': deductionAmount,
+            'targetAmount': goal['targetAmount'],
+            'sourceAccountId': goal['sourceAcountId'],
+            'destAccountId': goal['destAccountId'],
+            'isFirstTime': false,
+            'amountString': deductionAmount.toStringAsFixed(2),
+          });
+          print(
+            '$_tag ➕ Added regular cycle deduction to pending confirmation: $goalName (${deductionAmount.toStringAsFixed(2)})',
           );
-
-          if (transferCreated) {
-            transfersCreated++;
-            processedGoals.add(goalId);
-            print(
-              '$_tag ✅ Auto-deduction created for goal $goalId: ${deductionAmount.toStringAsFixed(2)}',
-            );
-          }
         } catch (e) {
           final goalId = goal['goalId'] as String;
           print('$_tag ❌ Error processing goal $goalId: $e');
-          errors.add('Error processing goal ${goal['goalId']}: $e');
+          errors.add('Error processing goal $goalId: $e');
         }
       }
 
       print('$_tag ========== AUTO-DEDUCTION CHECK SUMMARY ==========');
       print('$_tag Total goals processed: ${savingGoals.length}');
-      print('$_tag Transfers created: $transfersCreated');
+      print('$_tag Auto-deductions made: $autoDeductionsMade');
+      print(
+        '$_tag Deductions needing confirmation: ${deductionsNeedingConfirmation.length}',
+      );
+      print('$_tag Deleted transfers found: ${deletedTransfersFound.length}');
       if (errors.isNotEmpty) {
         print('$_tag Errors encountered:');
         for (final error in errors) {
@@ -113,24 +158,42 @@ class AutoDeductionService {
 
       return {
         'success': true,
-        'transfersCreated': transfersCreated,
-        'processedGoals': processedGoals,
+        'autoDeductionsMade': autoDeductionsMade,
+        'deductionsNeedingConfirmation': deductionsNeedingConfirmation,
+        'deletedTransfersFound': deletedTransfersFound,
         'errors': errors,
-        'message':
-            'Processed ${savingGoals.length} goals, created $transfersCreated transfers',
       };
     } catch (e) {
-      print('$_tag ❌ CRITICAL ERROR in checkAndCreateAutoDeductions: $e');
+      print(
+        '$_tag ❌ CRITICAL ERROR in checkAutoDeductionsWithPendingStatus: $e',
+      );
       print('$_tag ========== AUTO-DEDUCTION CHECK END (ERROR) ==========');
-      return {'success': false, 'error': 'Failed to check auto-deductions: $e'};
+      return {
+        'success': false,
+        'error': 'Failed to check auto-deductions: $e',
+        'deductionsNeedingConfirmation': [],
+        'deletedTransfersFound': [],
+      };
     }
+  }
+
+  /// Check and create auto-deduction transfers when home page is accessed
+  /// This runs on every home page load to ensure transfers are created promptly
+  /// NEW: This is the legacy method - kept for backward compatibility
+  /// USE checkAutoDeductionsWithPendingStatus() instead for full workflow
+  static Future<Map<String, dynamic>> checkAndCreateAutoDeductions(
+    String userId,
+  ) async {
+    // Delegate to new method for consistency
+    return checkAutoDeductionsWithPendingStatus(userId);
   }
 
   /// Check for missing transfers based on goal dates and frequency
   /// Returns map with goal details and missing transfer information
   static Future<Map<String, dynamic>?> checkForMissingTransfers(
-    Map<String, dynamic> goal,
-  ) async {
+    Map<String, dynamic> goal, {
+    bool excludeToday = false,
+  }) async {
     try {
       final supabase = Supabase.instance.client;
       final goalId = goal['goalId'] as String;
@@ -162,7 +225,15 @@ class AutoDeductionService {
       }
 
       final today = DateTime.now().toUtc();
-      final calculationEnd = today.isBefore(end) ? today : end;
+      var calculationEnd = today.isBefore(end) ? today : end;
+
+      // If excludeToday is true, check back one day to exclude today from expected count
+      if (excludeToday) {
+        calculationEnd = calculationEnd.subtract(const Duration(days: 1));
+        print(
+          '$_tag [MISSING] Excluding today from calculation. New end date: $calculationEnd',
+        );
+      }
 
       // Calculate expected number of transfers
       int expectedCount = _calculateExpectedTransferCount(
@@ -243,6 +314,7 @@ class AutoDeductionService {
           'destAccountId': goal['destAccountId'],
           'userId': goal['userId'],
           'currencySymbol': currencySymbol,
+          'excludeToday': excludeToday,
         };
       }
 
@@ -278,21 +350,29 @@ class AutoDeductionService {
 
   /// Auto-deduct all missing transfers for a goal
   static Future<int> autoDeductMissingTransfers(
-    Map<String, dynamic> missingInfo,
-  ) async {
+    Map<String, dynamic> missingInfo, {
+    String? selectedLedgerId,
+  }) async {
     try {
       final supabase = Supabase.instance.client;
       final goalId = missingInfo['goalId'] as String;
       final userId = missingInfo['userId'] as String;
-      // Parse and round to 2 decimal places
-      final amountPerTransfer = double.parse(
+
+      // Parse and round to 2 decimal places ONCE at the start
+      double amountPerTransfer = double.parse(
         missingInfo['amountPerTransfer'].toString(),
       );
+      // Round to 2 decimal places
+      amountPerTransfer = double.parse(amountPerTransfer.toStringAsFixed(2));
+
       final missingCount = missingInfo['missingCount'] as int;
 
       print(
         '$_tag [BATCH] Creating $missingCount missing transfers for goal: $goalId (Amount per transfer: ${amountPerTransfer.toStringAsFixed(2)})',
       );
+      if (selectedLedgerId != null) {
+        print('$_tag [BATCH] Using selected ledger: $selectedLedgerId');
+      }
 
       int created = 0;
 
@@ -346,9 +426,11 @@ class AutoDeductionService {
 
         final success = await _createAutoDeductionTransfer(
           goalData,
-          amountPerTransfer,
-          sequence,
-          transferDate, // Pass the calculated date for this transfer
+          amountPerTransfer, // Amount is already rounded to 2 decimal places
+          sequenceNumber: sequence,
+          transferDate:
+              transferDate, // Pass the calculated date for this transfer
+          selectedLedgerId: selectedLedgerId,
         );
         if (success) {
           created++;
@@ -356,13 +438,130 @@ class AutoDeductionService {
       }
 
       print(
-        '$_tag [BATCH] ✅ Successfully created $created of $missingCount missing transfers',
+        '$_tag [BATCH] ✅ Successfully created $created of $missingCount missing transfers (${amountPerTransfer.toStringAsFixed(2)} each)',
       );
 
       return created;
     } catch (e) {
       print('$_tag [BATCH] ❌ Error creating missing transfers: $e');
       return 0;
+    }
+  }
+
+  /// Check if this is the FIRST-TIME deduction for a goal
+  /// Returns true if NO transfers have been created for this goal yet
+  static Future<bool> _isFirstTimeDeduction(String goalId) async {
+    try {
+      final supabase = Supabase.instance.client;
+
+      // Check if any auto-deduction transfer exists for this goal
+      final existingTransfers = await supabase
+          .from('Transfer')
+          .select('transferId')
+          .eq('savingGoalId', goalId)
+          .eq('isAutoDeduction', true)
+          .limit(1);
+
+      final isFirstTime = existingTransfers.isEmpty;
+      print(
+        '$_tag [FIRST-TIME] Goal $goalId - First time: $isFirstTime (Existing transfers: ${existingTransfers.length})',
+      );
+      return isFirstTime;
+    } catch (e) {
+      print('$_tag [FIRST-TIME] ❌ Error checking if first-time deduction: $e');
+      return false; // If error, assume not first-time
+    }
+  }
+
+  /// Check if a transfer was DELETED for TODAY for this goal
+  /// Returns null if no deleted transfer found
+  /// Returns map with goal details if deleted transfer found
+  static Future<Map<String, dynamic>?> _checkForDeletedTransferToday(
+    Map<String, dynamic> goal,
+  ) async {
+    try {
+      final supabase = Supabase.instance.client;
+      final goalId = goal['goalId'] as String;
+      final goalName = goal['name'] as String? ?? 'Unnamed Goal';
+      final cycleFrequency = goal['cycleFrequency'] as String?;
+
+      // Get today's date in ISO format (date only)
+      final today = DateTime.now();
+      final todayStr =
+          '${today.year.toString().padLeft(4, '0')}-'
+          '${today.month.toString().padLeft(2, '0')}-'
+          '${today.day.toString().padLeft(2, '0')}';
+
+      print(
+        '$_tag [DELETED] Checking for deleted transfers on $todayStr for goal: $goalId',
+      );
+
+      // Check for transfers that were deleted/refunded today
+      // We check for transfers with today's date and refund=true
+      final deletedTransfers = await supabase
+          .from('Transfer')
+          .select()
+          .eq('savingGoalId', goalId)
+          .eq('isAutoDeduction', true)
+          .eq('refund', true)
+          .ilike('date', '$todayStr%'); // Match today's date
+
+      if (deletedTransfers.isEmpty) {
+        print('$_tag [DELETED] No deleted transfers found for today');
+        return null;
+      }
+
+      print(
+        '$_tag [DELETED] Found ${deletedTransfers.length} deleted transfer(s) for today',
+      );
+
+      // Calculate the refunded amount
+      double refundedAmount = 0;
+      for (final transfer in deletedTransfers) {
+        final amount = (transfer['amount'] as num?)?.toDouble() ?? 0;
+        refundedAmount += amount;
+      }
+
+      print(
+        '$_tag [DELETED] Total refunded amount: ${refundedAmount.toStringAsFixed(2)}',
+      );
+
+      // Get currency symbol
+      String currencySymbol = '\$';
+      try {
+        final destAccount = await supabase
+            .from('Account')
+            .select('currencyId')
+            .eq('accountId', goal['destAccountId'] as String)
+            .single();
+
+        final currencyId = destAccount['currencyId'] as String?;
+        if (currencyId != null && currencyId != 'NULL') {
+          final currency = await supabase
+              .from('Currency')
+              .select('symbol')
+              .eq('currencyId', currencyId)
+              .single();
+
+          currencySymbol = currency['symbol'] as String? ?? '\$';
+        }
+      } catch (e) {
+        print('$_tag [DELETED] ⚠️  Could not fetch currency symbol: $e');
+      }
+
+      return {
+        'goalId': goalId,
+        'goalName': goalName,
+        'frequency': cycleFrequency,
+        'refundedAmount': refundedAmount,
+        'amountString': refundedAmount.toStringAsFixed(2),
+        'currencySymbol': currencySymbol,
+        'message':
+            'User deleted transfer for $goalName today (${refundedAmount.toStringAsFixed(2)} refunded)',
+      };
+    } catch (e) {
+      print('$_tag [DELETED] ❌ Error checking for deleted transfers: $e');
+      return null;
     }
   }
 
@@ -595,26 +794,26 @@ class AutoDeductionService {
       List<DateTime> dates = [];
 
       if (cycleFrequency == 'daily') {
-        // Generate dates from goalStart onwards, up to today
+        // Generate dates from goalStart onwards, collecting exactly missingCount dates
         DateTime current = goalStart;
-        while (current.isBefore(today) || current.isAtSameMomentAs(today)) {
-          if (dates.length >= missingCount) break;
+        while (dates.length < missingCount &&
+            (current.isBefore(today) || current.isAtSameMomentAs(today))) {
           dates.add(current);
-          current = current.add(Duration(days: 1));
+          current = current.add(const Duration(days: 1));
         }
       } else if (cycleFrequency == 'weekly') {
-        // Generate weekly dates
+        // Generate weekly dates, collecting exactly missingCount dates
         DateTime current = goalStart;
-        while (current.isBefore(today) || current.isAtSameMomentAs(today)) {
-          if (dates.length >= missingCount) break;
+        while (dates.length < missingCount &&
+            (current.isBefore(today) || current.isAtSameMomentAs(today))) {
           dates.add(current);
-          current = current.add(Duration(days: 7));
+          current = current.add(const Duration(days: 7));
         }
       } else if (cycleFrequency == 'monthly') {
-        // Generate monthly dates
+        // Generate monthly dates, collecting exactly missingCount dates
         DateTime current = goalStart;
-        while (current.isBefore(today) || current.isAtSameMomentAs(today)) {
-          if (dates.length >= missingCount) break;
+        while (dates.length < missingCount &&
+            (current.isBefore(today) || current.isAtSameMomentAs(today))) {
           dates.add(current);
           // Move to next month
           if (current.month == 12) {
@@ -642,12 +841,14 @@ class AutoDeductionService {
   /// Create an auto-deduction transfer record
   /// sequenceNumber: Optional - pass to use sequence-based format for batch operations
   /// transferDate: Optional - pass to record historical transfers (instead of using today's date)
+  /// selectedLedgerId: Optional - For fresh deductions, user can select specific ledger
   static Future<bool> _createAutoDeductionTransfer(
     Map<String, dynamic> goal,
-    double deductionAmount, [
+    double deductionAmount, {
     int? sequenceNumber,
     DateTime? transferDate,
-  ]) async {
+    String? selectedLedgerId,
+  }) async {
     try {
       final supabase = Supabase.instance.client;
       final goalId = goal['goalId'] as String;
@@ -676,9 +877,16 @@ class AutoDeductionService {
           .single();
 
       final sourceBalance = (sourceAccount['balance'] as num?)?.toDouble() ?? 0;
-      final ledgerId = sourceAccount['ledgerId'] as String?;
+      // Use selectedLedgerId if provided (fresh deduction with user selection), otherwise use source account's ledgerId
+      final ledgerId =
+          selectedLedgerId ?? (sourceAccount['ledgerId'] as String?);
       print('$_tag [TRANSFER]   Source balance: $sourceBalance');
       print('$_tag [TRANSFER]   Ledger ID: $ledgerId');
+      if (selectedLedgerId != null) {
+        print(
+          '$_tag [TRANSFER]   📋 Using user-selected ledger: $selectedLedgerId',
+        );
+      }
 
       if (sourceBalance < deductionAmount) {
         print(
@@ -801,6 +1009,104 @@ class AutoDeductionService {
     } catch (e) {
       print('$_tag [TRANSFER] ❌❌❌ ERROR creating transfer: $e');
       return false;
+    }
+  }
+
+  /// PUBLIC: Execute a user-confirmed first-time deduction
+  /// Fetches full goal data and creates the transfer
+  static Future<Map<String, dynamic>> executeConfirmedDeduction(
+    String userId,
+    String goalId, {
+    String? selectedLedgerId,
+  }) async {
+    try {
+      final supabase = Supabase.instance.client;
+      print(
+        '$_tag [CONFIRM] ========== EXECUTE CONFIRMED DEDUCTION ==========',
+      );
+      print('$_tag [CONFIRM] User: $userId, Goal: $goalId');
+
+      // Fetch full goal data
+      final goalData = await supabase
+          .from('SavingGoal')
+          .select()
+          .eq('goalId', goalId)
+          .eq('userId', userId)
+          .single();
+
+      print('$_tag [CONFIRM] ✅ Goal fetched: ${goalData['name']}');
+
+      // Calculate amount
+      final amount = _calculateDeductionAmount(goalData);
+      print('$_tag [CONFIRM] Deduction amount: ${amount.toStringAsFixed(2)}');
+
+      // Verify status and cycle
+      final status = goalData['status'] as String?;
+      final cycleStatus = goalData['cycleStatus'] as bool? ?? false;
+
+      if (status != 'active' || !cycleStatus) {
+        print('$_tag [CONFIRM] ❌ Goal not active or cycle disabled');
+        return {
+          'success': false,
+          'error': 'Goal is not active or cycle is disabled',
+        };
+      }
+
+      // Create transfer with optional selectedLedgerId parameter
+      final success = await _createAutoDeductionTransfer(
+        goalData,
+        amount,
+        selectedLedgerId: selectedLedgerId,
+      );
+
+      if (success) {
+        print(
+          '$_tag [CONFIRM] ✅✅✅ CONFIRMED DEDUCTION SUCCESSFUL for goal: $goalId',
+        );
+        return {
+          'success': true,
+          'goalId': goalId,
+          'goalName': goalData['name'],
+          'amount': amount,
+        };
+      } else {
+        print('$_tag [CONFIRM] ❌ Failed to create transfer');
+        return {
+          'success': false,
+          'error':
+              'Failed to create transfer (insufficient balance or other error)',
+        };
+      }
+    } catch (e) {
+      print('$_tag [CONFIRM] ❌ Error executing confirmed deduction: $e');
+      return {'success': false, 'error': 'Error executing deduction: $e'};
+    }
+  }
+
+  /// PUBLIC: Get all ledgers for a user
+  /// Returns list of ledgers with name and id
+  static Future<List<Map<String, dynamic>>> getUserLedgers(
+    String userId,
+  ) async {
+    try {
+      final supabase = Supabase.instance.client;
+      print('$_tag [LEDGER] Fetching all ledgers for user: $userId');
+
+      final ledgers = await supabase
+          .from('Ledger')
+          .select('ledgerId, name, currencyId')
+          .eq('userId', userId)
+          .order('name');
+
+      print('$_tag [LEDGER] Found ${ledgers.length} ledger(s)');
+      for (final ledger in ledgers) {
+        print('$_tag [LEDGER]   - ${ledger['name']} (${ledger['ledgerId']})');
+      }
+
+      return List<Map<String, dynamic>>.from(ledgers);
+    } catch (e) {
+      print('$_tag [LEDGER] ❌ Error fetching ledgers: $e');
+      return [];
     }
   }
 }

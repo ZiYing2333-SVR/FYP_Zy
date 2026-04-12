@@ -184,51 +184,115 @@ class _SavingGoalAssistantScreenState extends State<SavingGoalAssistantScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        titlePadding: const EdgeInsets.fromLTRB(24, 16, 16, 0),
-        title: Stack(
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(right: 32),
-              child: Text('Record Your Income First'),
-            ),
-            Positioned(
-              right: 0,
-              top: -8,
-              child: GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: const Icon(Icons.close, color: Colors.black54, size: 28),
-              ),
-            ),
-          ],
-        ),
-        content: const Text(
-          'To get accurate savings suggestions, please record your salary income. Choose one of the options below:',
-        ),
-        actions: [
-          // Option 1: Go to Free Saving
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => FreeSavingPage(userId: widget.userId),
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: const Color(0xFFFFF9E6),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF9E6),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Info icon
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF87CEEB),
                 ),
-              );
-            },
-            child: const Text('Free Saving'),
+                child: const Icon(
+                  Icons.info_outline,
+                  color: Colors.white,
+                  size: 32,
+                ),
+              ),
+              const SizedBox(height: 20),
+              // Title
+              const Text(
+                'Record Your Income First',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF333333),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Message
+              const Text(
+                'To get accurate savings suggestions, please record your salary income. Choose one of the options below:',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF666666),
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 24),
+              // Buttons
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            FreeSavingPage(userId: widget.userId),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE8F5E9),
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  child: const Text('Free Saving'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Option 2: Key in Income
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _navigateToAddIncomeTransaction(
+                      incomeCheck.salaryCategoryId,
+                    );
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text('Key in Income'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFA7E399),
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-          // Option 2: Key in Income
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.pop(context);
-              _navigateToAddIncomeTransaction(incomeCheck.salaryCategoryId);
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('Key in Income'),
-          ),
-        ],
+        ),
       ),
     );
   }

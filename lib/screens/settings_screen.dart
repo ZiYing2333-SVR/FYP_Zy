@@ -1100,6 +1100,14 @@ class _SettingsScreenState extends State<SettingsScreen>
                                                       '[SettingsScreen] Logging out - cleared dismissed alerts for user: ${widget.userId}',
                                                     );
 
+                                                    // Clear auto-deduction confirmation dialogs so they reappear on re-login
+                                                    HomeScreen
+                                                        .shownConfirmationDialogsThisSession
+                                                        .clear();
+                                                    print(
+                                                      '[SettingsScreen] Clearing auto-deduction dialog history for next login',
+                                                    );
+
                                                     Navigator.pop(context);
                                                     Navigator.pushAndRemoveUntil(
                                                       context,

@@ -1,23 +1,28 @@
-# Auto-Deduction Implementation Summary
+# Auto-Deduction Implementation Summary - v2 (WITH USER CONFIRMATION)
 
 ## 🎯 What Was Implemented
 
-A complete **automatic deduction system** for circle savings goals that:
-1. ✅ Checks every time you access the home page
-2. ✅ Automatically creates transfers based on frequency (daily, weekly, monthly)
-3. ✅ Works seamlessly with your existing backend scheduler
-4. ✅ Updates account balances and goal progress in real-time
+### NEW in v2: Three-Workflow Auto-Deduction System
+
+The auto-deduction system now intelligently handles three scenarios:
+
+1. ✅ **Fresh Deduction (First-Time)** - Asks user for confirmation before creating transfer
+   - Dialog shows: Goal name, Cycle frequency, Deduction amount
+   - User can confirm "Deduct Now" or defer "Not This Time"
+   - Waits for next login if deferred
+
+2. ✅ **Regular Cycle** - Automatic deduction without confirmation
+   - For goals that already have transfers
+   - Deducts automatically based on frequency
+   - Shows success notification
+
+3. ✅ **Deleted Transfer Detection** - Notifies user on next login
+   - Shows which transfer was deleted and amount
+   - Similar to "missing transfer" notification pattern
 
 ---
 
-## 📁 Files Created/Modified
-
-### New Files
-```
-✅ lib/services/auto_deduction_service.dart
-   - Core auto-deduction logic and transfer creation
-   - Methods for checking if deduction is due
-   - Amount calculation based on timeline
+## 📁 Files Modified (v2)
    - Account balance and goal updates
 
 ✅ supabase/migrations/create_saving_goal_table.sql

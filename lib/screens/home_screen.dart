@@ -21,6 +21,10 @@ class HomeScreen extends StatefulWidget {
 
   const HomeScreen({super.key, required this.userId});
 
+  // Static set to persist auto-deduction dialog state across the session
+  // Cleared on logout, allowing dialogs to reappear after re-login
+  static final Set<String> shownConfirmationDialogsThisSession = {};
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -55,16 +59,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       false; // Track if alerts already shown this session
   bool _missingTransferAlertShown =
       false; // Track if missing transfer alert shown this session
+  Set<String> _executedFreshDeductionGoals =
+      {}; // Track goals where fresh auto-deduction was executed
+  Set<String> _deferredFreshDeductionGoals =
+      {}; // Track goals where user chose "Not Now"
+  bool _isCheckingAutoDeductions =
+      false; // Prevent duplicate checks from running simultaneously
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _currentUserId = widget.userId;
-
-    // Reset missing transfer alert flag when returning to home screen
-    // This allows the check to run again if new missing transfers are found
-    _missingTransferAlertShown = false;
 
     _fetchLedgers();
     // Check and create auto-deductions when home screen loads
@@ -631,39 +637,403 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Check and create auto-deduction transfers for active cycle-based savings goals
+  /// NEW WORKFLOW: Check and handle auto-deductions with user confirmation for first-time
+  /// - Auto-deduct regular cycles (existing transfers)
+  /// - Ask user first for fresh (first-time) deductions
+  /// - Show notification for deleted transfers
   Future<void> _checkAutoDeductions() async {
     if (_currentUserId == null) return;
 
+    // Prevent running multiple checks simultaneously
+    if (_isCheckingAutoDeductions) {
+      print(
+        '[HomeScreen] Auto-deduction check already in progress, skipping...',
+      );
+      return;
+    }
+
+    _isCheckingAutoDeductions = true;
+
     try {
-      // First, check for regular auto-deductions
-      final result = await AutoDeductionService.checkAndCreateAutoDeductions(
-        _currentUserId!,
+      // Clear the tracking sets at the start of each check cycle
+      _executedFreshDeductionGoals.clear();
+      _deferredFreshDeductionGoals.clear();
+
+      print('[HomeScreen] ========== AUTO-DEDUCTION CHECK START ==========');
+      print('[HomeScreen] Calling checkAutoDeductionsWithPendingStatus...');
+
+      // NEW: Use the pending status version to get all types of deductions
+      final result =
+          await AutoDeductionService.checkAutoDeductionsWithPendingStatus(
+            _currentUserId!,
+          );
+
+      print('[HomeScreen] Result: $result');
+
+      final success = result['success'] == true;
+      if (!success) {
+        print('[HomeScreen] ❌ Check failed: ${result['error']}');
+        return;
+      }
+
+      // 1. Handle auto-deductions that were already made
+      final autoDeductionsMade = result['autoDeductionsMade'] as int? ?? 0;
+      if (autoDeductionsMade > 0) {
+        print('[HomeScreen] ✅ Auto-deductions made: $autoDeductionsMade');
+        await _fetchTransactions();
+        if (mounted) {
+          _showAutoDeductionSuccessDialog(autoDeductionsMade);
+        }
+      }
+
+      // 2. Handle fresh (first-time) deductions that need user confirmation
+      final deductionsNeedingConfirmation =
+          result['deductionsNeedingConfirmation'] as List? ?? [];
+      print(
+        '[HomeScreen] Deductions needing confirmation: ${deductionsNeedingConfirmation.length}',
       );
 
-      if (result['success'] == true && result['transfersCreated'] != null) {
-        final transfersCreated = result['transfersCreated'] as int;
-        if (transfersCreated > 0) {
-          print('[HomeScreen] Auto-deductions created: $transfersCreated');
-          // Refresh transactions to show newly created transfers
-          await _fetchTransactions();
-
-          // Show success dialog
+      if (deductionsNeedingConfirmation.isNotEmpty && mounted) {
+        for (final deduction in deductionsNeedingConfirmation) {
           if (mounted) {
-            _showAutoDeductionSuccessDialog(transfersCreated);
+            final goalId = deduction['goalId'] as String?;
+            // Only show dialog if not already shown in this session
+            if (goalId != null &&
+                !HomeScreen.shownConfirmationDialogsThisSession.contains(
+                  goalId,
+                )) {
+              final result = await _showFirstTimeDeductionConfirmationDialog(
+                deduction as Map<String, dynamic>,
+              );
+
+              // If user chose to deduct, execute the deduction now
+              // This ensures it's complete before checking for missing transfers
+              if (result == 'deduct' && mounted) {
+                print(
+                  '[HomeScreen] Executing confirmed deduction from dialog result...',
+                );
+                // Execute and wait for full completion including success dialog
+                await _executeConfirmedDeduction(
+                  deduction as Map<String, dynamic>,
+                );
+                // After deduction completes, loop continues to next deduction
+                // Only after ALL deductions complete will missing transfer check run
+              }
+            }
           }
         }
       }
 
-      // Then, check for missing transfers (if not already shown this session)
-      if (!_missingTransferAlertShown && mounted) {
-        _checkForMissingTransfersAlert();
+      // 3. Handle deleted transfers notifications
+      final deletedTransfersFound =
+          result['deletedTransfersFound'] as List? ?? [];
+      print(
+        '[HomeScreen] Deleted transfers found: ${deletedTransfersFound.length}',
+      );
+
+      if (deletedTransfersFound.isNotEmpty && mounted) {
+        for (final deleted in deletedTransfersFound) {
+          if (mounted) {
+            _showDeletedTransferNotification(deleted as Map<String, dynamic>);
+          }
+        }
       }
+
+      print('[HomeScreen] ========== AUTO-DEDUCTION CHECK END ==========');
+
+      // After auto-deduction check, check for missing transfers due to missed login dates
+      print(
+        '[HomeScreen] Now checking for missing transfers from missed deduction dates...',
+      );
+      await _checkForMissingTransfersAlert();
     } catch (e) {
-      print('[HomeScreen] Error checking auto-deductions: $e');
+      print('[HomeScreen] ❌ Error checking auto-deductions: $e');
+    } finally {
+      _isCheckingAutoDeductions = false;
     }
   }
 
+  /// Show confirmation dialog for first-time (fresh) auto deduction
+  /// User can confirm or defer until next login
+  /// Returns: 'deduct' if user chose to deduct, 'not_now' if deferred, or null if dialog was dismissed
+  Future<String?> _showFirstTimeDeductionConfirmationDialog(
+    Map<String, dynamic> deduction,
+  ) async {
+    final goalId = deduction['goalId'] as String?;
+    final goalName = deduction['goalName'] as String? ?? 'Unnamed Goal';
+    final frequency = deduction['frequency'] as String? ?? 'unknown';
+    final amount = deduction['amountString'] as String? ?? '0.00';
+
+    print(
+      '[HomeScreen] 🆕 Showing first-time confirmation dialog for: $goalName',
+    );
+
+    return showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Question icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFF87CEEB),
+                  ),
+                  child: const Icon(Icons.help, color: Colors.white, size: 32),
+                ),
+                const SizedBox(height: 20),
+                // Title
+                const Text(
+                  'Cycle Saving Auto Deduction',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF333333),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Details
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white70,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFFFFD700),
+                      width: 1,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildDetailRow('Goal:', goalName, Colors.black),
+                      const SizedBox(height: 8),
+                      _buildDetailRow(
+                        'Cycle:',
+                        frequency.toUpperCase(),
+                        Colors.black,
+                      ),
+                      const SizedBox(height: 8),
+                      _buildDetailRow(
+                        'Amount:',
+                        amount,
+                        const Color(0xFF27AE60),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Message
+                const Text(
+                  'Would you like to deduct this amount for your saving goal now?',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF666666),
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Buttons
+                Row(
+                  children: [
+                    // Not Now button
+                    Expanded(
+                      child: SizedBox(
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            print('[HomeScreen] User deferred: $goalName');
+                            // Mark this goal as shown in this session so it won't appear again
+                            if (goalId != null) {
+                              HomeScreen.shownConfirmationDialogsThisSession
+                                  .add(goalId);
+                            }
+                            Navigator.pop(context, 'not_now');
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFCCCCCC),
+                            foregroundColor: Colors.black,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          child: const Text(
+                            'Not This Time',
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Confirm button
+                    Expanded(
+                      child: SizedBox(
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            print('[HomeScreen] User confirmed: $goalName');
+                            // Mark this goal as shown in this session
+                            if (goalId != null) {
+                              HomeScreen.shownConfirmationDialogsThisSession
+                                  .add(goalId);
+                            }
+                            Navigator.pop(context, 'deduct');
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFA7E399),
+                            foregroundColor: Colors.black,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          child: const Text(
+                            'Deduct Now',
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Execute a user-confirmed deduction
+  Future<void> _executeConfirmedDeduction(
+    Map<String, dynamic> deduction,
+  ) async {
+    try {
+      final goalId = deduction['goalId'] as String;
+      final goalName = deduction['goalName'] as String? ?? 'Unnamed Goal';
+
+      // Save context before any async operations
+      final savedContext = context;
+
+      print('[HomeScreen] 💰 Executing confirmed deduction: $goalName');
+
+      // Step 1: Fetch user's ledgers
+      print('[HomeScreen] 📋 Fetching user ledgers...');
+      final ledgers = await AutoDeductionService.getUserLedgers(
+        _currentUserId!,
+      );
+
+      if (ledgers.isEmpty) {
+        print('[HomeScreen] ❌ No ledgers found for user');
+        if (mounted) {
+          _showErrorDialog(
+            'No Ledgers Found',
+            'Please create at least one ledger to proceed.',
+          );
+        }
+        return;
+      }
+
+      // Step 2: Determine which ledger to use
+      String selectedLedgerId;
+
+      if (ledgers.length == 1) {
+        // Only one ledger - use it automatically
+        selectedLedgerId = ledgers[0]['ledgerId'] as String;
+        print(
+          '[HomeScreen] ✅ Only one ledger found, using: ${ledgers[0]['name']}',
+        );
+      } else {
+        // Multiple ledgers - ask user to select
+        print(
+          '[HomeScreen] 📋 Multiple ledgers found, asking user to select...',
+        );
+        final result = await _showLedgerSelectionDialog(
+          goalName,
+          ledgers,
+          dialogContext: savedContext,
+        );
+        if (result == null) {
+          print('[HomeScreen] User cancelled ledger selection');
+          return; // User cancelled
+        }
+        selectedLedgerId = result;
+        final selectedLedgerName = ledgers.firstWhere(
+          (l) => l['ledgerId'] == selectedLedgerId,
+        )['name'];
+        print(
+          '[HomeScreen] ✅ User selected ledger: $selectedLedgerName ($selectedLedgerId)',
+        );
+      }
+
+      // Step 3: Execute deduction with selected ledger
+      print(
+        '[HomeScreen] 🔄 Calling executeConfirmedDeduction with ledgerId: $selectedLedgerId',
+      );
+      final result = await AutoDeductionService.executeConfirmedDeduction(
+        _currentUserId!,
+        goalId,
+        selectedLedgerId: selectedLedgerId,
+      );
+
+      if (result['success'] == true) {
+        print('[HomeScreen] ✅ Deduction executed successfully!');
+
+        final amount = result['amount'] as double? ?? 0;
+
+        // Mark this goal as having a fresh auto-deduction executed
+        _executedFreshDeductionGoals.add(goalId);
+
+        // Refresh transactions
+        await _fetchTransactions();
+
+        // Show success message and wait for user to dismiss it
+        if (mounted) {
+          await _showFirstTimeDeductionSuccessDialog(goalName, amount);
+        }
+      } else {
+        print('[HomeScreen] ❌ Deduction failed: ${result['error']}');
+        if (mounted) {
+          _showErrorDialog(
+            'Deduction Failed',
+            result['error'] ?? 'Unknown error',
+          );
+        }
+      }
+    } catch (e) {
+      print('[HomeScreen] ❌ Error executing deduction: $e');
+      if (mounted) {
+        _showErrorDialog('Error', e.toString());
+      }
+    }
+  }
+
+  /// Show success message after regular auto-deductions are made
   void _showAutoDeductionSuccessDialog(int count) {
     showDialog(
       context: context,
@@ -747,16 +1117,417 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// Show success message after first-time deduction is confirmed and executed
+  Future<void> _showFirstTimeDeductionSuccessDialog(
+    String goalName,
+    double amount,
+  ) {
+    // Round amount to 2 decimal places
+    final roundedAmount = double.parse(amount.toStringAsFixed(2));
+
+    return showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Success icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFA7E399),
+                  ),
+                  child: const Icon(Icons.check, color: Colors.white, size: 32),
+                ),
+                const SizedBox(height: 20),
+                // Success title
+                const Text(
+                  '✅ Auto-Deduction Successful!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFF39C12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Success message
+                Text(
+                  '${roundedAmount.toStringAsFixed(2)} deducted for "$goalName".',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF666666),
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Done button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFA7E399),
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    child: const Text('Done'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Show ledger selection dialog for fresh auto-deduction
+  /// Returns selected ledgerId or null if cancelled
+  Future<String?> _showLedgerSelectionDialog(
+    String goalName,
+    List<Map<String, dynamic>> ledgers, {
+    BuildContext? dialogContext,
+  }) async {
+    return showDialog<String>(
+      context: dialogContext ?? context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Info icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFF87CEEB),
+                  ),
+                  child: const Icon(Icons.book, color: Colors.white, size: 32),
+                ),
+                const SizedBox(height: 20),
+                // Title
+                const Text(
+                  '📋 Select Ledger',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF333333),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Message
+                Text(
+                  'Where should the transfer record be located for \"$goalName\"?',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF666666),
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Ledger list
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white70,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFFFFD700),
+                      width: 1,
+                    ),
+                  ),
+                  child: Column(
+                    children: List.generate(ledgers.length, (index) {
+                      final ledger = ledgers[index];
+                      final ledgerId = ledger['ledgerId'] as String;
+                      final ledgerName = ledger['name'] as String? ?? 'Unnamed';
+                      final isLast = index == ledgers.length - 1;
+
+                      return Column(
+                        children: [
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                print(
+                                  '[HomeScreen] User selected ledger: $ledgerName',
+                                );
+                                Navigator.pop(context, ledgerId);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFE8F5E9),
+                                foregroundColor: Colors.black,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                  horizontal: 16,
+                                ),
+                                textStyle: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.check_circle_outline,
+                                    color: Color(0xFF27AE60),
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      ledgerName,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          if (!isLast) const SizedBox(height: 8),
+                        ],
+                      );
+                    }),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Cancel button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      print('[HomeScreen] User cancelled ledger selection');
+                      Navigator.pop(context, null);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFCCCCCC),
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Show notification for deleted transfers
+  void _showDeletedTransferNotification(Map<String, dynamic> deletedInfo) {
+    final goalName = deletedInfo['goalName'] as String? ?? 'Unnamed Goal';
+    final amount = deletedInfo['amountString'] as String? ?? '0.00';
+
+    print('[HomeScreen] 🗑️  Showing deleted transfer notification: $goalName');
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFE5E5),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFE5E5),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFF9999), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Warning icon
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFE74C3C),
+                  ),
+                  child: const Icon(
+                    Icons.warning,
+                    color: Colors.white,
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Title
+                const Text(
+                  '⚠️  Transfer Deleted',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF333333),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Message
+                Text(
+                  'You deleted a transfer of $amount for \"$goalName\" today.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF666666),
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // OK button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFE74C3C),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    child: const Text('Understood'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Build a detail row for dialogs
+  Widget _buildDetailRow(
+    String label,
+    String value,
+    Color valueColor, {
+    FontWeight fontWeight = FontWeight.normal,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 14,
+            color: Color(0xFF666666),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 14,
+            color: valueColor,
+            fontWeight: fontWeight,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Show error dialog
+  void _showErrorDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _checkForMissingTransfersAlert() async {
     if (_currentUserId == null) return;
 
     try {
       print('[HomeScreen] Checking for missing transfers...');
 
+      // Combine executed and deferred goals (both types exclude today from missing calculation)
+      final allFreshDeductionGoals = {
+        ..._executedFreshDeductionGoals,
+        ..._deferredFreshDeductionGoals,
+      };
+
       // Check all goals for missing transfers
       final missingList =
           await MissingTransferAlertService.checkAllMissingTransfers(
             _currentUserId!,
+            executedFreshDeductionGoals: allFreshDeductionGoals,
           );
 
       if (missingList.isNotEmpty && mounted && !_missingTransferAlertShown) {
@@ -765,15 +1536,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         // Show alert for the first missing goal
         // If there are multiple, user will see them after handling previous ones
         final missingInfo = missingList.first;
-        _showMissingTransferAlertDialog(missingInfo);
+        await _showMissingTransferAlertDialog(missingInfo);
       }
     } catch (e) {
       print('[HomeScreen] Error checking missing transfers: $e');
     }
   }
 
-  void _showMissingTransferAlertDialog(Map<String, dynamic> missingInfo) {
-    if (!mounted) return;
+  Future<void> _showMissingTransferAlertDialog(
+    Map<String, dynamic> missingInfo,
+  ) {
+    if (!mounted) return Future.value();
 
     final message = MissingTransferAlertService.generateAlertMessage(
       missingInfo,
@@ -781,211 +1554,420 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final goalId = missingInfo['goalId'] as String;
     final goalName = missingInfo['goalName'] ?? 'Unnamed Goal';
 
-    showDialog(
-      context: context,
+    // Save the home screen's context here (before showDialog)
+    // This context will remain valid even after dialogs close
+    final screenContext = context;
+
+    return showDialog(
+      context: screenContext,
       barrierDismissible: false, // Force user to make a choice
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text(
-            '💰 Missing Transfers Detected',
-            style: TextStyle(fontWeight: FontWeight.bold),
+      builder: (BuildContext dialogContext) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
           ),
-          content: SingleChildScrollView(
-            child: Text(
-              message,
-              style: const TextStyle(fontSize: 14, height: 1.6),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                // User chose "Not Now" - dismiss alert for this session
-                MissingTransferAlertService.dismissAlertForSession(
-                  _currentUserId!,
-                  goalId,
-                );
-                Navigator.of(context).pop();
-                print('[HomeScreen] User dismissed missing transfer alert');
-              },
-              child: const Text(
-                'Not Now',
-                style: TextStyle(color: Colors.grey),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 600),
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF9E6),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
               ),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                Navigator.of(context).pop();
-
-                // Save navigator AND scaffoldMessenger BEFORE any async operations
-                final navigator = Navigator.of(context);
-                final scaffoldMessenger = ScaffoldMessenger.of(context);
-
-                // Show loading indicator
-                if (mounted) {
-                  print(
-                    '[HomeScreen] Showing loading dialog for missing transfers...',
-                  );
-                  showDialog(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (BuildContext dialogContext) {
-                      return const AlertDialog(
-                        content: Row(
-                          children: [
-                            CircularProgressIndicator(),
-                            SizedBox(width: 16),
-                            Text('Creating missing transfers...'),
-                          ],
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Icon container
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF87CEEB),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.autorenew_rounded,
+                      color: Colors.white,
+                      size: 40,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // Title
+                  const Text(
+                    '💰 Missing Transfers Detected',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  // Message - scrollable when too long
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Text(
+                        message,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.black87,
+                          height: 1.6,
                         ),
-                      );
-                    },
-                  );
-                }
-
-                try {
-                  // Process missing transfers
-                  print('[HomeScreen] Processing missing transfers...');
-                  final created =
-                      await MissingTransferAlertService.processMissingTransfers(
-                        missingInfo,
-                      );
-
-                  print(
-                    '[HomeScreen] Created $created missing transfers, waiting 3 seconds...',
-                  );
-
-                  // Wait 3 seconds for database to settle
-                  await Future.delayed(const Duration(seconds: 3));
-
-                  // Refresh transactions from database
-                  print(
-                    '[HomeScreen] Refreshing transactions from database...',
-                  );
-                  if (mounted) {
-                    await _fetchTransactions();
-                  }
-
-                  print(
-                    '[HomeScreen] Waiting 3 more seconds before checking status...',
-                  );
-
-                  // Wait another 3 seconds before checking
-                  await Future.delayed(const Duration(seconds: 3));
-
-                  // Check if missing transfers still exist
-                  print(
-                    '[HomeScreen] Checking if missing transfers still exist...',
-                  );
-                  if (!mounted) {
-                    print('[HomeScreen] Widget unmounted, returning early');
-                    return;
-                  }
-                  if (_currentUserId == null) {
-                    print('[HomeScreen] UserId is null, returning early');
-                    return;
-                  }
-
-                  final missingList =
-                      await MissingTransferAlertService.checkAllMissingTransfers(
-                        _currentUserId!,
-                      );
-
-                  print(
-                    '[HomeScreen] Missing transfers check result: ${missingList.length} remaining',
-                  );
-
-                  if (!mounted) {
-                    print(
-                      '[HomeScreen] Widget unmounted before closing dialog',
-                    );
-                    return;
-                  }
-
-                  // Close loading dialog using saved navigator state
-                  print('[HomeScreen] Attempting to close loading dialog...');
-                  try {
-                    navigator.pop();
-                    print('[HomeScreen] Loading dialog closed successfully');
-                  } catch (e) {
-                    print('[HomeScreen] Error closing loading dialog: $e');
-                  }
-
-                  await Future.delayed(const Duration(milliseconds: 200));
-
-                  if (missingList.isEmpty) {
-                    // ✅ No more missing transfers - show success
-                    print(
-                      '[HomeScreen] All missing transfers resolved! Showing success message...',
-                    );
-
-                    _missingTransferAlertShown = false;
-
-                    // Show success using SnackBar with saved ScaffoldMessenger
-                    try {
-                      scaffoldMessenger.showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            '✅ Successfully created and verified $created transfer(s) for $goalName',
-                          ),
-                          backgroundColor: Colors.green,
-                          duration: const Duration(seconds: 4),
-                        ),
-                      );
-                      print('[HomeScreen] Success SnackBar shown');
-                    } catch (e) {
-                      print('[HomeScreen] Error showing SnackBar: $e');
-                    }
-
-                    // Refresh transactions
-                    print(
-                      '[HomeScreen] Refreshing transactions after success...',
-                    );
-                    if (mounted) {
-                      _fetchTransactions();
-                    }
-                  } else {
-                    // ❌ Missing transfers still exist - retry
-                    print(
-                      '[HomeScreen] Missing transfers still exist (${missingList.length}), retrying...',
-                    );
-
-                    if (mounted) {
-                      _showMissingTransferAlertDialog(missingList.first);
-                    }
-                  }
-                } catch (e) {
-                  print(
-                    '[HomeScreen] Exception in missing transfer creation: $e',
-                  );
-                  // Close loading dialog using saved navigator state
-                  try {
-                    navigator.pop();
-                    print('[HomeScreen] Loading dialog closed (error path)');
-                  } catch (e2) {
-                    print('[HomeScreen] Error closing dialog: $e2');
-                  }
-
-                  // Show error using saved ScaffoldMessenger
-                  try {
-                    scaffoldMessenger.showSnackBar(
-                      SnackBar(
-                        content: Text('❌ Error: $e'),
-                        backgroundColor: Colors.red,
-                        duration: const Duration(seconds: 3),
+                        textAlign: TextAlign.center,
                       ),
-                    );
-                  } catch (e2) {
-                    print('[HomeScreen] Error showing error SnackBar: $e2');
-                  }
-                }
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-              child: const Text(
-                'Yes, Auto-Deduct All',
-                style: TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // Buttons
+                  Row(
+                    children: [
+                      // "Not Now" Button
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            print(
+                              '[HomeScreen] User deferred missing transfer alert for: $goalId',
+                            );
+                            // Mark this goal as shown in this session so it won't appear again
+                            HomeScreen.shownConfirmationDialogsThisSession.add(
+                              goalId,
+                            );
+                            // Track deferred fresh deduction goal (today shouldn't be counted as missing)
+                            _deferredFreshDeductionGoals.add(goalId);
+                            // Also dismiss it in the missing transfer alert service
+                            MissingTransferAlertService.dismissAlertForSession(
+                              _currentUserId!,
+                              goalId,
+                            );
+                            Navigator.of(dialogContext).pop();
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFCCCCCC),
+                            foregroundColor: Colors.black87,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: const Text(
+                            'Not Now',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // "Yes, Auto-Deduct All" Button
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            print(
+                              '[HomeScreen] User confirmed missing transfers for: $goalId',
+                            );
+                            // Mark this goal as shown in this session
+                            HomeScreen.shownConfirmationDialogsThisSession.add(
+                              goalId,
+                            );
+
+                            // Use the saved screenContext (from outside the dialog builder)
+                            // and the dialogContext (current dialog context) for navigation
+                            final navigator = Navigator.of(dialogContext);
+                            final scaffoldMessenger = ScaffoldMessenger.of(
+                              screenContext,
+                            );
+
+                            Navigator.of(dialogContext).pop();
+
+                            try {
+                              // Step 1: Fetch user's ledgers
+                              print(
+                                '[HomeScreen] 📋 Fetching user ledgers for missing transfer...',
+                              );
+                              final ledgers =
+                                  await AutoDeductionService.getUserLedgers(
+                                    _currentUserId!,
+                                  );
+
+                              if (ledgers.isEmpty) {
+                                print(
+                                  '[HomeScreen] ❌ No ledgers found for user',
+                                );
+                                if (mounted) {
+                                  _showErrorDialog(
+                                    'No Ledgers Found',
+                                    'Please create at least one ledger to proceed.',
+                                  );
+                                }
+                                return;
+                              }
+
+                              // Step 2: Determine which ledger to use
+                              String selectedLedgerId;
+
+                              if (ledgers.length == 1) {
+                                // Only one ledger - use it automatically
+                                selectedLedgerId =
+                                    ledgers[0]['ledgerId'] as String;
+                                print(
+                                  '[HomeScreen] ✅ Only one ledger found, using: ${ledgers[0]['name']}',
+                                );
+                              } else {
+                                // Multiple ledgers - ask user to select
+                                print(
+                                  '[HomeScreen] 📋 Multiple ledgers found, asking user to select...',
+                                );
+                                final result = await _showLedgerSelectionDialog(
+                                  goalName,
+                                  ledgers,
+                                  dialogContext: screenContext,
+                                );
+                                if (result == null) {
+                                  print(
+                                    '[HomeScreen] User cancelled ledger selection for missing transfers',
+                                  );
+                                  return; // User cancelled
+                                }
+                                selectedLedgerId = result;
+                                final selectedLedgerName = ledgers.firstWhere(
+                                  (l) => l['ledgerId'] == selectedLedgerId,
+                                )['name'];
+                                print(
+                                  '[HomeScreen] ✅ User selected ledger: $selectedLedgerName ($selectedLedgerId)',
+                                );
+                              }
+
+                              // Step 3: Show loading indicator using screen context
+                              if (mounted) {
+                                print(
+                                  '[HomeScreen] Showing loading dialog for missing transfers...',
+                                );
+                                showDialog(
+                                  context: screenContext,
+                                  barrierDismissible: false,
+                                  builder: (BuildContext dialogContext) {
+                                    return const AlertDialog(
+                                      content: Row(
+                                        children: [
+                                          CircularProgressIndicator(),
+                                          SizedBox(width: 16),
+                                          Flexible(
+                                            child: Text(
+                                              'Creating missing transfers...',
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                );
+                              }
+
+                              // Step 4: Process missing transfers with selected ledger
+                              print(
+                                '[HomeScreen] Processing missing transfers with ledger: $selectedLedgerId...',
+                              );
+                              final created =
+                                  await MissingTransferAlertService.processMissingTransfers(
+                                    missingInfo,
+                                    selectedLedgerId: selectedLedgerId,
+                                  );
+
+                              print(
+                                '[HomeScreen] Created $created missing transfers, waiting 3 seconds...',
+                              );
+
+                              // Wait 3 seconds for database to settle
+                              await Future.delayed(const Duration(seconds: 3));
+
+                              // Refresh transactions from database
+                              print(
+                                '[HomeScreen] Refreshing transactions from database...',
+                              );
+                              if (mounted) {
+                                await _fetchTransactions();
+                              }
+
+                              print(
+                                '[HomeScreen] Waiting 3 more seconds before checking status...',
+                              );
+
+                              // Wait another 3 seconds before checking
+                              await Future.delayed(const Duration(seconds: 3));
+
+                              // Check if missing transfers still exist
+                              print(
+                                '[HomeScreen] Checking if missing transfers still exist...',
+                              );
+                              if (!mounted) {
+                                print(
+                                  '[HomeScreen] Widget unmounted, returning early',
+                                );
+                                return;
+                              }
+                              if (_currentUserId == null) {
+                                print(
+                                  '[HomeScreen] UserId is null, returning early',
+                                );
+                                return;
+                              }
+
+                              final missingList =
+                                  await MissingTransferAlertService.checkAllMissingTransfers(
+                                    _currentUserId!,
+                                    // Don't pass executed fresh deductions on retry
+                                    // because they're now in the database as auto-deductions
+                                    executedFreshDeductionGoals: const {},
+                                  );
+
+                              print(
+                                '[HomeScreen] Missing transfers check result: ${missingList.length} remaining',
+                              );
+
+                              if (!mounted) {
+                                print(
+                                  '[HomeScreen] Widget unmounted before closing dialog',
+                                );
+                                return;
+                              }
+
+                              // Close loading dialog using saved navigator state
+                              print(
+                                '[HomeScreen] Attempting to close loading dialog...',
+                              );
+                              try {
+                                navigator.pop();
+                                print(
+                                  '[HomeScreen] Loading dialog closed successfully',
+                                );
+                              } catch (e) {
+                                print(
+                                  '[HomeScreen] Error closing loading dialog: $e',
+                                );
+                              }
+
+                              await Future.delayed(
+                                const Duration(milliseconds: 200),
+                              );
+
+                              if (missingList.isEmpty) {
+                                // ✅ No more missing transfers - show success
+                                print(
+                                  '[HomeScreen] All missing transfers resolved! Showing success message...',
+                                );
+
+                                // Get rounded amounts for display
+                                final amountPerTransferStr =
+                                    missingInfo['amountPerTransfer'].toString();
+                                final amountPerTransfer = double.parse(
+                                  amountPerTransferStr,
+                                );
+                                final roundedAmount = double.parse(
+                                  amountPerTransfer.toStringAsFixed(2),
+                                );
+                                final totalAmount = roundedAmount * created;
+                                final roundedTotal = double.parse(
+                                  totalAmount.toStringAsFixed(2),
+                                );
+                                final currencySymbol =
+                                    missingInfo['currencySymbol'] ?? '\$';
+
+                                // Show success using SnackBar with saved ScaffoldMessenger
+                                try {
+                                  scaffoldMessenger.showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        '✅ Successfully created $created transfer(s) for $goalName: $currencySymbol${roundedTotal.toStringAsFixed(2)} (${currencySymbol}${roundedAmount.toStringAsFixed(2)} each)',
+                                      ),
+                                      backgroundColor: Colors.green,
+                                      duration: const Duration(seconds: 4),
+                                    ),
+                                  );
+                                  print('[HomeScreen] Success SnackBar shown');
+                                } catch (e) {
+                                  print(
+                                    '[HomeScreen] Error showing SnackBar: $e',
+                                  );
+                                }
+
+                                // Refresh transactions
+                                print(
+                                  '[HomeScreen] Refreshing transactions after success...',
+                                );
+                                if (mounted) {
+                                  _fetchTransactions();
+                                }
+                              } else {
+                                // ❌ Missing transfers still exist - but don't show dialog again
+                                // Just log it - if transfers were created, they should appear on next check
+                                print(
+                                  '[HomeScreen] Missing transfers still exist (${missingList.length}) after creation attempt.',
+                                );
+                                print(
+                                  '[HomeScreen] This may happen if database write is delayed. Transfers will be caught on next check.',
+                                );
+                              }
+                            } catch (e) {
+                              print(
+                                '[HomeScreen] Exception in missing transfer creation: $e',
+                              );
+                              // Close loading dialog using saved navigator state
+                              try {
+                                navigator.pop();
+                                print(
+                                  '[HomeScreen] Loading dialog closed (error path)',
+                                );
+                              } catch (e2) {
+                                print('[HomeScreen] Error closing dialog: $e2');
+                              }
+
+                              // Show error using saved ScaffoldMessenger
+                              try {
+                                scaffoldMessenger.showSnackBar(
+                                  SnackBar(
+                                    content: Text('❌ Error: $e'),
+                                    backgroundColor: Colors.red,
+                                    duration: const Duration(seconds: 3),
+                                  ),
+                                );
+                              } catch (e2) {
+                                print(
+                                  '[HomeScreen] Error showing error SnackBar: $e2',
+                                );
+                              }
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFA7E399),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: const Text(
+                            'Yes, Auto-Deduct',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-          ],
+          ),
         );
       },
     );
