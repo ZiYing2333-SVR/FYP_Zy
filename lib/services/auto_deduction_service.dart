@@ -409,10 +409,15 @@ class AutoDeductionService {
 
       print('$_tag [BATCH] Starting sequence from: $nextSequence');
 
+      // Get excludeToday flag from missingInfo
+      final excludeToday = missingInfo['excludeToday'] as bool? ?? false;
+      print('$_tag [BATCH] excludeToday: $excludeToday');
+
       // Calculate the dates for each missing transfer
       final missingDates = _calculateMissingTransferDates(
         goalData,
         missingCount,
+        excludeToday: excludeToday,
       );
       print('$_tag [BATCH] Missing transfer dates: $missingDates');
 
@@ -771,8 +776,9 @@ class AutoDeductionService {
   /// Returns list of DateTime objects in chronological order
   static List<DateTime> _calculateMissingTransferDates(
     Map<String, dynamic> goal,
-    int missingCount,
-  ) {
+    int missingCount, {
+    bool excludeToday = false,
+  }) {
     try {
       final startDate = goal['startDate'];
       final cycleFrequency = (goal['cycleFrequency'] as String?)?.toLowerCase();
@@ -784,57 +790,104 @@ class AutoDeductionService {
         goalStart = startDate;
       } else {
         // Fallback: use today minus missingCount days
-        return List.generate(
-          missingCount,
-          (i) => DateTime.now().subtract(Duration(days: missingCount - i - 1)),
-        );
+        final now = DateTime.now();
+        return List.generate(missingCount, (i) {
+          final date = excludeToday
+              // If excludeToday, generate dates from (now - missingCount) to (now - 1)
+              ? now.subtract(Duration(days: missingCount - i))
+              // Otherwise, generate dates from (now - missingCount + 1) to now
+              : now.subtract(Duration(days: missingCount - i - 1));
+          // Normalize to midnight to ensure consistent date handling
+          return DateTime(date.year, date.month, date.day);
+        });
       }
 
-      final today = DateTime.now();
+      final now = DateTime.now();
       List<DateTime> dates = [];
 
       if (cycleFrequency == 'daily') {
-        // Generate dates from goalStart onwards, collecting exactly missingCount dates
-        DateTime current = goalStart;
-        while (dates.length < missingCount &&
-            (current.isBefore(today) || current.isAtSameMomentAs(today))) {
-          dates.add(current);
-          current = current.add(const Duration(days: 1));
+        // Generate dates by working BACKWARDS from today
+        // This ensures we get the MOST RECENT missing dates, not the earliest from goal start
+        final today = DateTime(now.year, now.month, now.day);
+        if (excludeToday) {
+          // Start from yesterday and go back
+          for (int i = 1; i <= missingCount; i++) {
+            dates.insert(0, today.subtract(Duration(days: i)));
+          }
+        } else {
+          // Start from today and go back
+          for (int i = 0; i < missingCount; i++) {
+            dates.insert(0, today.subtract(Duration(days: i)));
+          }
         }
       } else if (cycleFrequency == 'weekly') {
-        // Generate weekly dates, collecting exactly missingCount dates
-        DateTime current = goalStart;
-        while (dates.length < missingCount &&
-            (current.isBefore(today) || current.isAtSameMomentAs(today))) {
-          dates.add(current);
-          current = current.add(const Duration(days: 7));
+        // Generate weekly dates by working BACKWARDS
+        final today = DateTime(now.year, now.month, now.day);
+        if (excludeToday) {
+          // Start from last week and go back
+          for (int i = 1; i <= missingCount; i++) {
+            dates.insert(0, today.subtract(Duration(days: i * 7)));
+          }
+        } else {
+          // Start from this week and go back
+          for (int i = 0; i < missingCount; i++) {
+            dates.insert(0, today.subtract(Duration(days: i * 7)));
+          }
         }
       } else if (cycleFrequency == 'monthly') {
-        // Generate monthly dates, collecting exactly missingCount dates
-        DateTime current = goalStart;
-        while (dates.length < missingCount &&
-            (current.isBefore(today) || current.isAtSameMomentAs(today))) {
-          dates.add(current);
-          // Move to next month
-          if (current.month == 12) {
-            current = DateTime(current.year + 1, 1, current.day);
-          } else {
-            current = DateTime(current.year, current.month + 1, current.day);
+        // Generate monthly dates by working BACKWARDS
+        final today = DateTime(now.year, now.month, now.day);
+        if (excludeToday) {
+          // Start from last month and go back
+          for (int i = 1; i <= missingCount; i++) {
+            DateTime date;
+            if (today.month - i <= 0) {
+              final monthsBack = i;
+              final yearsBack = ((monthsBack - 1) ~/ 12) + 1;
+              final adjustedMonth = 12 - ((monthsBack - 1) % 12);
+              date = DateTime(today.year - yearsBack, adjustedMonth, today.day);
+            } else {
+              date = DateTime(today.year, today.month - i, today.day);
+            }
+            dates.insert(0, date);
+          }
+        } else {
+          // Start from this month and go back
+          for (int i = 0; i < missingCount; i++) {
+            DateTime date;
+            if (today.month - i <= 0) {
+              final monthsBack = i;
+              final yearsBack = ((monthsBack - 1) ~/ 12) + 1;
+              final adjustedMonth = 12 - ((monthsBack - 1) % 12);
+              date = DateTime(today.year - yearsBack, adjustedMonth, today.day);
+            } else {
+              date = DateTime(today.year, today.month - i, today.day);
+            }
+            dates.insert(0, date);
           }
         }
       }
 
       print(
-        '$_tag [DATES] Calculated ${dates.length} missing transfer dates for frequency: $cycleFrequency',
+        '$_tag [DATES] Calculated ${dates.length} missing transfer dates for frequency: $cycleFrequency (excludeToday: $excludeToday)',
       );
+      for (var i = 0; i < dates.length; i++) {
+        print('$_tag [DATES]   Date[$i]: ${dates[i].toString().split(' ')[0]}');
+      }
       return dates;
     } catch (e) {
       print('$_tag [DATES] ❌ Error calculating missing transfer dates: $e');
-      // Return fallback dates (working backwards from today)
-      return List.generate(
-        missingCount,
-        (i) => DateTime.now().subtract(Duration(days: missingCount - i - 1)),
-      );
+      // Return fallback dates
+      final now = DateTime.now();
+      return List.generate(missingCount, (i) {
+        final date = excludeToday
+            // If excludeToday, generate dates from (now - missingCount) to (now - 1)
+            ? now.subtract(Duration(days: missingCount - i))
+            // Otherwise, generate dates from (now - missingCount + 1) to now
+            : now.subtract(Duration(days: missingCount - i - 1));
+        // Normalize to midnight to ensure consistent date handling
+        return DateTime(date.year, date.month, date.day);
+      });
     }
   }
 
@@ -898,9 +951,11 @@ class AutoDeductionService {
       print('$_tag [TRANSFER] ✅ Sufficient balance - proceeding with transfer');
 
       // Get transfer date (use provided transferDate for historical transfers, or today)
+      // Normalize to midnight to ensure consistent date handling
       final now = transferDate ?? DateTime.now();
+      final normalizedDate = DateTime(now.year, now.month, now.day);
       print(
-        '$_tag [TRANSFER] Using transfer date: ${now.toIso8601String()} ${transferDate != null ? '(historical)' : '(today)'}',
+        '$_tag [TRANSFER] Using transfer date: ${normalizedDate.toIso8601String()} ${transferDate != null ? '(historical)' : '(today)'}',
       );
 
       // Create transfer record ID using sequence-based format (like confirm_bulk_transactions.dart)
@@ -941,7 +996,7 @@ class AutoDeductionService {
         'fromAccountId': sourceAccountId,
         'toAccountId': destAccountId,
         'amount': roundedAmount,
-        'date': now.toIso8601String(),
+        'date': normalizedDate.toIso8601String(),
         'note': 'Auto-deduction for savings goal: $goalName',
         'savingGoalId': goalId,
         'isAutoDeduction': true,

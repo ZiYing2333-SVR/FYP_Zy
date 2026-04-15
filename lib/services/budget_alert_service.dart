@@ -246,6 +246,22 @@ class BudgetAlertService {
           '$_tag Updated flags for $budgetId: isAlert=$shouldSetAlert, isWarning=$shouldSetWarning (usage: ${usagePercentage.toStringAsFixed(1)}%)',
         );
       }
+
+      // Reset dismissals when transitioning between states
+      // If usage < 70%, reset caution dismissal (so alert can reappear if budget goes back to 70%+)
+      if (usagePercentage < 70) {
+        print('$_tag Budget $budgetId below 70%, resetting caution dismissal');
+        await _resetCautionDismissal(budgetId);
+      }
+
+      // If usage drops from warning (>100%) to non-warning (<=100%), reset exceed dismissal
+      // This ensures the warning will reappear when budget goes back above 100%
+      if (usagePercentage <= 100 && currentWarning) {
+        print(
+          '$_tag Budget $budgetId dropped from warning to non-warning, resetting exceed dismissal so warning can reappear',
+        );
+        await _resetExceedDismissal(budgetId);
+      }
     } catch (e) {
       print('$_tag Error updating alert flags for $budgetId: $e');
     }

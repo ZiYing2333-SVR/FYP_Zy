@@ -28,6 +28,9 @@ class _BudgetPageState extends State<BudgetPage> {
   // Track the last checked cycle date to detect resets
   DateTime? _lastCycleCheckDate;
 
+  // Track which budgets have shown dismissed alert pop-up to avoid showing on every rebuild
+  final Set<String> _shownDismissedAlertPopups = {};
+
   @override
   void initState() {
     super.initState();
@@ -68,6 +71,9 @@ class _BudgetPageState extends State<BudgetPage> {
   /// Initialize budgets and alerts with single state update
   Future<void> _initializeAndLoadBudgets() async {
     try {
+      // Clear dismissed alert pop-up tracking on refresh
+      _shownDismissedAlertPopups.clear();
+
       // Fetch budgets from database
       final response = await Supabase.instance.client
           .from('Budget')
@@ -169,6 +175,8 @@ class _BudgetPageState extends State<BudgetPage> {
       // Refresh alerts if cycles reset
       if (shouldRefreshAlerts) {
         print('[BudgetPage] Cycle resets detected, refreshing alerts...');
+        // Clear dismissed alert pop-up tracking so they can show again after cycle reset
+        _shownDismissedAlertPopups.clear();
         // Refresh the dismissal lists by calling check again
         // This will be called anyway, so just log it
       }
@@ -369,6 +377,18 @@ class _BudgetPageState extends State<BudgetPage> {
         );
         _showUnifiedAlertDialog(allAlerts);
       }
+
+      // ✅ UPDATE ALERT STATUS SERVICE FOR BOTTOM NAV BAR
+      // This ensures the bottom bar icon reflects actual current state
+      final hasExceedAlert = exceedBudgets.isNotEmpty;
+      final hasCautionAlert = cautionBudgets.isNotEmpty;
+      print(
+        '[BudgetPage] Updating AlertStatusService - Caution: $hasCautionAlert, Exceed: $hasExceedAlert',
+      );
+      AlertStatusService().refreshAlertStatus(
+        hasCaution: hasCautionAlert,
+        hasHighRisk: hasExceedAlert,
+      );
     } catch (e) {
       print('Error checking and displaying alerts: $e');
     }
@@ -1968,6 +1988,172 @@ class _BudgetPageState extends State<BudgetPage> {
     }
   }
 
+  /// Show pop-up dialog for dismissed alerts (when user is still in alert zone)
+  /// This allows user to dismiss the alert again from a clear dialog
+  void _showDismissedAlertDialog(
+    String budgetId,
+    String budgetName,
+    String alertType,
+    double usagePercentage,
+  ) {
+    showDialog(
+      context: context,
+      barrierDismissible: true, // User can tap outside to close
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: const Color(0xFFFFF9E6),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9E6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFE5B4), width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Alert Icon
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: alertType == 'exceed'
+                        ? Colors.red.shade100
+                        : Colors.orange.shade100,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    alertType == 'exceed'
+                        ? Icons.error_rounded
+                        : Icons.warning_rounded,
+                    color: alertType == 'exceed'
+                        ? Colors.red.shade600
+                        : Colors.orange.shade600,
+                    size: 40,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Title
+                Text(
+                  'Budget Alert',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: alertType == 'exceed'
+                        ? Colors.red.shade600
+                        : Colors.orange.shade600,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                // Message
+                Text(
+                  'Budget: $budgetName\n${usagePercentage.toStringAsFixed(1)}% spent',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.black87,
+                    height: 1.6,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                // Alert Message
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: alertType == 'exceed'
+                        ? Colors.red.shade50
+                        : Colors.orange.shade50,
+                    border: Border.all(
+                      color: alertType == 'exceed'
+                          ? Colors.red.shade200
+                          : Colors.orange.shade200,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    alertType == 'exceed'
+                        ? '⚠️ You are still above your budget limit.\nConsider reducing your spending.'
+                        : '⚠️ You are still in the caution zone.\nBe mindful of your remaining budget.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: alertType == 'exceed'
+                          ? Colors.red.shade700
+                          : Colors.orange.shade700,
+                      height: 1.5,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Buttons
+                Row(
+                  children: [
+                    // Cancel button
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey[300],
+                          foregroundColor: Colors.black87,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text(
+                          'Keep Alert',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Dismiss button
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          await _dismissAlertMessageFromBudgetPage(
+                            budgetId,
+                            alertType,
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: alertType == 'exceed'
+                              ? Colors.red.shade400
+                              : Colors.orange.shade400,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text(
+                          'Dismiss',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _showDeleteSuccessDialog() {
     showDialog(
       context: context,
@@ -2065,6 +2251,90 @@ class _BudgetPageState extends State<BudgetPage> {
           context,
         ).showSnackBar(SnackBar(content: Text('Error deleting budget: $e')));
       }
+    }
+  }
+
+  /// Check if alert was dismissed but user is still in the alert zone
+  /// Returns {isDismissedAndInZone: bool, alertType: 'caution'|'exceed'|null}
+  Future<Map<String, dynamic>> _checkDismissedAlertStatus(
+    double usagePercentage,
+    String budgetId,
+    String cycleType,
+  ) async {
+    try {
+      final alertService = BudgetAlertService();
+
+      // Check for caution (yellow) alert: 70-99% spent
+      if (usagePercentage >= 70 && usagePercentage < 100) {
+        final isDismissed = await alertService.isCautionDismissed(
+          budgetId,
+          cycleType,
+        );
+        // If dismissed AND still in caution zone → show message
+        if (isDismissed) {
+          return {
+            'isDismissedAndInZone': true,
+            'alertType': 'caution',
+            'percentage': usagePercentage,
+          };
+        }
+      }
+
+      // Check for exceed (red) alert: 100%+ spent
+      if (usagePercentage >= 100) {
+        final isDismissed = await alertService.isExceedDismissed(budgetId);
+        // If dismissed AND still exceeding → show message
+        if (isDismissed) {
+          return {
+            'isDismissedAndInZone': true,
+            'alertType': 'exceed',
+            'percentage': usagePercentage,
+          };
+        }
+      }
+
+      return {'isDismissedAndInZone': false, 'alertType': null};
+    } catch (e) {
+      print('[BudgetPage] Error checking dismissed alert status: $e');
+      return {'isDismissedAndInZone': false, 'alertType': null};
+    }
+  }
+
+  /// Dismiss alert notification from the budget page itself
+  Future<void> _dismissAlertMessageFromBudgetPage(
+    String budgetId,
+    String alertType,
+  ) async {
+    try {
+      final alertService = BudgetAlertService();
+
+      if (alertType == 'caution') {
+        print(
+          '[BudgetPage] Dismissing caution alert from budget page for: $budgetId',
+        );
+        await alertService.dismissCautionAlert(budgetId, widget.userId);
+      } else if (alertType == 'exceed') {
+        print(
+          '[BudgetPage] Dismissing exceed alert from budget page for: $budgetId',
+        );
+        await alertService.dismissExceedAlert(budgetId, widget.userId);
+      }
+
+      // Refresh to update UI
+      if (mounted) {
+        _initializeAndLoadBudgets();
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Alert dismissed'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('[BudgetPage] Error dismissing alert from budget page: $e');
     }
   }
 
@@ -2707,6 +2977,54 @@ class _BudgetPageState extends State<BudgetPage> {
                                                 ],
                                               ),
                                             ),
+                                          // Dismissed Alert Pop-up (triggered automatically when dismissed but still in alert zone)
+                                          FutureBuilder<Map<String, dynamic>>(
+                                            future: _checkDismissedAlertStatus(
+                                              usagePercentage,
+                                              budgetId,
+                                              (budget['cycleType'] ?? 'month')
+                                                  .toLowerCase(),
+                                            ),
+                                            builder: (context, dismissedSnapshot) {
+                                              final dismissedStatus =
+                                                  dismissedSnapshot.data ?? {};
+                                              final isDismissedAndInZone =
+                                                  dismissedStatus['isDismissedAndInZone']
+                                                      as bool? ??
+                                                  false;
+                                              final alertType =
+                                                  dismissedStatus['alertType']
+                                                      as String?;
+
+                                              // Trigger pop-up automatically when dismissed but still in zone
+                                              if (isDismissedAndInZone &&
+                                                  alertType != null &&
+                                                  !isAlert &&
+                                                  !isWarning &&
+                                                  !_shownDismissedAlertPopups
+                                                      .contains(budgetId)) {
+                                                // Mark that we've shown the pop-up for this budget
+                                                _shownDismissedAlertPopups.add(
+                                                  budgetId,
+                                                );
+
+                                                // Show pop-up after frame is built
+                                                WidgetsBinding.instance
+                                                    .addPostFrameCallback((_) {
+                                                      if (mounted) {
+                                                        _showDismissedAlertDialog(
+                                                          budgetId,
+                                                          itemName,
+                                                          alertType,
+                                                          usagePercentage,
+                                                        );
+                                                      }
+                                                    });
+                                              }
+
+                                              return const SizedBox.shrink();
+                                            },
+                                          ),
                                           // Spending Suggestions
                                           if (isAlert || isWarning)
                                             Padding(

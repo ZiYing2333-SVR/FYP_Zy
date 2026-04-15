@@ -36,7 +36,7 @@ class SharedBottomNavBar extends StatelessWidget {
         MaterialPageRoute(builder: (context) => AccountPage(userId: userId)),
       );
     } else if (index == 2) {
-      // 🐶 PET LOGIC
+      //PET LOGIC
       _handlePetNavigation(context);
     } else if (index == 3) {
       Navigator.pushReplacement(

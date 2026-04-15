@@ -718,6 +718,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 );
                 // After deduction completes, loop continues to next deduction
                 // Only after ALL deductions complete will missing transfer check run
+              } else if (result == 'not_now' && goalId != null) {
+                // User deferred the deduction
+                // Track this goal as deferred so missing transfer check excludes today
+                print(
+                  '[HomeScreen] User deferred first-time deduction for goal: $goalId, tracking as deferred',
+                );
+                _deferredFreshDeductionGoals.add(goalId);
               }
             }
           }
@@ -1817,12 +1824,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 return;
                               }
 
+                              // Pass the goal we just processed as executed fresh deduction
+                              // This tells the missing transfer check to exclude today from calculation
+                              final goalId = missingInfo['goalId'] as String?;
+                              final executedGoals = goalId != null
+                                  ? {goalId}
+                                  : <String>{};
+
                               final missingList =
                                   await MissingTransferAlertService.checkAllMissingTransfers(
                                     _currentUserId!,
-                                    // Don't pass executed fresh deductions on retry
-                                    // because they're now in the database as auto-deductions
-                                    executedFreshDeductionGoals: const {},
+                                    // Pass the goal we just processed - this tells the check to exclude today
+                                    // since we just added today's transfer
+                                    executedFreshDeductionGoals: executedGoals,
                                   );
 
                               print(
@@ -1975,31 +1989,41 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _checkBudgetAlertFlags() async {
     try {
-      // Check if any budget has isAlert = true (yellow/orange badge)
+      // Use the budget alert service to check for actual active alerts/warnings
+      // This respects dismissal status, unlike just reading the raw flags
       final budgets = await Supabase.instance.client
           .from('Budget')
-          .select('isAlert, isWarning')
+          .select()
           .eq('userId', _currentUserId ?? widget.userId);
 
-      bool hasAlert = false;
-      bool hasWarning = false;
+      final alertService = BudgetAlertService();
+      final Map<String, double> budgetUsageMap = {};
 
+      // Calculate all budget usage percentages
       for (var budget in budgets) {
-        if (budget['isAlert'] == true) {
-          hasAlert = true;
-        }
-        if (budget['isWarning'] == true) {
-          hasWarning = true;
-        }
+        final double usagePercentage = await _calculateBudgetUsage(budget);
+        budgetUsageMap[budget['budgetId']] = usagePercentage;
       }
 
+      // Check for caution alerts (70-99%, not dismissed)
+      final cautionBudgets = await alertService.getCautionBudgets(
+        _currentUserId ?? widget.userId,
+        budgetUsageMap,
+      );
+
+      // Check for exceed alerts (>100%, not dismissed)
+      final exceedBudgets = await alertService.getExceedBudgets(
+        _currentUserId ?? widget.userId,
+        budgetUsageMap,
+      );
+
       setState(() {
-        _hasBudgetAlert = hasAlert;
-        _hasBudgetCaution = hasWarning;
+        _hasBudgetAlert = cautionBudgets.isNotEmpty;
+        _hasBudgetCaution = exceedBudgets.isNotEmpty;
       });
 
       print(
-        '[HomeScreen] Badge status: isAlert=$hasAlert, isWarning=$hasWarning',
+        '[HomeScreen] Badge status: caution=${cautionBudgets.isNotEmpty} (${cautionBudgets.length} budgets), exceed=${exceedBudgets.isNotEmpty} (${exceedBudgets.length} budgets)',
       );
     } catch (e) {
       print('Error checking budget alert flags: $e');
@@ -3012,6 +3036,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                       );
                       if (result == true) {
+                        await _fetchTransactions();
                         await _calculateDailyBalances();
                       }
                     } else {
@@ -3026,7 +3051,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                         ),
                       );
-                      if (result == true) {
+                      if (result != null) {
+                        // Refresh regardless of whether transaction was refunded or not
+                        await _fetchTransactions();
                         await _calculateDailyBalances();
                         // Only update budget flags for expense transactions related to budgets
                         if (type == 'expense') {
@@ -3372,8 +3399,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ),
                           );
                           // Refresh transactions if a transaction was deleted or refunded
-                          if (result == true) {
+                          if (result != null) {
+                            // Refresh regardless of whether transaction was refunded or not
                             await _fetchTransactions();
+                            await _calculateDailyBalances();
                             // Only update budget flags for expense transactions related to budgets
                             if (type == 'expense') {
                               await _updateBudgetFlagsForTransaction(
