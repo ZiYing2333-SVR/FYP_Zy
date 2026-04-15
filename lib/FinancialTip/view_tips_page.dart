@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../screens/settings_screen.dart';
+import '../homeAndSetting/settings_screen.dart';
 import 'daily_finance_tip.dart';
 import 'financial_tip_library_page.dart';
 

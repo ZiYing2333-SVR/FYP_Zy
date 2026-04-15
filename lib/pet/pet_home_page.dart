@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fyp_zy/pet/pet_shop_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fyp_zy/main.dart';
-import 'package:fyp_zy/screens/home_screen.dart';
+import 'package:fyp_zy/homeAndSetting/home_screen.dart';
 import 'dart:async';
 import 'package:fyp_zy/pet/pet_game_widget.dart';
 

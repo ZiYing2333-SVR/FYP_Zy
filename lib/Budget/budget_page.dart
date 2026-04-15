@@ -4,10 +4,10 @@ import '../services/budget_forecast_service.dart';
 import '../services/budget_alert_service.dart';
 import '../services/alert_status_service.dart';
 import '../services/budget_caution_service.dart';
-import 'home_screen.dart';
-import 'account_page.dart';
-import 'savings_page.dart';
-import 'settings_screen.dart';
+import '../homeAndSetting/home_screen.dart';
+import '../Account/account_page.dart';
+import '../savings/savings_page.dart';
+import '../homeAndSetting/settings_screen.dart';
 import 'create_budget_page.dart';
 import 'edit_budget_page.dart';
 
@@ -31,9 +31,16 @@ class _BudgetPageState extends State<BudgetPage> {
   // Track which budgets have shown dismissed alert pop-up to avoid showing on every rebuild
   final Set<String> _shownDismissedAlertPopups = {};
 
+  // Track which alert prompts have been shown to avoid duplicate prompts for same alert state
+  bool _hasShownCautionPrompt = false;
+  bool _hasShownHighRiskPrompt = false;
+
   @override
   void initState() {
     super.initState();
+    // Reset prompt flags so fresh prompts show for existing alerts
+    _hasShownCautionPrompt = false;
+    _hasShownHighRiskPrompt = false;
     _initializeAndLoadBudgets();
     _setupAlertListeners();
   }
@@ -64,7 +71,86 @@ class _BudgetPageState extends State<BudgetPage> {
   void _onAlertStatusChanged() {
     print('[BudgetPage] Alert status changed, refreshing budgets...');
     if (mounted) {
+      // ✅ Reset prompt flags when alert status changes
+      // This allows fresh prompts to show when previously dismissed alerts reappear
+      _hasShownHighRiskPrompt = false;
+      _hasShownCautionPrompt = false;
+
       _initializeAndLoadBudgets();
+
+      // Show dismiss prompt if alert icon appears in bottom bar
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _showPromptIfAlertAppears();
+        }
+      });
+    }
+  }
+
+  /// Show detailed alert dialog when alert icon appears in bottom bar
+  /// Allows users to select which alerts to dismiss
+  void _showPromptIfAlertAppears() {
+    final alertService = AlertStatusService();
+    final hasHighRisk = alertService.hasHighRiskAlert;
+    final hasCaution = alertService.hasCautionAlert;
+
+    print(
+      '[BudgetPage] _showPromptIfAlertAppears - HighRisk: $hasHighRisk, Caution: $hasCaution, Flags: HighRisk=$_hasShownHighRiskPrompt, Caution=$_hasShownCautionPrompt',
+    );
+
+    // ✅ Check HIGH RISK first (red icon) - higher priority
+    if (hasHighRisk && !_hasShownHighRiskPrompt) {
+      _hasShownHighRiskPrompt = true;
+      _hasShownCautionPrompt = false; // Reset caution when showing high risk
+      print('[BudgetPage] ✅ SHOWING HIGH RISK alert dialog');
+
+      // ✅ Clear dismissals and then show alert
+      _clearAllDismissalsForAlert('HIGH_RISK').then((_) {
+        if (mounted) {
+          print('[BudgetPage] Dismissals cleared, now displaying alert');
+          _checkAndDisplayAlertsFromFlags();
+        }
+      });
+    }
+    // ✅ Check CAUTION (orange icon) - only if no high risk
+    else if (hasCaution && !_hasShownCautionPrompt && !hasHighRisk) {
+      _hasShownCautionPrompt = true;
+      print('[BudgetPage] ✅ SHOWING CAUTION alert dialog');
+
+      // ✅ Clear dismissals and then show alert
+      _clearAllDismissalsForAlert('CAUTION').then((_) {
+        if (mounted) {
+          print('[BudgetPage] Dismissals cleared, now displaying alert');
+          _checkAndDisplayAlertsFromFlags();
+        }
+      });
+    }
+    // ✅ Reset flags when no alerts
+    else if (!hasHighRisk && !hasCaution) {
+      print('[BudgetPage] No alerts found, resetting flags');
+      _hasShownHighRiskPrompt = false;
+      _hasShownCautionPrompt = false;
+    } else {
+      print(
+        '[BudgetPage] Alert exists but flags prevent showing: HighRisk=$_hasShownHighRiskPrompt, Caution=$_hasShownCautionPrompt',
+      );
+    }
+  }
+
+  /// Clear all dismissals for a specific alert type to force fresh display
+  Future<void> _clearAllDismissalsForAlert(String alertType) async {
+    try {
+      final cautionService = BudgetCautionService();
+
+      for (var budget in _budgets) {
+        final budgetId = budget['budgetId'];
+
+        // Clear all dismissals for this budget so the alert shows fresh
+        print('[BudgetPage] Clearing dismissals for budget: $budgetId');
+        await cautionService.clearDismissal(budgetId, widget.userId);
+      }
+    } catch (e) {
+      print('[BudgetPage] Error clearing dismissals: $e');
     }
   }
 
@@ -90,7 +176,16 @@ class _BudgetPageState extends State<BudgetPage> {
         // Show alerts AFTER UI is built
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            _checkAndDisplayAlertsFromFlags();
+            // ✅ Reset flags AGAIN to ensure fresh dialog shows for reappearing alerts
+            _hasShownHighRiskPrompt = false;
+            _hasShownCautionPrompt = false;
+
+            print(
+              '[BudgetPage] Flags reset in _initializeAndLoadBudgets, about to check alerts',
+            );
+
+            // ✅ Show the old detailed alert dialog if alert icon exists in bottom bar
+            _showPromptIfAlertAppears();
           }
         });
       }

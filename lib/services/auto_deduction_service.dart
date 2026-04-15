@@ -197,41 +197,55 @@ class AutoDeductionService {
     try {
       final supabase = Supabase.instance.client;
       final goalId = goal['goalId'] as String;
+      final goalName = goal['name'] as String? ?? 'Unknown Goal';
       final startDate = goal['startDate'];
       final endDate = goal['endDate'];
       final cycleFrequency = (goal['cycleFrequency'] as String?)?.toLowerCase();
 
+      print(
+        '$_tag [MISSING] 🔍 Checking missing transfers for goal: $goalId ($goalName)',
+      );
+      print('$_tag [MISSING]   Start Date: $startDate');
+      print('$_tag [MISSING]   End Date: $endDate');
+      print('$_tag [MISSING]   Frequency: $cycleFrequency');
+
       if (startDate == null || endDate == null || cycleFrequency == null) {
+        print('$_tag [MISSING] ⚠️  Missing required fields for goal $goalId');
         return null;
       }
 
-      // Parse dates
+      // Parse dates - normalize to start of day (midnight)
       DateTime start;
       if (startDate is String) {
-        start = DateTime.parse(startDate).toUtc();
+        final parsed = DateTime.parse(startDate);
+        start = DateTime(parsed.year, parsed.month, parsed.day);
       } else if (startDate is DateTime) {
-        start = startDate.toUtc();
+        start = DateTime(startDate.year, startDate.month, startDate.day);
       } else {
         return null;
       }
 
       DateTime end;
       if (endDate is String) {
-        end = DateTime.parse(endDate).toUtc();
+        final parsed = DateTime.parse(endDate);
+        end = DateTime(parsed.year, parsed.month, parsed.day);
       } else if (endDate is DateTime) {
-        end = endDate.toUtc();
+        end = DateTime(endDate.year, endDate.month, endDate.day);
       } else {
         return null;
       }
 
-      final today = DateTime.now().toUtc();
-      var calculationEnd = today.isBefore(end) ? today : end;
+      final today = DateTime.now();
+      final normalizedToday = DateTime(today.year, today.month, today.day);
+      var calculationEnd = normalizedToday.isBefore(end)
+          ? normalizedToday
+          : end;
 
       // If excludeToday is true, check back one day to exclude today from expected count
       if (excludeToday) {
         calculationEnd = calculationEnd.subtract(const Duration(days: 1));
         print(
-          '$_tag [MISSING] Excluding today from calculation. New end date: $calculationEnd',
+          '$_tag [MISSING] ℹ️  Excluding today from calculation. New end date: ${calculationEnd.toIso8601String()}',
         );
       }
 
@@ -242,19 +256,68 @@ class AutoDeductionService {
         cycleFrequency,
       );
 
-      // Get actual non-refunded transfers
+      print('$_tag [MISSING] Expected transfer count: $expectedCount');
+
+      // Generate all expected dates for the calculation period
+      final allExpectedDates = _generateExpectedTransferDates(
+        goal,
+        start,
+        calculationEnd,
+      );
+
+      // Get actual auto-deduction transfers within the date range
       final transfers = await supabase
           .from('Transfer')
           .select()
           .eq('savingGoalId', goalId)
-          .eq('isAutoDeduction', true);
+          .eq('isAutoDeduction', true)
+          .gte('date', start.toIso8601String())
+          .lte('date', calculationEnd.toIso8601String());
 
-      // Filter out refunded transfers
+      print('$_tag [MISSING] Query parameters:');
+      print('$_tag [MISSING]   savingGoalId: $goalId');
+      print('$_tag [MISSING]   isAutoDeduction: true');
+      print('$_tag [MISSING]   date >= ${start.toIso8601String()}');
+      print('$_tag [MISSING]   date <= ${calculationEnd.toIso8601String()}');
+      print('$_tag [MISSING] Query returned ${transfers.length} records');
+
+      // Count only NON-REFUNDED transfers as actual
+      // Refunded transfers are treated as missing (they need to be created again)
       int actualCount = 0;
+      int refundedCount = 0;
       for (final transfer in transfers) {
         final refunded = transfer['refund'] as bool? ?? false;
-        if (!refunded) {
+        if (refunded) {
+          refundedCount++;
+        } else {
           actualCount++;
+        }
+      }
+
+      // Log which transfers were found
+      if (transfers.isEmpty) {
+        print('$_tag [MISSING] ⚠️  No transfers found for goal $goalId');
+        print('$_tag [MISSING]   This could indicate:');
+        print('$_tag [MISSING]   1. No transfers have been created yet');
+        print(
+          '$_tag [MISSING]   2. savingGoalId is not set in transfer records',
+        );
+        print('$_tag [MISSING]   3. Date range does not match transfer dates');
+      } else {
+        print(
+          '$_tag [MISSING] Found ${transfers.length} auto-deduction transfer(s):',
+        );
+        for (final transfer in transfers) {
+          final transferId = transfer['transferId'];
+          final date = transfer['date'];
+          final refunded = transfer['refund'] as bool? ?? false;
+          final status = refunded ? '(REFUNDED)' : '(ACTIVE)';
+          print('$_tag [MISSING]   - $transferId at $date $status');
+        }
+        if (refundedCount > 0) {
+          print(
+            '$_tag [MISSING] ⚠️  Note: $refundedCount refunded transfer(s) will be counted as MISSING (need to be created again)',
+          );
         }
       }
 
@@ -265,6 +328,15 @@ class AutoDeductionService {
       );
 
       if (missingCount > 0) {
+        // Calculate the actual missing dates for display
+        List<DateTime> missingDates = [];
+        if (allExpectedDates != null && allExpectedDates.isNotEmpty) {
+          missingDates = _calculateActualMissingDates(
+            allExpectedDates,
+            transfers,
+          );
+        }
+
         // Fetch currency symbol and destination account balance
         String currencySymbol = '\$'; // Default fallback
         double destAccountBalance = 0; // Actual amount saved
@@ -305,6 +377,7 @@ class AutoDeductionService {
           'expectedCount': expectedCount,
           'actualCount': actualCount,
           'missingCount': missingCount,
+          'missingDates': missingDates, // Add actual missing dates
           'amountPerTransfer': _calculateDeductionAmount(
             goal,
           ).toStringAsFixed(2),
@@ -413,21 +486,125 @@ class AutoDeductionService {
       final excludeToday = missingInfo['excludeToday'] as bool? ?? false;
       print('$_tag [BATCH] excludeToday: $excludeToday');
 
-      // Calculate the dates for each missing transfer
-      final missingDates = _calculateMissingTransferDates(
-        goalData,
-        missingCount,
-        excludeToday: excludeToday,
-      );
-      print('$_tag [BATCH] Missing transfer dates: $missingDates');
+      // Parse goal dates to determine the date range for expected transfers
+      final startDate = goalData['startDate'];
+      final endDate = goalData['endDate'];
+      final cycleFrequency = (goalData['cycleFrequency'] as String?)
+          ?.toLowerCase();
 
-      for (int i = 0; i < missingCount; i++) {
+      DateTime start;
+      if (startDate is String) {
+        final parsed = DateTime.parse(startDate);
+        start = DateTime(parsed.year, parsed.month, parsed.day);
+      } else if (startDate is DateTime) {
+        start = DateTime(startDate.year, startDate.month, startDate.day);
+      } else {
+        throw Exception('Invalid startDate format');
+      }
+
+      DateTime end;
+      if (endDate is String) {
+        final parsed = DateTime.parse(endDate);
+        end = DateTime(parsed.year, parsed.month, parsed.day);
+      } else if (endDate is DateTime) {
+        end = DateTime(endDate.year, endDate.month, endDate.day);
+      } else {
+        throw Exception('Invalid endDate format');
+      }
+
+      final today = DateTime.now();
+      final normalizedToday = DateTime(today.year, today.month, today.day);
+      var calculationEnd = normalizedToday.isBefore(end)
+          ? normalizedToday
+          : end;
+
+      if (excludeToday) {
+        calculationEnd = calculationEnd.subtract(const Duration(days: 1));
+      }
+
+      print(
+        '$_tag [BATCH] Date range for missing transfer detection: ${start.toIso8601String()} to ${calculationEnd.toIso8601String()}',
+      );
+
+      // Calculate the dates for each missing transfer
+      // First, generate ALL expected dates for the cycle range
+      final allExpectedDates = _generateExpectedTransferDates(
+        goalData,
+        start,
+        calculationEnd,
+      );
+
+      print(
+        '$_tag [BATCH] Generated ${allExpectedDates.length} expected dates for the cycle',
+      );
+
+      // Get actual auto-deduction transfers within the date range
+      final transfers = await supabase
+          .from('Transfer')
+          .select()
+          .eq('savingGoalId', goalId)
+          .eq('isAutoDeduction', true)
+          .gte('date', start.toIso8601String())
+          .lte('date', calculationEnd.toIso8601String());
+
+      print('$_tag [BATCH] Found ${transfers.length} existing transfers');
+
+      // Extract dates from ONLY non-refunded transfers
+      // Refunded transfers should be treated as missing (need to be created again)
+      final existingTransferDates = <DateTime>{};
+      int refundedCount = 0;
+      for (final transfer in transfers) {
+        final refunded = transfer['refund'] as bool? ?? false;
+        if (!refunded) {
+          final dateStr = transfer['date'] as String?;
+          if (dateStr != null) {
+            try {
+              final parsed = DateTime.parse(dateStr);
+              final normalized = DateTime(
+                parsed.year,
+                parsed.month,
+                parsed.day,
+              );
+              existingTransferDates.add(normalized);
+            } catch (e) {
+              // Skip if can't parse
+            }
+          }
+        } else {
+          refundedCount++;
+        }
+      }
+
+      if (refundedCount > 0) {
+        print(
+          '$_tag [BATCH] ⚠️  Found $refundedCount refunded transfer(s) - these will be counted as MISSING',
+        );
+      }
+
+      print(
+        '$_tag [BATCH] Found ${existingTransferDates.length} dates with existing transfers',
+      );
+
+      // Find which expected dates are MISSING (have no transfer)
+      final missingDates = <DateTime>[];
+      for (final expectedDate in allExpectedDates) {
+        if (!existingTransferDates.contains(expectedDate)) {
+          missingDates.add(expectedDate);
+        }
+      }
+
+      // Sort missing dates chronologically
+      missingDates.sort();
+
+      print('$_tag [BATCH] Missing transfer dates (${missingDates.length}):');
+      for (final date in missingDates) {
+        print('$_tag [BATCH]   - ${date.toIso8601String()}');
+      }
+
+      for (int i = 0; i < missingDates.length; i++) {
         // Calculate sequence locally instead of querying database
         final sequence = nextSequence + i;
-        // Get the date for this missing transfer (or use today if list is shorter)
-        final transferDate = i < missingDates.length
-            ? missingDates[i]
-            : DateTime.now();
+        final transferDate = missingDates[i];
 
         final success = await _createAutoDeductionTransfer(
           goalData,
@@ -774,6 +951,121 @@ class AutoDeductionService {
 
   /// Calculate the dates when each missing transfer should have occurred
   /// Returns list of DateTime objects in chronological order
+  /// Calculate the actual missing dates by comparing expected vs actual transfers
+  /// Refunded transfers are excluded from "existing" transfers, so they count as missing
+  static List<DateTime> _calculateActualMissingDates(
+    List<DateTime> expectedDates,
+    List<Map<String, dynamic>> transfers,
+  ) {
+    try {
+      // Extract dates from ONLY non-refunded transfers
+      final existingTransferDates = <DateTime>{};
+      for (final transfer in transfers) {
+        final refunded = transfer['refund'] as bool? ?? false;
+        // Only add non-refunded transfers to existing dates
+        if (!refunded) {
+          final dateStr = transfer['date'] as String?;
+          if (dateStr != null) {
+            try {
+              final parsed = DateTime.parse(dateStr);
+              final normalized = DateTime(
+                parsed.year,
+                parsed.month,
+                parsed.day,
+              );
+              existingTransferDates.add(normalized);
+            } catch (e) {
+              // Skip if can't parse
+            }
+          }
+        }
+      }
+
+      // Find which expected dates are MISSING (have no non-refunded transfer)
+      final missingDates = <DateTime>[];
+      for (final expectedDate in expectedDates) {
+        if (!existingTransferDates.contains(expectedDate)) {
+          missingDates.add(expectedDate);
+        }
+      }
+
+      // Sort chronologically
+      missingDates.sort();
+
+      return missingDates;
+    } catch (e) {
+      print('$_tag [MISSING] ⚠️  Error calculating actual missing dates: $e');
+      return [];
+    }
+  }
+
+  /// Generate ALL expected transfer dates for a cycle based on frequency
+  /// This is used to identify which specific dates are missing transfers
+  static List<DateTime> _generateExpectedTransferDates(
+    Map<String, dynamic> goal,
+    DateTime start,
+    DateTime end,
+  ) {
+    try {
+      final cycleFrequency = (goal['cycleFrequency'] as String?)?.toLowerCase();
+      List<DateTime> dates = [];
+
+      if (cycleFrequency == 'daily') {
+        // Generate a date for each day from start to end
+        DateTime current = start;
+        while (!current.isAfter(end)) {
+          dates.add(current);
+          current = current.add(const Duration(days: 1));
+        }
+      } else if (cycleFrequency == 'weekly') {
+        // Generate a date for each week from start to end
+        // Use the same day of week as the start date
+        DateTime current = start;
+        while (!current.isAfter(end)) {
+          dates.add(current);
+          current = current.add(const Duration(days: 7));
+        }
+      } else if (cycleFrequency == 'monthly') {
+        // Generate a date for each month from start to end
+        // Use the same day of month as the start date
+        DateTime current = start;
+        while (!current.isAfter(end)) {
+          dates.add(current);
+          // Try to add a month (handles month boundary issues)
+          try {
+            current = DateTime(current.year, current.month + 1, current.day);
+          } catch (e) {
+            // If day doesn't exist in next month (e.g., Jan 31 -> Feb 31)
+            // Move to last day of the next month
+            final nextMonth = current.month + 1;
+            final nextYear = nextMonth > 12 ? current.year + 1 : current.year;
+            final adjustedMonth = nextMonth > 12 ? 1 : nextMonth;
+            final lastDayOfMonth = DateTime(nextYear, adjustedMonth + 1, 0).day;
+            current = DateTime(nextYear, adjustedMonth, lastDayOfMonth);
+          }
+        }
+      }
+
+      print(
+        '$_tag [EXPECTED] Generated ${dates.length} expected transfer dates for frequency: $cycleFrequency',
+      );
+      for (int i = 0; i < dates.length && i < 5; i++) {
+        print('$_tag [EXPECTED]   Date[$i]: ${dates[i]}');
+      }
+      if (dates.length > 5) {
+        print('$_tag [EXPECTED]   ... and ${dates.length - 5} more');
+      }
+
+      return dates;
+    } catch (e) {
+      print('$_tag [EXPECTED] ❌ Error generating expected transfer dates: $e');
+      return [];
+    }
+  }
+
+  /// Calculate missing transfer dates by comparing expected vs actual
+  /// DEPRECATED: Use _generateExpectedTransferDates instead
+  @Deprecated('Use _generateExpectedTransferDates instead')
   static List<DateTime> _calculateMissingTransferDates(
     Map<String, dynamic> goal,
     int missingCount, {

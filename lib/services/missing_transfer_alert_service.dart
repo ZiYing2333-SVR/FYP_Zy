@@ -139,48 +139,64 @@ class MissingTransferAlertService {
       (missingInfo['targetAmount'] ?? 0).toString(),
     ).toStringAsFixed(2);
 
-    // Generate list of missing dates with amounts
-    DateTime now = DateTime.now();
-    final excludeToday = missingInfo['excludeToday'] as bool? ?? false;
-
+    // Use actual missing dates if available, otherwise generate them
     List<String> missingDatesWithAmount = [];
 
-    if (frequency.toLowerCase() == 'daily') {
-      // For daily missing transfers, generate dates from oldest to newest
-      // If excludeToday=true: missing dates are from (now - missingCount) to (now - 1)
-      //   Example: now=Apr13, missingCount=3 → Apr10, Apr11, Apr12
-      // If excludeToday=false: missing dates are from (now - missingCount + 1) to now
-      //   Example: now=Apr13, missingCount=3 → Apr11, Apr12, Apr13
-      for (int i = 0; i < missingCount; i++) {
-        final daysBack = excludeToday
-            ? (missingCount - i)
-            : (missingCount - i - 1);
-        final date = now.subtract(Duration(days: daysBack));
+    final missingDates = missingInfo['missingDates'] as List<dynamic>? ?? [];
+    if (missingDates.isNotEmpty) {
+      // Use the actual missing dates calculated during detection
+      for (final dateObj in missingDates) {
+        DateTime date;
+        if (dateObj is DateTime) {
+          date = dateObj;
+        } else if (dateObj is String) {
+          try {
+            date = DateTime.parse(dateObj);
+          } catch (e) {
+            continue;
+          }
+        } else {
+          continue;
+        }
         missingDatesWithAmount.add(
           '${_formatDate(date)}: $currencySymbol$amountPerTransfer',
         );
       }
-    } else if (frequency.toLowerCase() == 'weekly') {
-      // For weekly: similar logic adjusted for weekly frequency
-      for (int i = 0; i < missingCount; i++) {
-        final weeksBack = excludeToday
-            ? (missingCount - i)
-            : (missingCount - i - 1);
-        final date = now.subtract(Duration(days: weeksBack * 7));
-        missingDatesWithAmount.add(
-          '${_formatDate(date)}: $currencySymbol$amountPerTransfer',
-        );
-      }
-    } else if (frequency.toLowerCase() == 'monthly') {
-      // For monthly: adjust by months with same logic
-      for (int i = 0; i < missingCount; i++) {
-        final monthsBack = excludeToday
-            ? (missingCount - i)
-            : (missingCount - i - 1);
-        final date = DateTime(now.year, now.month - monthsBack, now.day);
-        missingDatesWithAmount.add(
-          '${_formatDate(date)}: $currencySymbol$amountPerTransfer',
-        );
+    } else {
+      // Fallback: generate dates from today (old behavior)
+      DateTime now = DateTime.now();
+      final excludeToday = missingInfo['excludeToday'] as bool? ?? false;
+
+      if (frequency.toLowerCase() == 'daily') {
+        for (int i = 0; i < missingCount; i++) {
+          final daysBack = excludeToday
+              ? (missingCount - i)
+              : (missingCount - i - 1);
+          final date = now.subtract(Duration(days: daysBack));
+          missingDatesWithAmount.add(
+            '${_formatDate(date)}: $currencySymbol$amountPerTransfer',
+          );
+        }
+      } else if (frequency.toLowerCase() == 'weekly') {
+        for (int i = 0; i < missingCount; i++) {
+          final weeksBack = excludeToday
+              ? (missingCount - i)
+              : (missingCount - i - 1);
+          final date = now.subtract(Duration(days: weeksBack * 7));
+          missingDatesWithAmount.add(
+            '${_formatDate(date)}: $currencySymbol$amountPerTransfer',
+          );
+        }
+      } else if (frequency.toLowerCase() == 'monthly') {
+        for (int i = 0; i < missingCount; i++) {
+          final monthsBack = excludeToday
+              ? (missingCount - i)
+              : (missingCount - i - 1);
+          final date = DateTime(now.year, now.month - monthsBack, now.day);
+          missingDatesWithAmount.add(
+            '${_formatDate(date)}: $currencySymbol$amountPerTransfer',
+          );
+        }
       }
     }
 

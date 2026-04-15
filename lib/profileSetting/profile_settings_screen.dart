@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
 import 'change_password_page.dart';
-import 'settings_screen.dart';
+import '../homeAndSetting/settings_screen.dart';
 
 import '../FacialRecognition/set_up_face_page.dart';
 

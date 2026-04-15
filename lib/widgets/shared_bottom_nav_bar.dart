@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/alert_status_service.dart';
-import '../screens/home_screen.dart';
-import '../screens/account_page.dart';
-import '../screens/savings_page.dart';
-import '../screens/settings_screen.dart';
+import '../homeAndSetting/home_screen.dart';
+import '../Account/account_page.dart';
+import '../savings/savings_page.dart';
+import '../homeAndSetting/settings_screen.dart';
 import '../pet/pet_main.dart';
 import '../pet/pet_home_page.dart';
 

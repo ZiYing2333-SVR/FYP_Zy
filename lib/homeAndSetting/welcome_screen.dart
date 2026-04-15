@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../FacialRecognition/face_auth_service.dart';
 import 'home_screen.dart';
-import 'login_screen.dart';
-import 'first_register_page.dart';
+import '../profileSetting/login_screen.dart';
+import '../profileSetting/first_register_page.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});

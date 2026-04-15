@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/bank_icon_helper.dart';
-import 'add_account_page1.dart';
-import 'home_screen.dart';
-import 'savings_page.dart';
+import '../Account/add_account_page1.dart';
+import '../homeAndSetting/home_screen.dart';
+import '../savings/savings_page.dart';
 
 class SavingGoalConfirmationScreen extends StatefulWidget {
   final String userId;

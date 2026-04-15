@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'transfer_detail_screen.dart';
+import '../TransactionAndTransfer/transfer_detail_screen.dart';
 
 class SavingDetailPage extends StatefulWidget {
   final String goalId;

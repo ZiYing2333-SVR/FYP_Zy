@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:collection/collection.dart';
 import '../utils/transaction_parser.dart';
 import '../services/ai_service.dart';
-import 'home_screen.dart';
+import '../homeAndSetting/home_screen.dart';
 
 class ConfirmBulkTransactionsScreen extends StatefulWidget {
   final String userId;

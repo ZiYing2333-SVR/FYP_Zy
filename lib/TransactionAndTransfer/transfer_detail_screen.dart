@@ -1478,7 +1478,7 @@ class _TransferDetailScreenState extends State<TransferDetailScreen> {
         ),
         centerTitle: true,
         actions: [
-          if (!_isEditing)
+          if (!_isEditing && !_isRefunded())
             GestureDetector(
               onTap: () {
                 setState(() {
@@ -1494,7 +1494,7 @@ class _TransferDetailScreenState extends State<TransferDetailScreen> {
                 ),
               ),
             )
-          else if (_isSaving)
+          else if (_isEditing && _isSaving)
             const Padding(
               padding: EdgeInsets.all(16),
               child: SizedBox(
@@ -1503,7 +1503,7 @@ class _TransferDetailScreenState extends State<TransferDetailScreen> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             )
-          else
+          else if (_isEditing)
             GestureDetector(
               onTap: _updateTransfer,
               child: Padding(

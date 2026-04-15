@@ -4,8 +4,8 @@ import '../services/saving_goal_assistant_service.dart';
 import '../services/intelligent_savings_goal_assistant_service.dart';
 import 'saving_goal_plan_screen.dart';
 import 'saving_goal_confirmation_screen.dart';
-import 'add_transaction.dart';
-import 'free_saving_page.dart';
+import '../TransactionAndTransfer/add_transaction.dart';
+import '../savings/free_saving_page.dart';
 
 class SavingGoalAssistantScreen extends StatefulWidget {
   final String userId;

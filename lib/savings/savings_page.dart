@@ -5,13 +5,13 @@ import '../pet/pet_home_page.dart';
 import '../pet/pet_main.dart';
 import '../services/budget_alert_service.dart';
 import '../widgets/shared_bottom_nav_bar.dart';
-import 'home_screen.dart';
-import 'account_page.dart';
-import 'settings_screen.dart';
+import '../homeAndSetting/home_screen.dart';
+import '../Account/account_page.dart';
+import '../homeAndSetting/settings_screen.dart';
 import 'create_saving_page.dart';
 import 'saving_detail_page.dart';
-import 'saving_goal_assistant_screen.dart';
-import 'ai_features_screen.dart';
+import '../AIFeatures/saving_goal_assistant_screen.dart';
+import '../AIFeatures/ai_features_screen.dart';
 
 class SavingsPage extends StatefulWidget {
   final String userId;

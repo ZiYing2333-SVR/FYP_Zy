@@ -6,11 +6,11 @@ import '../utils/bank_icon_helper.dart';
 import '../services/budget_forecast_service.dart';
 import '../services/budget_alert_service.dart';
 import '../widgets/shared_bottom_nav_bar.dart';
-import 'home_screen.dart';
-import 'settings_screen.dart';
+import '../homeAndSetting/home_screen.dart';
+import '../homeAndSetting/settings_screen.dart';
 import 'add_account_page1.dart';
 import 'account_detail_screen.dart';
-import 'savings_page.dart';
+import '../savings/savings_page.dart';
 import 'create_account_group_screen.dart';
 
 class AccountPage extends StatefulWidget {

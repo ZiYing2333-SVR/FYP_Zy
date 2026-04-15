@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/bank_icon_helper.dart';
 import 'add_account_page1.dart';
 import 'edit_account_page.dart';
-import 'settings_screen.dart';
+import '../homeAndSetting/settings_screen.dart';
 
 class AccountManager extends StatefulWidget {
   final String userId;

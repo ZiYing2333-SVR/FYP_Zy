@@ -15,15 +15,15 @@ import '../services/missing_transfer_alert_service.dart';
 import '../widgets/shared_bottom_nav_bar.dart';
 import 'home_screen.dart';
 import 'welcome_screen.dart';
-import 'profile_settings_screen.dart';
-import 'ledger_manager.dart';
-import 'account_manager.dart';
+import '../profileSetting/profile_settings_screen.dart';
+import '../Ledger/ledger_manager.dart';
+import '../Account/account_manager.dart';
 import 'currency_settings_page.dart';
-import 'account_page.dart';
-import 'category_manager.dart';
-import 'savings_page.dart';
-import 'budget_page.dart';
-import 'report_page.dart';
+import '../Account/account_page.dart';
+import '../category/category_manager.dart';
+import '../savings/savings_page.dart';
+import '../Budget/budget_page.dart';
+import '../report/report_page.dart';
 
 class SettingsScreen extends StatefulWidget {
   final String userId;

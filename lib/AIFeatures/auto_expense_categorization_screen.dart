@@ -4,7 +4,7 @@ import '../services/ai_service.dart';
 import '../utils/transaction_parser.dart';
 import 'auto_expense_confirmation_screen.dart';
 import 'confirm_bulk_transactions.dart';
-import 'home_screen.dart';
+import '../homeAndSetting/home_screen.dart';
 
 class AutoExpenseCategorization extends StatefulWidget {
   final String userId;

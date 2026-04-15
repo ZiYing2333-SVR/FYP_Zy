@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'edit_account_page.dart';
-import 'transaction_detail_screen.dart';
-import 'transfer_detail_screen.dart';
+import '../TransactionAndTransfer/transaction_detail_screen.dart';
+import '../TransactionAndTransfer/transfer_detail_screen.dart';
 
 class AccountDetailScreen extends StatefulWidget {
   final String accountId;

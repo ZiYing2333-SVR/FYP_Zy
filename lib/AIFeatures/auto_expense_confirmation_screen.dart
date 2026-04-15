@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/ai_service.dart';
 import 'package:intl/intl.dart';
-import 'home_screen.dart';
+import '../homeAndSetting/home_screen.dart';
 
 class AutoExpenseConfirmation extends StatefulWidget {
   final String userId;

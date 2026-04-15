@@ -8,13 +8,13 @@ import '../widgets/shared_bottom_nav_bar.dart';
 import '../pet/pet_home_page.dart';
 import '../pet/pet_main.dart';
 import 'settings_screen.dart';
-import 'ledger_manager.dart';
-import 'account_page.dart';
-import 'add_transaction.dart';
-import 'transaction_detail_screen.dart';
-import 'transfer_detail_screen.dart';
-import 'savings_page.dart';
-import 'ai_features_screen.dart';
+import '../Ledger/ledger_manager.dart';
+import '../Account/account_page.dart';
+import '../TransactionAndTransfer/add_transaction.dart';
+import '../TransactionAndTransfer/transaction_detail_screen.dart';
+import '../TransactionAndTransfer/transfer_detail_screen.dart';
+import '../savings/savings_page.dart';
+import '../AIFeatures/ai_features_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final String userId;
