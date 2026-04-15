@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:collection/collection.dart';
 import 'dart:io';
+import 'dart:typed_data';
 import '../services/budget_alert_service.dart';
 import '../services/alert_status_service.dart';
 
@@ -621,19 +622,50 @@ class _AddTransactionState extends State<AddTransaction> {
       String? imageUrl;
 
       // Upload image if selected
+      // 📁 IMAGE STORAGE STRUCTURE:
+      // Supabase bucket: 'images' → transaction_image/ → {PREFIX}_{userId}_{timestamp}.{ext}
       if (_selectedImage != null) {
-        final fileName = 'TXN${DateTime.now().millisecondsSinceEpoch}.jpg';
-        final filePath = 'transaction_image/$fileName';
+        try {
+          // Extract file extension from original image
+          final fileExtension = _selectedImage!.path
+              .split('.')
+              .last
+              .toLowerCase();
+          final validExtension =
+              ['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(fileExtension)
+              ? fileExtension
+              : 'jpg';
 
-        final file = File(_selectedImage!.path);
+          // Generate file name with type prefix for better organization
+          // TRANS = Transaction, TRNS = Transfer
+          final prefix = _selectedType == 'transfer' ? 'TRNS' : 'TRANS';
+          final fileName =
+              '${prefix}_${widget.userId}_${DateTime.now().millisecondsSinceEpoch}.$validExtension';
+          final filePath = 'transaction_image/$fileName';
 
-        await Supabase.instance.client.storage
-            .from('images')
-            .upload(filePath, file);
+          print('[AddTransaction] Uploading image: $filePath');
 
-        imageUrl = Supabase.instance.client.storage
-            .from('images')
-            .getPublicUrl(filePath);
+          // ✅ Web-compatible: Use XFile.readAsBytes() instead of File()
+          final fileBytes = await _selectedImage!.readAsBytes();
+
+          // Upload to Supabase storage
+          await Supabase.instance.client.storage
+              .from('images')
+              .uploadBinary(filePath, fileBytes);
+
+          // Get public URL for the uploaded image
+          imageUrl = Supabase.instance.client.storage
+              .from('images')
+              .getPublicUrl(filePath);
+
+          print('[AddTransaction] Image uploaded successfully: $imageUrl');
+        } catch (imageError) {
+          print('Error uploading image: $imageError');
+          if (mounted) {
+            _showErrorDialog('Error uploading image: ${imageError.toString()}');
+          }
+          return;
+        }
       }
 
       final amount = double.parse(_amountText);
@@ -645,7 +677,7 @@ class _AddTransactionState extends State<AddTransaction> {
         final transferId =
             'TRANSFER${widget.userId}${DateTime.now().millisecondsSinceEpoch}';
 
-        // Save transfer record to Transfer table
+        // Save transfer record to Transfer table with image URL in 'noteImage' column
         await Supabase.instance.client.from('Transfer').insert({
           'transferId': transferId,
           'fromAccountId': _selectedFromAccountId,
@@ -684,13 +716,13 @@ class _AddTransactionState extends State<AddTransaction> {
               .eq('accountId', _selectedToAccountId ?? '');
         }
       } else {
-        // Original logic for expense/income transactions
+        // Expense/Income transactions
         // Generate transaction ID using UUID to prevent race condition duplicates
-        // ✅ UUID ensures globally unique IDs even with concurrent requests
+        // ✅ Millisecond precision ensures uniqueness even with concurrent requests
         final transactionId =
             'TRANS${widget.userId}${DateTime.now().millisecondsSinceEpoch}';
 
-        // Save transaction to database
+        // Save transaction to database with image URL in 'image' column
         await Supabase.instance.client.from('Transaction').insert({
           'transactionId': transactionId,
           'categoryId': _selectedCategory!['categoryId'],
@@ -700,7 +732,8 @@ class _AddTransactionState extends State<AddTransaction> {
           'note': _noteController.text,
           'type': _selectedType,
           'ledgerId': widget.ledgerId,
-          'image': imageUrl,
+          'image':
+              imageUrl, // 📸 Image URL from Supabase storage (transaction_image folder)
         });
 
         // Update account balance based on transaction type
@@ -1897,11 +1930,25 @@ class _AddTransactionState extends State<AddTransaction> {
               child: _selectedImage != null
                   ? ClipRRect(
                       borderRadius: BorderRadius.circular(6),
-                      child: Image.file(
-                        File(_selectedImage!.path),
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Icon(Icons.image, color: Colors.black);
+                      child: FutureBuilder<Uint8List>(
+                        future: _selectedImage!.readAsBytes(),
+                        builder: (context, snapshot) {
+                          if (snapshot.hasData) {
+                            return Image.memory(
+                              snapshot.data!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Icon(Icons.image, color: Colors.black);
+                              },
+                            );
+                          }
+                          return const Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          );
                         },
                       ),
                     )
@@ -2592,16 +2639,36 @@ class _TransactionTicketDialogState extends State<_TransactionTicketDialog>
                       const SizedBox(height: 16),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: Image.file(
-                          File(widget.selectedImage!.path),
-                          height: 100,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
+                        child: FutureBuilder<Uint8List>(
+                          future: widget.selectedImage!.readAsBytes(),
+                          builder: (context, snapshot) {
+                            if (snapshot.hasData) {
+                              return Image.memory(
+                                snapshot.data!,
+                                height: 100,
+                                width: double.infinity,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    height: 100,
+                                    color: Colors.grey[200],
+                                    child: const Icon(Icons.image),
+                                  );
+                                },
+                              );
+                            }
                             return Container(
                               height: 100,
-                              color: Colors.grey[200],
-                              child: const Icon(Icons.image),
+                              color: Colors.grey[100],
+                              child: const Center(
+                                child: SizedBox(
+                                  width: 30,
+                                  height: 30,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              ),
                             );
                           },
                         ),

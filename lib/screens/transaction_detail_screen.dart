@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:typed_data';
 import '../Challenge/challenge_tracking_service.dart';
 import '../services/budget_alert_service.dart';
 import '../services/alert_status_service.dart';
@@ -36,6 +38,11 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   String? _originalAccountId;
   double? _originalAmount;
   String? _originalNote;
+
+  // Image editing
+  XFile? _selectedImage;
+  String? _originalImage;
+  bool _imageDeleted = false;
 
   @override
   void initState() {
@@ -80,6 +87,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         _originalAmount =
             double.tryParse(response['amount']?.toString() ?? '0') ?? 0;
         _originalNote = response['note'] ?? '';
+        _originalImage = response['image'];
         _isLoading = false;
       });
     } catch (e) {
@@ -215,6 +223,47 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         }
       }
 
+      // Handle image upload/update
+      String? newImageUrl = _originalImage;
+
+      if (_imageDeleted) {
+        // Image was deleted
+        newImageUrl = null;
+      } else if (_selectedImage != null) {
+        // New image selected - upload to Supabase
+        try {
+          final fileExtension = _selectedImage!.path
+              .split('.')
+              .last
+              .toLowerCase();
+          final validExtension =
+              ['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(fileExtension)
+              ? fileExtension
+              : 'jpg';
+          final fileName =
+              'TRANS_${widget.userId}_${DateTime.now().millisecondsSinceEpoch}.$validExtension';
+          final filePath = 'transaction_image/$fileName';
+
+          final fileBytes = await _selectedImage!.readAsBytes();
+          await supabase.storage
+              .from('images')
+              .uploadBinary(filePath, fileBytes);
+
+          newImageUrl = supabase.storage.from('images').getPublicUrl(filePath);
+        } catch (e) {
+          print('Error uploading image: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Error uploading image: $e')),
+            );
+          }
+          setState(() {
+            _isSaving = false;
+          });
+          return;
+        }
+      }
+
       // Update transaction in database
       await supabase
           .from('Transaction')
@@ -222,6 +271,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
             'note': _noteController.text,
             'accountId': _selectedAccountId,
             'amount': newAmount,
+            'image': newImageUrl,
           })
           .eq('transactionId', widget.transactionId);
 
@@ -234,9 +284,13 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         _transaction!['note'] = _noteController.text;
         _transaction!['accountId'] = _selectedAccountId;
         _transaction!['amount'] = newAmount;
+        _transaction!['image'] = newImageUrl;
         _originalNote = _noteController.text;
         _originalAccountId = _selectedAccountId;
         _originalAmount = newAmount;
+        _originalImage = newImageUrl;
+        _selectedImage = null;
+        _imageDeleted = false;
         _isEditing = false;
         _isSaving = false;
       });
@@ -1030,7 +1084,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         double.tryParse(_amountController.text) ?? _originalAmount ?? 0;
     return _noteController.text != (_originalNote ?? '') ||
         _selectedAccountId != _originalAccountId ||
-        newAmount != _originalAmount;
+        newAmount != _originalAmount ||
+        _selectedImage != null ||
+        _imageDeleted;
   }
 
   bool _isRefunded() => _transaction?['refund'] == true;
@@ -1351,6 +1407,97 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     } catch (e) {
       print('[TransactionDetailScreen] Error updating budget flags: $e');
     }
+  }
+
+  /// 📸 Show full-screen image viewer when user taps on receipt image
+  void _showFullImage(String imageUrl) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black87,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: EdgeInsets.zero,
+          child: Container(
+            color: Colors.black87,
+            child: Column(
+              children: [
+                // Close Button
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Expanded(child: SizedBox()),
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withOpacity(0.2),
+                          ),
+                          child: const Icon(
+                            Icons.close,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Full Image
+                Expanded(
+                  child: Center(
+                    child: InteractiveViewer(
+                      minScale: 0.5,
+                      maxScale: 3.0,
+                      child: Image.network(
+                        imageUrl,
+                        fit: BoxFit.contain,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return const Center(
+                            child: CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
+                            ),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) {
+                          return Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.image_not_supported_rounded,
+                                color: Colors.grey[400],
+                                size: 60,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Failed to load image',
+                                style: TextStyle(
+                                  color: Colors.grey[300],
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -1937,9 +2084,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // Note - Enhanced
-                  if (_transaction!['note'] != null &&
-                      _transaction!['note'].toString().isNotEmpty)
+                  // Note - Enhanced (Always show in edit mode, only if content in view mode)
+                  if (_isEditing ||
+                      (_transaction!['note'] != null &&
+                          _transaction!['note'].toString().isNotEmpty))
                     _isEditing
                         ? _buildNoteField()
                         : Container(
@@ -1993,6 +2141,119 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                               ],
                             ),
                           ),
+                  // 📸 Image Section - Always show in edit mode, only if available in view mode
+                  if (_isEditing ||
+                      (_transaction!['image'] != null &&
+                          _transaction!['image'].toString().isNotEmpty))
+                    Column(
+                      children: [
+                        const SizedBox(height: 16),
+                        _isEditing
+                            ? _buildImageEditField()
+                            : Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: const Color(0xFFFFE5B4),
+                                    width: 1,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.05),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.image_rounded,
+                                          color: const Color(0xFFF39C12),
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        const Text(
+                                          'Receipt Image',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Color(0xFF999999),
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    GestureDetector(
+                                      onTap: () => _showFullImage(
+                                        _transaction!['image'],
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Image.network(
+                                          _transaction!['image'],
+                                          fit: BoxFit.cover,
+                                          height: 200,
+                                          width: double.infinity,
+                                          loadingBuilder:
+                                              (
+                                                context,
+                                                child,
+                                                loadingProgress,
+                                              ) {
+                                                if (loadingProgress == null)
+                                                  return child;
+                                                return Container(
+                                                  height: 200,
+                                                  color: Colors.grey[200],
+                                                  child: const Center(
+                                                    child:
+                                                        CircularProgressIndicator(),
+                                                  ),
+                                                );
+                                              },
+                                          errorBuilder:
+                                              (context, error, stackTrace) {
+                                                return Container(
+                                                  height: 200,
+                                                  color: Colors.grey[200],
+                                                  child: Column(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .center,
+                                                    children: [
+                                                      Icon(
+                                                        Icons
+                                                            .image_not_supported_rounded,
+                                                        color: Colors.grey[400],
+                                                        size: 40,
+                                                      ),
+                                                      const SizedBox(height: 8),
+                                                      Text(
+                                                        'Image failed to load',
+                                                        style: TextStyle(
+                                                          color:
+                                                              Colors.grey[500],
+                                                          fontSize: 12,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                              },
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                      ],
+                    ),
                   const SizedBox(height: 32),
                   // Action Buttons - Enhanced
                   if (!_isEditing)
@@ -2220,6 +2481,196 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               hintStyle: const TextStyle(color: Color(0xFFCCCCCC)),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// 📸 Pick image from gallery
+  Future<void> _pickImage() async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+
+      if (image != null) {
+        setState(() {
+          _selectedImage = image;
+          _imageDeleted = false;
+        });
+      }
+    } catch (e) {
+      print('Error picking image: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error picking image: $e')));
+      }
+    }
+  }
+
+  /// 📸 Build image edit field with upload/delete options
+  Widget _buildImageEditField() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF9E6),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFFE5B4), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFFFF9E6).withOpacity(0.6),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Receipt Image',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF666666),
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Image Preview or Upload Area
+          if (!_imageDeleted &&
+              (_selectedImage != null || _originalImage != null))
+            Column(
+              children: [
+                // Show preview of selected image or original image
+                Container(
+                  width: double.infinity,
+                  height: 150,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFFFFE5B4),
+                      width: 1,
+                    ),
+                  ),
+                  child: _selectedImage != null
+                      ? FutureBuilder<Uint8List>(
+                          future: _selectedImage!.readAsBytes(),
+                          builder: (context, snapshot) {
+                            if (snapshot.hasData) {
+                              return ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.memory(
+                                  snapshot.data!,
+                                  fit: BoxFit.cover,
+                                ),
+                              );
+                            }
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          },
+                        )
+                      : ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.network(
+                            _originalImage!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Center(
+                                child: Icon(
+                                  Icons.image_not_supported_rounded,
+                                  color: Colors.grey[400],
+                                  size: 40,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                ),
+                const SizedBox(height: 12),
+                // Action Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _pickImage,
+                        icon: const Icon(Icons.image_rounded),
+                        label: const Text('Change Image'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFF39C12),
+                          side: const BorderSide(
+                            color: Color(0xFFF39C12),
+                            width: 1,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _imageDeleted = true;
+                            _selectedImage = null;
+                          });
+                        },
+                        icon: const Icon(Icons.delete_rounded),
+                        label: const Text('Delete'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red, width: 1),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            )
+          else
+            // Upload new image area
+            GestureDetector(
+              onTap: _pickImage,
+              child: Container(
+                width: double.infinity,
+                height: 100,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFFFFE5B4),
+                    width: 2,
+                    style: BorderStyle.solid,
+                  ),
+                  color: Colors.white,
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.cloud_upload_rounded,
+                      color: const Color(0xFFF39C12),
+                      size: 36,
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Tap to upload receipt image',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFF39C12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
